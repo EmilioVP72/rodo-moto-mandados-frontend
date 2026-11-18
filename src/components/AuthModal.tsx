@@ -1,5 +1,11 @@
 import React, { useState } from 'react';
-import { apiFetch, setAuthToken, ApiHttpError, uploadRecoveryDocToStorage } from '../api/httpClient';
+import {
+  apiFetch,
+  setAuthSessionTokens,
+  ApiHttpError,
+  uploadRecoveryDocToStorage,
+} from '../api/httpClient';
+import { identifySocketSession } from '../api/socketClient';
 import {
   X,
   Lock,
@@ -69,6 +75,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [ineScanSuccess, setIneScanSuccess] = useState(false);
 
   // Estados de Recuperación de Cuenta & Soporte
+  const [recoveryMode, setRecoveryMode] = useState<'password_reset' | 'support_email_change'>('password_reset');
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetStep, setResetStep] = useState<'request' | 'confirm'>('request');
+  const [resetCode, setResetCode] = useState('');
+  const [resetNewPassword, setResetNewPassword] = useState('');
+  const [resetInfoMsg, setResetInfoMsg] = useState('');
+  const [resetPreviewCode, setResetPreviewCode] = useState('');
+  const [isResettingPass, setIsResettingPass] = useState(false);
+
   const [recOldEmail, setRecOldEmail] = useState('');
   const [recNewEmail, setRecNewEmail] = useState('');
   const [recReason, setRecReason] = useState('Olvidé mi contraseña / perdí acceso a mi cuenta anterior');
@@ -235,6 +250,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       try {
         const res = await apiFetch<{
           token: string;
+          refreshToken?: string;
           isAdmin: boolean;
           user: CustomerAccount;
         }>('/api/auth/register', {
@@ -249,7 +265,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           },
         });
 
-        setAuthToken(res.token);
+        setAuthSessionTokens(res.token, res.refreshToken || null);
+        identifySocketSession(res.token);
         saveIneAccount(res.user);
 
         const customerPayload = {
@@ -346,6 +363,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       const res = await apiFetch<{
         token: string;
+        refreshToken?: string;
         isAdmin: boolean;
         user: CustomerAccount;
       }>('/api/auth/login', {
@@ -356,7 +374,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         },
       });
 
-      setAuthToken(res.token);
+      setAuthSessionTokens(res.token, res.refreshToken || null);
+      identifySocketSession(res.token);
 
       if (res.isAdmin) {
         onAdminLoginSuccess();
@@ -454,6 +473,103 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     onCustomerLogin(customerPayload);
     onClose();
+  };
+
+  // Auto-servicio: Solicitar código de recuperación de contraseña de 6 dígitos en PostgreSQL
+  const handleRequestPasswordResetCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg('');
+    setResetInfoMsg('');
+    setResetPreviewCode('');
+
+    const targetEmail = (resetEmail || email).trim().toLowerCase();
+    if (!targetEmail || !targetEmail.includes('@')) {
+      setErrorMsg('Ingresa el correo electrónico de tu cuenta.');
+      return;
+    }
+
+    setIsResettingPass(true);
+    try {
+      const res = await apiFetch<{
+        ok: boolean;
+        message: string;
+        resetCodePreview?: string;
+      }>('/api/auth/forgot-password', {
+        method: 'POST',
+        body: { email: targetEmail },
+      });
+      setResetEmail(targetEmail);
+      setResetStep('confirm');
+      setResetInfoMsg(res.message);
+      if (res.resetCodePreview) {
+        setResetPreviewCode(res.resetCodePreview);
+      }
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'No se pudo generar el código de recuperación.');
+    } finally {
+      setIsResettingPass(false);
+    }
+  };
+
+  // Auto-servicio: Confirmar código de 6 dígitos y establecer nueva contraseña encriptada
+  const handleConfirmPasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg('');
+
+    if (!resetCode.trim() || resetCode.trim().length !== 6) {
+      setErrorMsg('Ingresa el código numérico de 6 dígitos.');
+      return;
+    }
+    if (!resetNewPassword.trim() || resetNewPassword.trim().length < 6) {
+      setErrorMsg('La nueva contraseña debe tener al menos 6 caracteres.');
+      return;
+    }
+
+    setIsResettingPass(true);
+    try {
+      const res = await apiFetch<{
+        ok: boolean;
+        token: string;
+        refreshToken?: string;
+        isAdmin: boolean;
+        user: CustomerAccount;
+      }>('/api/auth/reset-password', {
+        method: 'POST',
+        body: {
+          email: resetEmail.trim().toLowerCase(),
+          code: resetCode.trim(),
+          newPassword: resetNewPassword.trim(),
+        },
+      });
+
+      setAuthSessionTokens(res.token, res.refreshToken || null);
+      identifySocketSession(res.token);
+
+      if (res.isAdmin) {
+        onAdminLoginSuccess();
+        onClose();
+        return;
+      }
+
+      const customerPayload = {
+        id: res.user.id,
+        name: res.user.name,
+        phone: res.user.phone,
+        email: res.user.email,
+        ine10Digits: res.user.ine10Digits,
+        referralCode: res.user.referralCode,
+      };
+      try {
+        localStorage.setItem('rodo_user_session', JSON.stringify(customerPayload));
+      } catch {}
+
+      onCustomerLogin(customerPayload);
+      onClose();
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Código incorrecto o expirado.');
+    } finally {
+      setIsResettingPass(false);
+    }
   };
 
   return (
@@ -565,6 +681,144 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
           {isRecovery ? (
             <div className="space-y-4 text-left">
+              {/* Selector entre Auto-Servicio de Contraseña vs Cambio de Correo con Soporte */}
+              <div className="grid grid-cols-2 gap-1.5 bg-gray-100 p-1 rounded-xl text-[11px] font-black">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRecoveryMode('password_reset');
+                    setErrorMsg('');
+                  }}
+                  className={`py-2 px-2 rounded-lg transition cursor-pointer ${
+                    recoveryMode === 'password_reset'
+                      ? 'bg-white text-[#ed0718] shadow-xs'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  🔑 Restablecer Contraseña
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRecoveryMode('support_email_change');
+                    setErrorMsg('');
+                  }}
+                  className={`py-2 px-2 rounded-lg transition cursor-pointer ${
+                    recoveryMode === 'support_email_change'
+                      ? 'bg-white text-[#ed0718] shadow-xs'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  🪪 Cambiar Correo (INE)
+                </button>
+              </div>
+
+              {recoveryMode === 'password_reset' ? (
+                <div className="space-y-3">
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3 text-xs text-emerald-950 space-y-1">
+                    <strong className="font-black flex items-center gap-1.5">
+                      <KeyRound className="w-4 h-4 text-emerald-700" />
+                      Recuperación Segura de Contraseña (15 min)
+                    </strong>
+                    <p className="text-[11px] leading-relaxed">
+                      Genera un código de verificación de 6 dígitos para crear una nueva contraseña. Por seguridad, todas tus sesiones abiertas en otros dispositivos se cerrarán automáticamente.
+                    </p>
+                  </div>
+
+                  {resetStep === 'request' ? (
+                    <form onSubmit={handleRequestPasswordResetCode} className="space-y-3">
+                      <div>
+                        <label className="block text-[11px] font-black text-gray-700 mb-1">
+                          Correo electrónico de tu cuenta *
+                        </label>
+                        <input
+                          type="email"
+                          required
+                          value={resetEmail || email}
+                          onChange={(e) => setResetEmail(e.target.value)}
+                          placeholder="tu.correo@ejemplo.com"
+                          className="w-full border border-gray-300 rounded-xl p-2.5 text-xs font-semibold outline-none focus:border-[#ed0718]"
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={isResettingPass}
+                        className="w-full bg-[#ed0718] hover:bg-[#c90012] disabled:bg-gray-400 text-white font-black text-xs py-3 rounded-xl shadow-md transition cursor-pointer flex items-center justify-center gap-2"
+                      >
+                        {isResettingPass ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+                        <span>{isResettingPass ? 'Generando código...' : 'Generar Código de 6 Dígitos'}</span>
+                      </button>
+                    </form>
+                  ) : (
+                    <form onSubmit={handleConfirmPasswordReset} className="space-y-3">
+                      {resetInfoMsg && (
+                        <div className="bg-blue-50 border border-blue-200 text-blue-950 p-3 rounded-xl text-[11px] font-semibold space-y-1">
+                          <p>{resetInfoMsg}</p>
+                          {resetPreviewCode && (
+                            <p className="font-mono text-sm font-black text-[#ed0718] bg-white px-2.5 py-1.5 rounded-lg border border-blue-200 text-center tracking-widest">
+                              Código de verificación: {resetPreviewCode}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="block text-[11px] font-black text-gray-700 mb-1">
+                          Código de 6 dígitos *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          maxLength={6}
+                          value={resetCode}
+                          onChange={(e) => setResetCode(e.target.value.replace(/[^0-9]/g, ''))}
+                          placeholder="000000"
+                          className="w-full text-center font-mono text-base tracking-widest font-black border-2 border-gray-300 rounded-xl p-2 outline-none focus:border-[#ed0718]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-black text-gray-700 mb-1">
+                          Nueva Contraseña (mínimo 6 caracteres) *
+                        </label>
+                        <input
+                          type="password"
+                          required
+                          minLength={6}
+                          value={resetNewPassword}
+                          onChange={(e) => setResetNewPassword(e.target.value)}
+                          placeholder="••••••••"
+                          className="w-full border border-gray-300 rounded-xl p-2.5 text-xs font-semibold outline-none focus:border-[#ed0718]"
+                        />
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setResetStep('request');
+                            setResetCode('');
+                            setResetPreviewCode('');
+                            setErrorMsg('');
+                          }}
+                          className="px-3 py-2.5 rounded-xl border border-gray-300 text-xs font-bold text-gray-700 hover:bg-gray-50 cursor-pointer"
+                        >
+                          Volver
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={isResettingPass}
+                          className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-400 text-white font-black text-xs py-2.5 rounded-xl shadow-md transition cursor-pointer flex items-center justify-center gap-2"
+                        >
+                          {isResettingPass ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                          <span>Guardar Nueva Contraseña y Entrar</span>
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+              ) : (
+                <>
               {/* Pasos a seguir en soporte */}
               <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3.5 space-y-2 text-xs text-blue-950">
                 <h4 className="font-black text-xs uppercase tracking-wider flex items-center gap-1.5 text-blue-900">
@@ -728,6 +982,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     <span>{isSubmittingRecovery ? 'Enviando solicitud...' : 'Solicitar Recuperación y Generar Folio'}</span>
                   </button>
                 </form>
+              )}
+                </>
               )}
             </div>
           ) : (

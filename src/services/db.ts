@@ -1,4 +1,4 @@
-import { apiFetch, ApiHttpError } from '../api/httpClient';
+import { apiFetch, ApiHttpError, getAuthToken } from '../api/httpClient';
 import { onSocketEvent } from '../api/socketClient';
 import {
   Restaurant,
@@ -402,38 +402,39 @@ export async function createOrdersBatchInDb(orders: Order[]): Promise<void> {
 }
 
 export async function getOrders(): Promise<Order[]> {
+  if (!getAuthToken()) {
+    return [];
+  }
   const localOrders = getLocalStoredOrders();
   try {
     const remoteOrders = await apiFetch<Order[]>('/api/orders');
     if (Array.isArray(remoteOrders)) {
-      const map = new Map<string, Order>();
-      remoteOrders.forEach((o) => map.set(o.id, o));
-      localOrders.forEach((o) => {
-        if (!map.has(o.id)) map.set(o.id, o);
-      });
-      const merged = Array.from(map.values());
-      localStorage.setItem(LOCAL_STORAGE_ORDERS, JSON.stringify(merged));
-      syncOrdersToIDB(merged);
-      return merged;
+      localStorage.setItem(LOCAL_STORAGE_ORDERS, JSON.stringify(remoteOrders));
+      syncOrdersToIDB(remoteOrders);
+      return remoteOrders;
     }
-  } catch {}
+  } catch (err) {
+    if (err instanceof ApiHttpError && err.status === 401) {
+      return [];
+    }
+  }
   if (localOrders.length > 0) return localOrders;
   return await getOrdersFromIDB();
 }
 
 export function subscribeToOrders(
   callback: (orders: Order[]) => void,
-  _isAuthenticated: boolean
+  isAuthenticated: boolean
 ): () => void {
-  orderSubscribers.add(callback);
-
-  const localOrders = getLocalStoredOrders();
-  if (localOrders.length > 0) {
-    callback(localOrders);
+  if (!isAuthenticated || !getAuthToken()) {
+    callback([]);
+    return () => {};
   }
 
+  orderSubscribers.add(callback);
+
   getOrders()
-    .then((merged) => callback(merged))
+    .then((scopedOrders) => callback(scopedOrders))
     .catch(() => {});
 
   const unsubCreated = onSocketEvent<Order>('orders:created', (newOrder) => {
@@ -454,7 +455,7 @@ export function subscribeToOrders(
 
   const unsubBatch = onSocketEvent('orders:batch-updated', () => {
     getOrders()
-      .then((merged) => callback(merged))
+      .then((scopedOrders) => callback(scopedOrders))
       .catch(() => {});
   });
 

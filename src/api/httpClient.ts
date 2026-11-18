@@ -1,14 +1,24 @@
 /**
  * Capa de Transporte HTTP Centralizada (Clean Architecture)
  * Conecta el Frontend React 19 con el Backend Fastify + PostgreSQL + Redis
+ * Incluye manejo de Access Token JWT, Refresh Token rotativo y limpieza de sesión por privacidad.
  */
 
 const TOKEN_STORAGE_KEY = 'rodo_auth_jwt';
+const REFRESH_TOKEN_STORAGE_KEY = 'rodo_refresh_token';
 const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || '';
 
 export function getAuthToken(): string | null {
   try {
     return localStorage.getItem(TOKEN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function getRefreshToken(): string | null {
+  try {
+    return localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY);
   } catch {
     return null;
   }
@@ -24,13 +34,48 @@ export function setAuthToken(token: string | null): void {
   } catch {}
 }
 
-export async function logoutSession(): Promise<void> {
-  setAuthToken(null);
+export function setAuthSessionTokens(accessToken: string | null, refreshToken?: string | null): void {
+  setAuthToken(accessToken);
+  try {
+    if (refreshToken) {
+      localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, refreshToken);
+    } else if (refreshToken === null) {
+      localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
+    }
+  } catch {}
+}
+
+export async function logoutSession(allDevices = false): Promise<void> {
+  const token = getAuthToken();
+  const refreshToken = getRefreshToken();
+
+  if (token || refreshToken) {
+    try {
+      await fetch(`${API_BASE_URL}/api/auth/logout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ refreshToken, allDevices }),
+      });
+    } catch {}
+  }
+
+  // Aislamiento de privacidad local: limpiar caché de pedidos y sesión del usuario anterior
+  setAuthSessionTokens(null, null);
+  try {
+    localStorage.removeItem('rodo_user_session');
+    localStorage.removeItem('rodo_admin_session');
+    localStorage.removeItem('rodo_local_orders');
+    localStorage.removeItem('rodo_registered_ine_accounts');
+  } catch {}
 }
 
 export interface ApiRequestOptions extends Omit<RequestInit, 'body'> {
   body?: unknown;
   timeoutMs?: number;
+  _retriedRefresh?: boolean;
 }
 
 export class ApiHttpError extends Error {
@@ -45,8 +90,32 @@ export class ApiHttpError extends Error {
   }
 }
 
+async function tryRotateRefreshToken(): Promise<boolean> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return false;
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+    });
+    if (!res.ok) {
+      setAuthSessionTokens(null, null);
+      return false;
+    }
+    const data = await res.json();
+    if (data?.token && data?.refreshToken) {
+      setAuthSessionTokens(data.token, data.refreshToken);
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 export async function apiFetch<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
-  const { body, timeoutMs = 10000, headers: customHeaders, ...rest } = options;
+  const { body, timeoutMs = 10000, headers: customHeaders, _retriedRefresh, ...rest } = options;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -67,6 +136,19 @@ export async function apiFetch<T>(path: string, options: ApiRequestOptions = {})
       signal: controller.signal,
     });
 
+    // Rotación silenciosa de Refresh Token si el Access Token expiró
+    if (
+      response.status === 401 &&
+      !_retriedRefresh &&
+      !path.startsWith('/api/auth/login') &&
+      !path.startsWith('/api/auth/refresh')
+    ) {
+      const refreshed = await tryRotateRefreshToken();
+      if (refreshed) {
+        return apiFetch<T>(path, { ...options, _retriedRefresh: true });
+      }
+    }
+
     const contentType = response.headers.get('content-type') || '';
     const payload = contentType.includes('application/json')
       ? await response.json().catch(() => null)
@@ -85,10 +167,6 @@ export async function apiFetch<T>(path: string, options: ApiRequestOptions = {})
   }
 }
 
-/**
- * Sube una imagen en base64 (firma digital, evidencia de entrega, comprobante SPEI o INE de recuperación)
- * al volumen persistente del servidor backend en el VPS (/api/uploads).
- */
 export async function uploadImageToBackend(
   dataUrl: string,
   folder: 'signatures' | 'proofs' | 'recovery' | 'transfers' | 'restaurants',
