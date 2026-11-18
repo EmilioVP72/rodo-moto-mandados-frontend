@@ -1,5 +1,5 @@
-import { Order, Restaurant } from '../types';
-import { DEFAULT_RESTAURANTS } from '../data/seeds';
+import type { Order, Restaurant } from '../types';
+import { DEFAULT_RESTAURANTS } from '../data/seeds.ts';
 
 const LOCAL_STORAGE_RESTAURANTS = 'rodo_restaurants_cache';
 

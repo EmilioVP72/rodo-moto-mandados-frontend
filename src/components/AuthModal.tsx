@@ -878,7 +878,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       maxLength={10}
                       value={ine10Digits}
                       onChange={(e) => setIne10Digits(e.target.value.replace(/[^0-9]/g, ''))}
-                      placeholder="Ej. 8942105432"
+                      placeholder="Ej. 8942105438"
                       required
                       className="w-full text-center tracking-widest font-mono text-base font-black py-2 px-3 border-2 border-gray-300 rounded-xl bg-white focus:border-[#ed0718] outline-none"
                     />
