@@ -1,0 +1,149 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    color-scheme: light;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    width: 100%;
+    min-height: 100vh;
+    margin: 0;
+    padding: 0;
+    transition: background-color 0.2s ease, color 0.2s ease;
+    -webkit-overflow-scrolling: touch;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  #root {
+    width: 100%;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+  }
+
+  /* Clases globales según dispositivo detectado: fluido al 100% sin rebasar el viewport */
+  .device-mobile,
+  .device-tablet,
+  .device-desktop {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  /* Modo Obscuro Premium: Negro Obsidiana Puro con Rojo RODO Predominante */
+  html.dark body {
+    background-color: #050608;
+    color: #f8fafc;
+  }
+
+  /* Estilos para tarjetas y contenedores en Modo Obscuro */
+  html.dark .bg-white {
+    background-color: #090b10 !important;
+    color: #f8fafc !important;
+    border-color: rgba(237, 7, 24, 0.28) !important;
+    box-shadow: 0 2px 12px rgba(237, 7, 24, 0.06);
+  }
+
+  html.dark .bg-gray-50 {
+    background-color: #06070a !important;
+    border-color: rgba(237, 7, 24, 0.22) !important;
+  }
+
+  html.dark .bg-gray-100 {
+    background-color: #0d1017 !important;
+    border-color: rgba(237, 7, 24, 0.25) !important;
+  }
+
+  html.dark input,
+  html.dark select,
+  html.dark textarea {
+    background-color: #0b0e15 !important;
+    color: #ffffff !important;
+    border-color: rgba(237, 7, 24, 0.3) !important;
+  }
+
+  html.dark input:focus,
+  html.dark select:focus,
+  html.dark textarea:focus {
+    border-color: #ed0718 !important;
+    box-shadow: 0 0 0 2px rgba(237, 7, 24, 0.3) !important;
+    outline: none !important;
+  }
+
+  html.dark .text-gray-900,
+  html.dark .text-gray-800,
+  html.dark .text-black {
+    color: #ffffff !important;
+  }
+
+  html.dark .text-gray-700,
+  html.dark .text-gray-600 {
+    color: #cbd5e1 !important;
+  }
+
+  html.dark .text-gray-500,
+  html.dark .text-gray-400 {
+    color: #94a3b8 !important;
+  }
+
+  html.dark .border-gray-200,
+  html.dark .border-gray-300 {
+    border-color: rgba(237, 7, 24, 0.24) !important;
+  }
+
+  html.dark .border-gray-100 {
+    border-color: rgba(255, 255, 255, 0.1) !important;
+  }
+
+  /* Realce de Rojo Predominante en Modo Obscuro */
+  html.dark .bg-red-50,
+  html.dark .bg-red-50\/50,
+  html.dark .bg-red-50\/40 {
+    background-color: rgba(237, 7, 24, 0.18) !important;
+    border-color: rgba(237, 7, 24, 0.45) !important;
+  }
+
+  html.dark .text-\[\#ed0718\] {
+    color: #ff2a3b !important;
+    text-shadow: 0 0 12px rgba(237, 7, 24, 0.4);
+  }
+
+  html.dark .bg-\[\#101b29\] {
+    background-color: #07080d !important;
+    border-bottom: 2px solid #ed0718 !important;
+    box-shadow: 0 4px 20px rgba(237, 7, 24, 0.12);
+  }
+
+  /* Scrollbar temático RODO (Negro obsidiana con barra roja) */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(237, 7, 24, 0.45);
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #ed0718;
+  }
+}
