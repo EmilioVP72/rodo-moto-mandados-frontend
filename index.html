@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>RODO Moto Mandados</title>
+    <link rel="icon" type="image/jpeg" href="/assets/aistudio/IMG-20260902-WA0090_1__d4eb6002.jpg" />
+    <meta name="description" content="Plataforma integral de pedidos, motomandados, portal de locales asociados y despacho operativo con tickets digitales." />
+    <meta property="og:title" content="RODO Moto Mandados" />
+    <meta property="og:description" content="Plataforma integral de pedidos, motomandados, portal de locales asociados y despacho operativo con tickets digitales." />
+    <meta property="og:image" content="/assets/aistudio/IMG-20260902-WA0090_1__d4eb6002.jpg" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      // 1. Limpieza de cualquier Service Worker previo para evitar pantallas blancas por caché o peticiones interceptadas
+      try {
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(function(regs) {
+            for (var r of regs) {
+              r.unregister();
+            }
+          }).catch(function() {});
+        }
+        if ('caches' in window) {
+          caches.keys().then(function(keys) {
+            for (var k of keys) {
+              caches.delete(k);
+            }
+          }).catch(function() {});
+        }
+      } catch (e) {}
+
+      // 2. Detección responsiva de dispositivo
+      (function() {
+        try {
+          var w = window.innerWidth || document.documentElement.clientWidth || 360;
+          var ua = navigator.userAgent || '';
+          var isMobile = /Android|iPhone|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua) || w < 768;
+          var isTablet = (/iPad|Tablet/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) || (w >= 768 && w < 1024));
+          var cls = isMobile ? 'device-mobile' : (isTablet ? 'device-tablet' : 'device-desktop');
+          document.documentElement.classList.add(cls);
+        } catch (e) {}
+      })();
+    </script>
+    <style>
+      /* Fallback ultra-rápido para evitar pantalla en blanco durante el arranque inicial */
+      #rodo-initial-splash {
+        min-height: 100vh;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background-color: #f5f6f8;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        color: #101b29;
+        text-align: center;
+        padding: 24px;
+        box-sizing: border-box;
+      }
+      .rodo-splash-logo {
+        width: 72px;
+        height: 72px;
+        border-radius: 20px;
+        background: linear-gradient(135deg, #ed0718 0%, #88030b 100%);
+        color: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 32px;
+        font-weight: 900;
+        box-shadow: 0 10px 25px rgba(237, 7, 24, 0.35);
+        margin-bottom: 20px;
+        animation: rodoPulse 1.8s infinite ease-in-out;
+      }
+      .rodo-spinner {
+        width: 32px;
+        height: 32px;
+        border: 3px solid rgba(237, 7, 24, 0.2);
+        border-top-color: #ed0718;
+        border-radius: 50%;
+        animation: rodoSpin 0.8s linear infinite;
+        margin-top: 16px;
+      }
+      @keyframes rodoPulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+      }
+      @keyframes rodoSpin {
+        to { transform: rotate(360deg); }
+      }
+    </style>
+  </head>
+  <body class="w-full min-h-screen bg-[#f5f6f8]">
+    <div id="root">
+      <div id="rodo-initial-splash">
+        <div class="rodo-splash-logo">R</div>
+        <h1 style="font-size: 20px; font-weight: 900; margin: 0 0 6px 0; letter-spacing: -0.5px;">RODO Moto Mandados</h1>
+        <p style="font-size: 13px; color: #556270; margin: 0; max-width: 280px; line-height: 1.4;">
+          San Miguel de Allende · Despacho y comida rápida
+        </p>
+        <div class="rodo-spinner"></div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
