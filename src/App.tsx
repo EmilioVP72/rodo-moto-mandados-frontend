@@ -47,6 +47,8 @@ import {
   requestBrowserNotificationPermission,
 } from './services/notifications';
 import { apiFetch, getAuthToken, logoutSession } from './api/httpClient';
+import { useCart } from './hooks/useCart';
+import { useRealtimeSync } from './hooks/useRealtimeSync';
 import {
   Star,
   Clock,
@@ -147,11 +149,15 @@ export default function App() {
   const [liveTrackingOrder, setLiveTrackingOrder] = useState<Order | null>(null);
   const [ratingModalOrder, setRatingModalOrder] = useState<Order | null>(null);
   const [ordersHistoryFilter, setOrdersHistoryFilter] = useState<'todos' | 'en_camino' | 'entregado' | 'cancelado'>('todos');
-  const [cartToastState, setCartToastState] = useState<{ visible: boolean; itemName: string }>({
-    visible: false,
-    itemName: '',
-  });
-  const cartToastTimerRef = useRef<number | null>(null);
+  const {
+    cart,
+    setCart,
+    cartToastState,
+    setCartToastState,
+    handleAddToCart,
+    handleRemoveFromCart,
+  } = useCart();
+  useRealtimeSync({ setRestaurants, setSettings });
   const dismissedRatingIdsRef = useRef<Set<string>>(new Set());
   const seenBroadcastIdsRef = useRef<Set<string>>(new Set());
 
@@ -171,14 +177,6 @@ export default function App() {
   const [selectedRestaurant, setSelectedRestaurant] = useState<Restaurant | null>(null);
   const [reorderError, setReorderError] = useState<string | null>(null);
   const [showPushNotificationPrompt, setShowPushNotificationPrompt] = useState<boolean>(false);
-  const [cart, setCart] = useState<OrderItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('rodo_customer_cart');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
   const [showCartDrawer, setShowCartDrawer] = useState(false);
 
   // Modales
@@ -320,10 +318,6 @@ export default function App() {
       localStorage.removeItem('rodo_user_session');
     }
   }, [currentUser]);
-
-  useEffect(() => {
-    localStorage.setItem('rodo_customer_cart', JSON.stringify(cart));
-  }, [cart]);
 
   useEffect(() => {
     if (selectedRestaurant) {
@@ -493,46 +487,6 @@ export default function App() {
 
     return () => unsubscribe();
   }, [currentUser, isAdminLoggedIn]);
-
-  // Agregar al carrito con inmutabilidad estricta, vibración háptica y CartToast animado
-  const handleAddToCart = (item: OrderItem) => {
-    vibrateLight();
-    setCart((prev) => {
-      const idx = prev.findIndex((i) => i.id === item.id);
-      if (idx >= 0) {
-        return prev.map((it, i) =>
-          i === idx ? { ...it, quantity: it.quantity + 1 } : it
-        );
-      }
-      return [...prev, { ...item, quantity: item.quantity ? Math.max(1, item.quantity) : 1 }];
-    });
-    setCartToastState({ visible: true, itemName: item.name });
-    if (cartToastTimerRef.current) {
-      window.clearTimeout(cartToastTimerRef.current);
-    }
-    cartToastTimerRef.current = window.setTimeout(() => {
-      setCartToastState((prev) => ({ ...prev, visible: false }));
-    }, 2800);
-  };
-
-  // Quitar o decrementar del carrito
-  const handleRemoveFromCart = (itemId: string) => {
-    setCart((prev) => {
-      let idx = prev.findIndex((i) => i.id === itemId);
-      if (idx < 0) {
-        idx = prev.findIndex((i) => i.id.startsWith(`${itemId}-`));
-      }
-      if (idx >= 0) {
-        if (prev[idx].quantity > 1) {
-          return prev.map((it, i) =>
-            i === idx ? { ...it, quantity: it.quantity - 1 } : it
-          );
-        }
-        return prev.filter((_, i) => i !== idx);
-      }
-      return prev;
-    });
-  };
 
   // Abrir checkout: El cliente puede llenar el carrito libremente como visitante,
   // y antes de pagar se le solicita iniciar sesión con su INE.
