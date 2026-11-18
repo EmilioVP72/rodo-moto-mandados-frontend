@@ -184,3 +184,45 @@ export async function reverseGeocodeCoords(
     };
   }
 }
+
+/**
+ * Convierte la geometría GeoJSON [lng, lat] devuelta por OSRM en un arreglo de puntos { lat, lng } para Leaflet
+ */
+export function extractOsrmRoutePoints(osrmResponse: any): { lat: number; lng: number }[] {
+  const coords = osrmResponse?.routes?.[0]?.geometry?.coordinates;
+  if (!Array.isArray(coords) || coords.length < 2) {
+    return [];
+  }
+  const points: { lat: number; lng: number }[] = [];
+  for (const pair of coords) {
+    if (Array.isArray(pair) && pair.length >= 2) {
+      const lng = Number(pair[0]);
+      const lat = Number(pair[1]);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        points.push({ lat, lng });
+      }
+    }
+  }
+  return points;
+}
+
+/**
+ * Obtiene la ruta real por calles de San Miguel de Allende usando el proxy OSRM con caché Redis del Backend
+ */
+export async function fetchCachedOsrmStreetRoute(
+  fromCoords: { lat: number; lng: number },
+  toCoords: { lat: number; lng: number }
+): Promise<{ lat: number; lng: number }[]> {
+  try {
+    const query = `fromLat=${encodeURIComponent(fromCoords.lat)}&fromLng=${encodeURIComponent(fromCoords.lng)}&toLat=${encodeURIComponent(toCoords.lat)}&toLng=${encodeURIComponent(toCoords.lng)}`;
+    const res = await fetch(`/api/routing/osrm?${query}`, {
+      headers: { Accept: 'application/json' },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const pts = extractOsrmRoutePoints(data);
+      if (pts.length >= 2) return pts;
+    }
+  } catch {}
+  return [fromCoords, toCoords];
+}

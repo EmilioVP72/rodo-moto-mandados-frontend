@@ -84,6 +84,12 @@ if (typeof window !== 'undefined') {
   window.addEventListener('unhandledrejection', (event) => {
     console.warn('RODO: Unhandled promise rejection prevented from crashing UI:', event.reason);
   });
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    });
+  }
 }
 
 createRoot(document.getElementById('root')!).render(

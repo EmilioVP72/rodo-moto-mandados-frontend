@@ -1,8 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Order, Restaurant } from '../types';
 import { FreeOsmMap } from './FreeOsmMap';
-import { X, Bike, Clock, MapPin, Phone, Navigation, Store } from 'lucide-react';
+import { X, Bike, Clock, MapPin, Phone, Navigation, Store, Radio } from 'lucide-react';
 import { useLanguage } from '../utils/i18n';
+import { onSocketEvent } from '../api/socketClient';
+import {
+  calculateHaversineDistance,
+  fetchCachedOsrmStreetRoute,
+} from '../services/routing';
 
 const SMA_CENTER = { lat: 20.9144, lng: -100.7437 };
 
@@ -21,6 +26,34 @@ export const LiveTrackingModal: React.FC<LiveTrackingModalProps> = ({
 }) => {
   const { t, lang } = useLanguage();
   const [simProgress, setSimProgress] = useState(0.35);
+  const [liveRiderCoords, setLiveRiderCoords] = useState<{ lat: number; lng: number } | null>(
+    order?.riderLiveCoordinates || null
+  );
+  const [lastGpsPingAt, setLastGpsPingAt] = useState<string | null>(
+    order?.riderLastLocationUpdate || null
+  );
+  const [streetRoutePoints, setStreetRoutePoints] = useState<{ lat: number; lng: number }[]>([]);
+
+  useEffect(() => {
+    setLiveRiderCoords(order?.riderLiveCoordinates || null);
+    setLastGpsPingAt(order?.riderLastLocationUpdate || null);
+  }, [order?.id, order?.riderLiveCoordinates, order?.riderLastLocationUpdate]);
+
+  // Escucha en tiempo real vía Socket.IO de los pings GPS enviados por el teléfono del repartidor
+  useEffect(() => {
+    if (!order?.id) return;
+    const unsub = onSocketEvent<{
+      orderId: string;
+      coordinates: { lat: number; lng: number };
+      timestamp: string;
+    }>('order:rider-location', (payload) => {
+      if (payload?.orderId === order.id && payload.coordinates) {
+        setLiveRiderCoords(payload.coordinates);
+        setLastGpsPingAt(payload.timestamp || new Date().toISOString());
+      }
+    });
+    return () => unsub();
+  }, [order?.id]);
 
   const originCoords = useMemo(() => {
     if (!order) return SMA_CENTER;
@@ -37,23 +70,48 @@ export const LiveTrackingModal: React.FC<LiveTrackingModalProps> = ({
     return order.coordinates || { lat: 20.9118, lng: -100.7485 };
   }, [order]);
 
+  // Obtener ruta real por calles de San Miguel de Allende desde el proxy OSRM con caché Redis
   useEffect(() => {
-    if (!order || order.riderLiveCoordinates) return;
+    if (!order) return;
+    let active = true;
+    fetchCachedOsrmStreetRoute(originCoords, destCoords)
+      .then((pts) => {
+        if (active && pts.length >= 2) {
+          setStreetRoutePoints(pts);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [order?.id, originCoords.lat, originCoords.lng, destCoords.lat, destCoords.lng]);
+
+  useEffect(() => {
+    if (!order || liveRiderCoords) return;
     setSimProgress(0.3);
     const timer = setInterval(() => {
       setSimProgress((prev) => (prev >= 0.88 ? 0.35 : +(prev + 0.04).toFixed(2)));
     }, 2500);
     return () => clearInterval(timer);
-  }, [order?.id, order?.riderLiveCoordinates]);
+  }, [order?.id, liveRiderCoords]);
 
   if (!order) return null;
 
-  const estimatedRiderCoords = order.riderLiveCoordinates || {
+  const estimatedRiderCoords = liveRiderCoords || {
     lat: originCoords.lat + (destCoords.lat - originCoords.lat) * simProgress,
     lng: originCoords.lng + (destCoords.lng - originCoords.lng) * simProgress,
   };
 
-  const etaMinutes = order.routeEstimateMinutes || Math.max(4, Math.round((1 - simProgress) * 18));
+  // Calcular tiempo restante real basado en la distancia actual entre la moto y el domicilio
+  const remainingDistKm = calculateHaversineDistance(
+    estimatedRiderCoords.lat,
+    estimatedRiderCoords.lng,
+    destCoords.lat,
+    destCoords.lng
+  );
+  const etaMinutes = liveRiderCoords
+    ? Math.max(2, Math.round((remainingDistKm / 22) * 60) + 2)
+    : order.routeEstimateMinutes || Math.max(4, Math.round((1 - simProgress) * 18));
 
   const mapMarkers = [
     {
@@ -84,6 +142,11 @@ export const LiveTrackingModal: React.FC<LiveTrackingModalProps> = ({
       label: 'Entrega',
     },
   ];
+
+  const routePathsToRender =
+    streetRoutePoints.length >= 2
+      ? streetRoutePoints
+      : [originCoords, estimatedRiderCoords, destCoords];
 
   return (
     <div className="fixed inset-0 z-70 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs overflow-y-auto">
@@ -124,19 +187,26 @@ export const LiveTrackingModal: React.FC<LiveTrackingModalProps> = ({
                 : 'En ruta hacia tu domicilio en San Miguel'}
             </span>
           </div>
-          <span className="bg-blue-600 text-white font-mono font-black px-2.5 py-0.5 rounded-full text-[11px] flex items-center gap-1">
-            <Clock className="w-3 h-3" /> ~{etaMinutes} min
-          </span>
+          <div className="flex items-center gap-1.5">
+            {liveRiderCoords && (
+              <span className="bg-emerald-600 text-white font-black px-2 py-0.5 rounded-full text-[10px] inline-flex items-center gap-1">
+                <Radio className="w-3 h-3 animate-ping" /> GPS Live
+              </span>
+            )}
+            <span className="bg-blue-600 text-white font-mono font-black px-2.5 py-0.5 rounded-full text-[11px] flex items-center gap-1">
+              <Clock className="w-3 h-3" /> ~{etaMinutes} min
+            </span>
+          </div>
         </div>
 
-        {/* Interactive OpenStreetMap (100% Free) */}
+        {/* Interactive OpenStreetMap (100% Free + Redis Cached OSRM Route) */}
         <div className="p-4 space-y-3">
           <div className="w-full h-72 sm:h-80 rounded-2xl overflow-hidden border border-gray-200 dark:border-slate-700 shadow-inner relative z-0">
             <FreeOsmMap
               center={estimatedRiderCoords}
               zoom={15}
               markers={mapMarkers}
-              routePaths={[originCoords, estimatedRiderCoords, destCoords]}
+              routePaths={routePathsToRender}
               className="w-full h-full"
             />
 
@@ -150,7 +220,7 @@ export const LiveTrackingModal: React.FC<LiveTrackingModalProps> = ({
               </span>
               <span>·</span>
               <span className="inline-flex items-center gap-1 text-emerald-400">
-                <MapPin className="w-3 h-3" /> Entrega
+                <MapPin className="w-3 h-3" /> Entrega ({remainingDistKm} km)
               </span>
             </div>
           </div>
@@ -167,6 +237,11 @@ export const LiveTrackingModal: React.FC<LiveTrackingModalProps> = ({
               <span className="block text-[11px] text-gray-600 dark:text-gray-300 truncate max-w-xs">
                 📍 {order.deliveryAddress}
               </span>
+              {lastGpsPingAt && (
+                <span className="block text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold mt-0.5">
+                  ● Señal GPS actualizada a las {new Date(lastGpsPingAt).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-2">

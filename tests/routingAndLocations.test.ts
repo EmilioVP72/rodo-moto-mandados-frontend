@@ -6,6 +6,7 @@ import {
   calculateDynamicDeliveryFee,
   estimateMotoDeliveryTime,
   computeOrderRoute,
+  extractOsrmRoutePoints,
 } from '../src/services/routing.ts';
 import {
   ALL_SAN_MIGUEL_COLONIAS,
@@ -116,6 +117,37 @@ describe('Frontend Routing, Tariffs & San Miguel de Allende Geolocation Unit Tes
       assert.equal(parsed.streetNumber, '#38');
       assert.equal(parsed.neighborhood, 'Centro');
       assert.ok(parsed.formattedAddress.includes('Calle Mesones, #38'));
+    });
+  });
+
+  describe('5. extractOsrmRoutePoints (Conversión de Geometría GeoJSON OSRM a Polilínea Leaflet)', () => {
+    it('devuelve arreglo vacío si la respuesta OSRM es inválida o no tiene coordenadas', () => {
+      assert.deepEqual(extractOsrmRoutePoints(null), []);
+      assert.deepEqual(extractOsrmRoutePoints({ routes: [] }), []);
+      assert.deepEqual(extractOsrmRoutePoints({ routes: [{ geometry: { coordinates: [[-100.74, 20.91]] } }] }), []);
+    });
+
+    it('invierte correctamente pares GeoJSON [lng, lat] al formato Leaflet { lat, lng }', () => {
+      const sampleOsrmPayload = {
+        code: 'Ok',
+        routes: [
+          {
+            geometry: {
+              type: 'LineString',
+              coordinates: [
+                [-100.7437, 20.9144],
+                [-100.7412, 20.9165],
+                [-100.7380, 20.9205],
+              ],
+            },
+          },
+        ],
+      };
+
+      const points = extractOsrmRoutePoints(sampleOsrmPayload);
+      assert.equal(points.length, 3);
+      assert.deepEqual(points[0], { lat: 20.9144, lng: -100.7437 });
+      assert.deepEqual(points[2], { lat: 20.9205, lng: -100.7380 });
     });
   });
 });
