@@ -1,4 +1,4 @@
-﻿import { apiFetch } from '../api/httpClient';
+import { apiFetch, ApiHttpError } from '../api/httpClient';
 import { onSocketEvent } from '../api/socketClient';
 import {
   Restaurant,
@@ -21,13 +21,6 @@ import {
   getBroadcastsFromIDB,
 } from './indexedDb';
 
-const RESTAURANTS_COL = 'restaurants';
-const ORDERS_COL = 'orders';
-const SETTINGS_COL = 'settings';
-const PARTNER_LOCALS_COL = 'partner_locals';
-const ADMIN_AUDIT_LOGS_COL = 'admin_audit_logs';
-const BROADCAST_NOTIFS_COL = 'broadcast_notifications';
-const ACCOUNT_RECOVERY_COL = 'account_recovery_requests';
 const LOCAL_STORAGE_ORDERS = 'rodo_local_orders';
 const LOCAL_STORAGE_PARTNER_LOCALS = 'rodo_partner_locals';
 const LOCAL_STORAGE_BROADCASTS = 'rodo_broadcast_notifications';
@@ -343,7 +336,17 @@ export async function createOrderInDb(order: Order): Promise<string> {
       return saved.id;
     }
   } catch (err) {
-    console.warn('[API] Orden guardada localmente (fallback):', err);
+    // Si el servidor rechaza la orden por una regla de negocio (pausa por lluvia, restaurante cerrado, límite de efectivo, cuenta con adeudo o SPEI duplicado), revertir el alta local y propagar el error al cliente:
+    if (err instanceof ApiHttpError && [400, 403, 409, 422, 503].includes(err.status)) {
+      try {
+        const filtered = getLocalStoredOrders().filter((o) => o.id !== order.id);
+        localStorage.setItem(LOCAL_STORAGE_ORDERS, JSON.stringify(filtered));
+        syncOrdersToIDB(filtered);
+        notifyOrderSubscribers();
+      } catch {}
+      throw err;
+    }
+    console.warn('[API] Orden guardada localmente (fallback offline):', err);
   }
   return order.id;
 }
@@ -485,7 +488,22 @@ export interface BlockedCustomerEntry {
   blockedAt: string;
 }
 
+let hasInitializedBlockedSync = false;
+
+function ensureBlockedCustomersSync(): void {
+  if (hasInitializedBlockedSync || typeof window === 'undefined') return;
+  hasInitializedBlockedSync = true;
+  apiFetch<BlockedCustomerEntry[]>('/api/auth/blocked-customers')
+    .then((remoteList) => {
+      if (Array.isArray(remoteList)) {
+        localStorage.setItem(LOCAL_STORAGE_BLOCKED_CUSTOMERS, JSON.stringify(remoteList));
+      }
+    })
+    .catch(() => {});
+}
+
 export function getBlockedCustomersList(): BlockedCustomerEntry[] {
+  ensureBlockedCustomersSync();
   try {
     return JSON.parse(localStorage.getItem(LOCAL_STORAGE_BLOCKED_CUSTOMERS) || '[]');
   } catch {
@@ -512,19 +530,33 @@ export function isCustomerBlocked(phone: string, email?: string): { blocked: boo
 export function blockCustomerAccount(identifier: string, name: string, reason: string): void {
   const list = getBlockedCustomersList();
   const filtered = list.filter((b) => b.identifier.toLowerCase() !== identifier.toLowerCase());
-  filtered.push({
+  const entry: BlockedCustomerEntry = {
     identifier,
     customerName: name,
     reason: reason || 'Actividad sospechosa o intento de fraude detectado',
     blockedAt: new Date().toISOString(),
-  });
+  };
+  filtered.push(entry);
   localStorage.setItem(LOCAL_STORAGE_BLOCKED_CUSTOMERS, JSON.stringify(filtered));
+
+  apiFetch('/api/auth/blocked-customers', {
+    method: 'POST',
+    body: {
+      identifier,
+      customerName: name,
+      reason: entry.reason,
+    },
+  }).catch(() => {});
 }
 
 export function unblockCustomerAccount(identifier: string): void {
   const list = getBlockedCustomersList();
   const filtered = list.filter((b) => b.identifier.toLowerCase() !== identifier.toLowerCase());
   localStorage.setItem(LOCAL_STORAGE_BLOCKED_CUSTOMERS, JSON.stringify(filtered));
+
+  apiFetch(`/api/auth/blocked-customers/${encodeURIComponent(identifier)}`, {
+    method: 'DELETE',
+  }).catch(() => {});
 }
 
 export {

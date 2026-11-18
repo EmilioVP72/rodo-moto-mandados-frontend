@@ -540,8 +540,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       const completedOrder = await submitOrderWithQueue(orderPayload);
       vibrateOrderComplete();
       onOrderSuccess(completedOrder);
-    } catch {
-      setErrorMsg('Hubo un error al guardar tu orden. Intenta nuevamente.');
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Hubo un error al guardar tu orden. Intenta nuevamente.');
     } finally {
       setIsSubmitting(false);
     }

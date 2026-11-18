@@ -6,6 +6,7 @@
 
 import { Order, OrderItem, AdminAuditLogEntry } from '../types';
 import { createOrderInDb, getOrders, saveAdminAuditLogToFirestore, logAdminMiddlewareAction } from './db';
+import { ApiHttpError } from '../api/httpClient';
 
 const PENDING_QUEUE_KEY = 'rodo_transactional_order_queue';
 const AUDIT_LOGS_KEY = 'rodo_admin_audit_logs';
@@ -123,14 +124,13 @@ export function getAdminAuditLogs(): AdminAuditLogEntry[] {
  * Procesa la creación de un nuevo pedido de forma segura y transaccional
  */
 export async function submitOrderWithQueue(orderData: Omit<Order, 'id' | 'folio' | 'createdAt' | 'updatedAt'>): Promise<Order> {
-  // 1. Recalcular y validar subtotal de seguridad
+  // 1. Recalcular y validar subtotal de seguridad (deliveryFee ya incluye el recargo express si aplica)
   const secureSubtotal = validateAndRecalculateOrderSubtotal(orderData.items);
   const deliveryFee = orderData.deliveryFee || 35;
   const tipAmount = orderData.tipAmount || 0;
-  const deliveryTypeSurcharge = orderData.deliveryTypeSurcharge || 0;
   const promoDiscount = orderData.promoDiscountApplied || 0;
 
-  const secureTotal = Math.max(0, secureSubtotal + deliveryFee + tipAmount + deliveryTypeSurcharge - promoDiscount);
+  const secureTotal = Math.max(0, secureSubtotal + deliveryFee + tipAmount - promoDiscount);
 
   // 2. Generar folio único y timestamp
   const now = new Date().toISOString();
@@ -149,13 +149,16 @@ export async function submitOrderWithQueue(orderData: Omit<Order, 'id' | 'folio'
   // 3. Respaldo local instantáneo en la cola
   saveOrderToPendingQueue(completeOrder);
 
-  // 4. Intentar persistencia en Firestore con reintentos
+  // 4. Intentar persistencia en PostgreSQL Backend
   try {
     await createOrderInDb(completeOrder);
     removeOrderFromPendingQueue(completeOrder.id);
   } catch (error) {
-    console.warn('Persistencia en Firestore encolada para sincronización en segundo plano:', error);
-    // Permanece en la cola local para sincronización background
+    if (error instanceof ApiHttpError && [400, 403, 409, 422, 503].includes(error.status)) {
+      removeOrderFromPendingQueue(completeOrder.id);
+      throw error;
+    }
+    console.warn('Persistencia encolada para sincronización en segundo plano:', error);
   }
 
   // 5. Registrar en bitácora de auditoría
