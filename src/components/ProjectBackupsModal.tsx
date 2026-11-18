@@ -221,23 +221,21 @@ export const ProjectBackupsModal: React.FC<ProjectBackupsModalProps> = ({
 
               <div className="bg-gray-50 dark:bg-slate-800/60 p-3 rounded-xl space-y-1">
                 <span className="font-bold text-gray-900 dark:text-white block">
-                  ☁️ 2. Base de Datos Firebase Firestore & Nube
+                  🗄️ 2. Base de Datos PostgreSQL 16 + Redis 7 + Fastify API (Docker)
                 </span>
                 <p>
-                  • El proyecto se conecta a Firebase con el ID <code>ai-studio-rodomotomandados-9d732aaa-347c-451e-b467-e13704bd2b12</code>.
+                  • El proyecto opera de manera 100% autónoma en contenedores Docker (<code>rodo-db</code>, <code>rodo-redis</code>, <code>rodo-api</code> y <code>rodo-web</code>).
                   <br />
-                  • <b>Persistencia Local de Respaldo:</b> La aplicación incluye almacenamiento local automático en el navegador (<code>localStorage</code>) para funcionar incluso si se corta la conexión a la base de datos en la nube.
-                  <br />
-                  • Las reglas de seguridad de Firestore (<code>firestore.rules</code>) y el esquema (<code>firebase-blueprint.json</code>) están incluidos en la raíz del ZIP.
+                  • <b>Persistencia Offline de Respaldo:</b> La aplicación incluye almacenamiento local automático en IndexedDB para mantener continuidad ante cortes de señal celular.
                 </p>
               </div>
 
               <div className="bg-gray-50 dark:bg-slate-800/60 p-3 rounded-xl space-y-1">
                 <span className="font-bold text-gray-900 dark:text-white block">
-                  🗺️ 3. Google Maps Platform
+                  🗺️ 3. Mapas y Ruteo OpenStreetMap + OSRM con Caché Redis
                 </span>
                 <p>
-                  El proyecto incluye la integración del mapa interactivo de San Miguel de Allende. La clave de demostración y producción se encuentra configurada en el código fuente.
+                  El proyecto incluye geocodificación y trazado de rutas en moto de San Miguel de Allende aceleradas por Redis en el servidor ($0 costo de API).
                 </p>
               </div>
 

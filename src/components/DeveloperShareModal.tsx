@@ -50,30 +50,16 @@ export const DeveloperShareModal: React.FC<DeveloperShareModalProps> = ({
     document.body.removeChild(a);
   };
 
-  const whatsappMessageForDev = `👋 *¡Hola! Te comparto el proyecto completo de RODO Moto Mandados listo para trabajar y subir a la red.*
+  const whatsappMessageForDev = `👋 *¡Hola! Te comparto el proyecto completo de RODO Moto Mandados listo para trabajar y desplegar en VPS.*
 
 🚀 *Proyecto:* RODO Moto Mandados · San Miguel de Allende, GTO
-📦 *Stack:* React 19 + TypeScript + Vite + Tailwind CSS + Firebase Firestore
-🌐 *Enlace de Vista Previa Pública (Sin login de Google):*
+📦 *Stack:* React 19 + TypeScript + Vite + Node.js Fastify + PostgreSQL 16 + Redis 7 + Socket.IO + Docker
+🌐 *Enlace de Vista Previa Pública:*
 ${publicOrigin}
 
-💾 *Descargas directas de los 2 archivos ZIP:*
-1️⃣ *Respaldo Código Fuente:* ${urlZip1}
-2️⃣ *Copia Completa Independiente:* ${urlZip2}
-
-*(Tip: Si tu conexión bloquea la descarga por link, pídele al administrador que te pase el archivo .zip descargado directamente como archivo adjunto por este chat).*
-
-⚙️ *Comandos para levantar en tu computadora:*
-1) Descomprimir el archivo ZIP
-2) \`npm install\`
-3) \`npm run dev\` (Servidor listo en http://localhost:3000)
-
-🌐 *Para compilar y subir a la red:*
-- \`npm run build\` (Crea la carpeta dist/ lista para Vercel, Netlify, Firebase Hosting, cPanel o VPS con tu propio dominio)
-
-🔐 *Credenciales de Administrador:*
-- Correo Admin: edsoncruz14999@gmail.com
-- Código Maestro de Autorización: 1999`;
+⚙️ *Comandos para levantar con Docker Compose:*
+1) Clonar repositorios (frontend y backend)
+2) \`docker compose up -d --build\` (Levanta PostgreSQL, Redis, Fastify API y Nginx Web)`;
 
   const shareViaWhatsApp = () => {
     window.open(`https://wa.me/?text=${encodeURIComponent(whatsappMessageForDev)}`, '_blank');
@@ -318,13 +304,13 @@ npm run build`;
 
               <div className="p-3 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 space-y-1">
                 <strong className="text-xs font-black text-gray-900 dark:text-white block">
-                  2. Firebase Hosting
+                  2. Docker Compose en VPS Hostinger
                 </strong>
                 <p className="text-[11px] text-gray-500">
-                  Se integra directo con el Firestore del proyecto con el comando <code className="text-red-500 font-bold">firebase deploy</code>.
+                  Despliega PostgreSQL 16, Redis 7, Fastify API y Nginx con el comando <code className="text-red-500 font-bold">docker compose up -d --build</code>.
                 </p>
                 <span className="text-[10px] text-blue-600 font-bold block pt-1">
-                  ✓ CDN ultra rápida de Google
+                  ✓ 100% Independiente y Escalable
                 </span>
               </div>
 
