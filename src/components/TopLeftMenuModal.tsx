@@ -32,6 +32,7 @@ interface TopLeftMenuModalProps {
   currentUser: { id: string; name: string; phone: string; email: string } | null;
   isAdminLoggedIn: boolean;
   onOpenAuth: () => void;
+  onOpenProfile?: () => void;
   onOpenAdmin: () => void;
   onLogout: () => void;
   onOpenInvestorDossier: () => void;
@@ -52,6 +53,7 @@ export const TopLeftMenuModal: React.FC<TopLeftMenuModalProps> = ({
   currentUser,
   isAdminLoggedIn,
   onOpenAuth,
+  onOpenProfile,
   onOpenAdmin,
   onLogout,
   onOpenInvestorDossier,
@@ -550,6 +552,20 @@ export const TopLeftMenuModal: React.FC<TopLeftMenuModalProps> = ({
                       <p><b>Teléfono:</b> {currentUser.phone || 'No registrado'}</p>
                     </div>
                   </div>
+
+                  {onOpenProfile && !isAdminLoggedIn && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleClose();
+                        onOpenProfile();
+                      }}
+                      className="w-full bg-[#101b29] hover:bg-black text-white font-black text-xs py-3 rounded-xl shadow-xs transition flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <User className="w-4 h-4 text-emerald-400" />
+                      <span>Abrir Mi Perfil, Direcciones y Sesiones</span>
+                    </button>
+                  )}
 
                   {isAdminLoggedIn && (
                     <div className="bg-gray-900 text-white p-4 rounded-2xl space-y-2">

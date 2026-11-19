@@ -51,8 +51,17 @@ export const INITIAL_INE_ACCOUNTS: CustomerAccount[] = [
 
 let hasInitializedAccountsSync = false;
 
+function isCurrentSessionAdmin(): boolean {
+  try {
+    return typeof window !== 'undefined' && localStorage.getItem('rodo_admin_session') === 'true';
+  } catch {
+    return false;
+  }
+}
+
 function ensureIneAccountsBackendSync(): void {
   if (hasInitializedAccountsSync || typeof window === 'undefined') return;
+  if (!isCurrentSessionAdmin()) return;
   hasInitializedAccountsSync = true;
 
   apiFetch<CustomerAccount[]>('/api/auth/accounts')
@@ -96,7 +105,7 @@ export function getStoredIneAccounts(): CustomerAccount[] {
 }
 
 /**
- * Guarda o actualiza una cuenta con su INE de 10 dígitos en PostgreSQL y caché local
+ * Guarda o actualiza una cuenta con su INE de 10 dígitos en caché local (y en PostgreSQL si es Admin)
  */
 export function saveIneAccount(account: CustomerAccount): void {
   ensureIneAccountsBackendSync();
@@ -115,10 +124,12 @@ export function saveIneAccount(account: CustomerAccount): void {
     console.warn('Error saving INE account', e);
   }
 
-  apiFetch<CustomerAccount>('/api/auth/accounts', {
-    method: 'POST',
-    body: account,
-  }).catch(() => {});
+  if (isCurrentSessionAdmin()) {
+    apiFetch<CustomerAccount>('/api/auth/accounts', {
+      method: 'POST',
+      body: account,
+    }).catch(() => {});
+  }
 }
 
 /**

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Search, MapPin, Bell, Menu, Share2, Moon, Sun, Code2, Globe, X, Store, Tag, Utensils } from 'lucide-react';
+import { Search, MapPin, Bell, Menu, Share2, Moon, Sun, Code2, Globe, X, Store, Tag, Utensils, User, ShieldCheck } from 'lucide-react';
 import { HolidayThemeId, Restaurant } from '../types';
 import { getHolidayTheme } from '../utils/themeManager';
 import { useLanguage } from '../utils/i18n';
@@ -11,6 +11,8 @@ interface CustomerHeaderProps {
   onSearchChange: (query: string) => void;
   onOpenMenu: () => void;
   userName?: string;
+  isAdminLoggedIn?: boolean;
+  onOpenAccount?: () => void;
   onOpenLocationModal?: () => void;
   currentAddressLabel?: string;
   onShareApp?: () => void;
@@ -42,6 +44,8 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
   onSearchChange,
   onOpenMenu,
   userName,
+  isAdminLoggedIn = false,
+  onOpenAccount,
   onOpenLocationModal,
   currentAddressLabel,
   onShareApp,
@@ -168,7 +172,7 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
           className="bg-white/15 dark:bg-white/10 hover:bg-white/25 active:scale-95 text-white px-3 py-2 rounded-2xl transition flex items-center gap-2 text-xs font-black border border-white/20 shadow-xs cursor-pointer"
         >
           <Menu className="w-5 h-5 text-white" />
-          <span className="hidden xs:inline">{userName ? userName.split(' ')[0] : t('menu')}</span>
+          <span className="inline">{t('menu')}</span>
         </button>
 
         {/* Marca RODO con el Logotipo Oficial */}
@@ -188,8 +192,54 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
           </div>
         </div>
 
-        {/* Acciones superiores: Selector de Idioma ES/EN, Modo Obscuro, Compartir y Notificaciones */}
+        {/* Acciones superiores: Cuenta/Sesión, Idioma ES/EN, Modo Obscuro, Compartir y Notificaciones */}
         <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Pill de Estado de Sesión / Cuenta */}
+          {onOpenAccount && (
+            <button
+              type="button"
+              onClick={onOpenAccount}
+              aria-label={
+                isAdminLoggedIn
+                  ? 'Abrir Panel de Administrador'
+                  : userName
+                  ? `Abrir perfil de ${userName}`
+                  : 'Iniciar sesión o registrarse'
+              }
+              title={
+                isAdminLoggedIn
+                  ? 'Sesión de Administrador Activa'
+                  : userName
+                  ? `Sesión iniciada como ${userName} · Toca para ver tu perfil`
+                  : 'Iniciar sesión o crear tu cuenta'
+              }
+              className={`px-2.5 sm:px-3 py-2 rounded-2xl transition border active:scale-95 cursor-pointer flex items-center gap-1.5 text-xs font-black shadow-xs ${
+                isAdminLoggedIn
+                  ? 'bg-amber-400 hover:bg-amber-300 text-black border-amber-200'
+                  : userName
+                  ? 'bg-emerald-600/95 hover:bg-emerald-500 text-white border-emerald-300/60'
+                  : 'bg-white text-[#101b29] hover:bg-gray-100 border-white/80'
+              }`}
+            >
+              {isAdminLoggedIn ? (
+                <>
+                  <ShieldCheck className="w-4 h-4 shrink-0" />
+                  <span className="max-w-[75px] truncate">Admin</span>
+                </>
+              ) : userName ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-emerald-200 animate-pulse shrink-0" />
+                  <span className="max-w-[90px] truncate">{userName.split(' ')[0]}</span>
+                </>
+              ) : (
+                <>
+                  <User className="w-4 h-4 shrink-0 text-[#ed0718]" />
+                  <span>{lang === 'en' ? 'Sign In' : 'Entrar'}</span>
+                </>
+              )}
+            </button>
+          )}
+
           {/* Selector de Idioma Español / Inglés */}
           <button
             type="button"

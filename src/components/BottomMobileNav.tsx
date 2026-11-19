@@ -11,6 +11,8 @@ interface BottomMobileNavProps {
   onOpenExpress: () => void;
   onOpenAccount: () => void;
   canGoBack?: boolean;
+  userName?: string;
+  isAdminLoggedIn?: boolean;
 }
 
 export const BottomMobileNav: React.FC<BottomMobileNavProps> = ({
@@ -22,6 +24,8 @@ export const BottomMobileNav: React.FC<BottomMobileNavProps> = ({
   onOpenExpress,
   onOpenAccount,
   canGoBack = true,
+  userName,
+  isAdminLoggedIn = false,
 }) => {
   return (
     <nav
@@ -143,18 +147,41 @@ export const BottomMobileNav: React.FC<BottomMobileNavProps> = ({
           </span>
         </button>
 
-        {/* Botón Mi Cuenta / INE / Referidos */}
+        {/* Botón Mi Cuenta / Perfil / Sesión Activa */}
         <button
           type="button"
           onClick={onOpenAccount}
-          title="Mi cuenta, verificación de INE y cupones"
-          className="flex-1 flex flex-col items-center justify-center py-1 px-1 rounded-xl text-gray-700 dark:text-gray-300 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-slate-800 active:scale-95 transition cursor-pointer"
+          title={
+            isAdminLoggedIn
+              ? 'Abrir Panel de Administrador'
+              : userName
+              ? `Mi Perfil (${userName})`
+              : 'Iniciar sesión o crear cuenta'
+          }
+          className="flex-1 flex flex-col items-center justify-center py-1 px-1 rounded-xl text-gray-700 dark:text-gray-300 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-slate-800 active:scale-95 transition relative cursor-pointer"
         >
-          <div className="w-8 h-8 rounded-full bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 flex items-center justify-center shadow-2xs border border-amber-200 dark:border-amber-800">
+          <div
+            className={`w-8 h-8 rounded-full flex items-center justify-center shadow-2xs border relative ${
+              isAdminLoggedIn
+                ? 'bg-amber-400 text-black border-amber-500'
+                : userName
+                ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-400'
+                : 'bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+            }`}
+          >
             <User className="w-4 h-4" />
+            {(userName || isAdminLoggedIn) && (
+              <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-900" />
+            )}
           </div>
-          <span className="text-[10px] font-bold mt-0.5 tracking-tight text-amber-900 dark:text-amber-300">
-            Mi Cuenta
+          <span
+            className={`text-[10px] font-bold mt-0.5 tracking-tight truncate max-w-[68px] ${
+              userName && !isAdminLoggedIn
+                ? 'text-emerald-700 dark:text-emerald-400 font-black'
+                : 'text-amber-900 dark:text-amber-300'
+            }`}
+          >
+            {isAdminLoggedIn ? 'Admin' : userName ? userName.split(' ')[0] : 'Mi Cuenta'}
           </span>
         </button>
       </div>
