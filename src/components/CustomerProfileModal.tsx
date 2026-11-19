@@ -19,6 +19,8 @@ import {
   Save,
 } from 'lucide-react';
 import { apiFetch } from '../api/httpClient';
+import { SmaColoniaCombobox } from './SmaColoniaCombobox';
+import { isValidSmaColoniaLabel } from '../data/smaColonias';
 
 interface SavedAddress {
   id: string;
@@ -95,7 +97,7 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
   const [newCalle, setNewCalle] = useState('');
   const [newNumero, setNewNumero] = useState('');
   const [newNumeroInterior, setNewNumeroInterior] = useState('');
-  const [newColonia, setNewColonia] = useState('Centro Histórico');
+  const [newColonia, setNewColonia] = useState('');
   const [newRefs, setNewRefs] = useState('');
   const [savingAddr, setSavingAddr] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -162,8 +164,12 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
 
   const handleAddAddress = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCalle.trim() || !newColonia.trim()) {
-      setErrorMsg('Completa al menos la calle y la colonia.');
+    if (!newCalle.trim()) {
+      setErrorMsg('Ingresa el nombre de la calle.');
+      return;
+    }
+    if (!newColonia.trim() || !isValidSmaColoniaLabel(newColonia)) {
+      setErrorMsg('Selecciona una colonia o asentamiento válido de la lista desplegable.');
       return;
     }
     setErrorMsg('');
@@ -195,6 +201,7 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
       setNewCalle('');
       setNewNumero('');
       setNewNumeroInterior('');
+      setNewColonia('');
       setNewRefs('');
       onShowToast('¡Dirección guardada exitosamente en tu perfil!');
     } catch (err: any) {
@@ -434,7 +441,7 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
               </form>
             </>
           ) : activeTab === 'direcciones' ? (
-            <div className="space-y-4">
+            <div className="space-y-4 pb-24">
               {addresses.length === 0 ? (
                 <div className="text-center py-4 bg-gray-50 dark:bg-slate-800/50 rounded-2xl border border-dashed border-gray-300 text-xs text-gray-500">
                   Aún no has guardado direcciones en tu perfil.
@@ -454,7 +461,8 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
                           </strong>
                           <p className="text-gray-600 dark:text-gray-300">
                             Calle {addr.calle} {addr.numero ? `#${addr.numero}` : 'S/N'}
-                            {addr.numeroInterior ? `, Int. ${addr.numeroInterior}` : ''}, Col. {addr.colonia}
+                            {addr.numeroInterior ? `, Int. ${addr.numeroInterior}` : ''},{' '}
+                            {addr.colonia.includes(' - ') ? addr.colonia : `Col. ${addr.colonia}`}
                           </p>
                           {addr.referencias && (
                             <p className="text-[10px] text-gray-500">{addr.referencias}</p>
@@ -537,13 +545,10 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
                         className="border border-emerald-400 dark:border-emerald-600 bg-emerald-50/40 dark:bg-slate-800 rounded-xl p-2 text-xs font-bold outline-none focus:border-[#ed0718]"
                       />
                     </div>
-                    <input
-                      type="text"
-                      required
+                    <SmaColoniaCombobox
                       value={newColonia}
-                      onChange={(e) => setNewColonia(e.target.value)}
-                      placeholder="Colonia *"
-                      className="w-full border border-gray-300 dark:border-slate-600 dark:bg-slate-800 rounded-xl p-2 text-xs font-bold outline-none focus:border-[#ed0718]"
+                      onChange={setNewColonia}
+                      placeholder="Colonia / Asentamiento * (escribe para buscar)"
                     />
                   </>
                 ) : (
@@ -556,13 +561,11 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
                       maxLength={40}
                       className="border border-gray-300 dark:border-slate-600 dark:bg-slate-800 rounded-xl p-2 text-xs font-bold outline-none focus:border-[#ed0718]"
                     />
-                    <input
-                      type="text"
-                      required
+                    <SmaColoniaCombobox
                       value={newColonia}
-                      onChange={(e) => setNewColonia(e.target.value)}
-                      placeholder="Colonia *"
-                      className="col-span-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 rounded-xl p-2 text-xs font-bold outline-none focus:border-[#ed0718]"
+                      onChange={setNewColonia}
+                      placeholder="Colonia * (escribe para buscar)"
+                      className="col-span-2"
                     />
                   </div>
                 )}

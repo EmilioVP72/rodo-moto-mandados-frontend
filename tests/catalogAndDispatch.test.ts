@@ -10,6 +10,11 @@ import {
   buildWhatsAppDispatchMessage,
   generateWhatsAppLink,
 } from '../src/services/whatsappDispatch.ts';
+import {
+  SMA_COLONIAS_CATALOG,
+  filterSmaColonias,
+  isValidSmaColoniaLabel,
+} from '../src/data/smaColonias.ts';
 
 describe('Frontend Catalog Seeds & WhatsApp Dispatch Formatter Unit Tests', () => {
   describe('1. Integridad del Catálogo Semilla de San Miguel de Allende (seeds.ts)', () => {
@@ -163,6 +168,31 @@ describe('Frontend Catalog Seeds & WhatsApp Dispatch Formatter Unit Tests', () =
 
       const waUrl = generateWhatsAppLink('+52 (415) 101-9920', 'Hola RODO');
       assert.equal(waUrl, 'https://wa.me/524151019920?text=Hola%20RODO');
+    });
+  });
+
+  describe('3. Catálogo Oficial de Colonias y Asentamientos de SMA (smaColonias.ts)', () => {
+    it('contiene más de 380 asentamientos únicos con formato exacto "Nombre - Tipo"', () => {
+      assert.ok(SMA_COLONIAS_CATALOG.length > 380);
+      const uniqueLabels = new Set(SMA_COLONIAS_CATALOG.map((c) => c.label));
+      assert.equal(uniqueLabels.size, SMA_COLONIAS_CATALOG.length);
+      assert.ok(isValidSmaColoniaLabel('Los Martínez - Ranchería'));
+      assert.ok(isValidSmaColoniaLabel('Centro - Colonia'));
+      assert.ok(isValidSmaColoniaLabel('Zirándaro - Fraccionamiento'));
+      assert.equal(isValidSmaColoniaLabel('Colonia Inventada con Faltas'), false);
+    });
+
+    it('filtra en tiempo real ignorando acentos y mayúsculas', () => {
+      const martinez = filterSmaColonias('martinez');
+      assert.ok(martinez.some((c) => c.label === 'Los Martínez - Ranchería'));
+
+      const luciernaga = filterSmaColonias('luciernaga');
+      assert.ok(luciernaga.some((c) => c.label === 'La Luciérnaga - Fraccionamiento'));
+
+      const ojoDeAgua = filterSmaColonias('Ojo de Agua');
+      assert.ok(ojoDeAgua.some((c) => c.label === 'Ojo de Agua - Colonia'));
+      assert.ok(ojoDeAgua.some((c) => c.label === 'Ojo de Agua - Ranchería'));
+      assert.ok(ojoDeAgua.some((c) => c.label === 'Ojo de Agua - Rancho'));
     });
   });
 });
