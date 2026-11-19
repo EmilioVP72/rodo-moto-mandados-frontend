@@ -105,18 +105,46 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [errorMsg, setErrorMsg] = useState('');
   const [blockedAccountInfo, setBlockedAccountInfo] = useState<CustomerAccount | null>(null);
 
-  // Limpiar mensajes de error y estados transitorios cada vez que se abre el modal
+  const resetAllFields = () => {
+    setIsRegister(false);
+    setIsRecovery(false);
+    setEmail('');
+    setPassword('');
+    setName('');
+    setPhone('');
+    setIneFile(null);
+    if (inePreview) {
+      try {
+        URL.revokeObjectURL(inePreview);
+      } catch {}
+    }
+    setInePreview(null);
+    setIne10Digits('');
+    setIneScanSuccess(false);
+    setReferralCodeInput('');
+    setRecoveryMode('password_reset');
+    setResetEmail('');
+    setResetStep('request');
+    setResetCode('');
+    setResetNewPassword('');
+    setResetInfoMsg('');
+    setResetPreviewCode('');
+    setRecOldEmail('');
+    setRecNewEmail('');
+    setRecDocDataUrl('');
+    setRecDocName('');
+    setSubmittedRecovery(null);
+    setErrorMsg('');
+    setBlockedAccountInfo(null);
+  };
+
+  // Limpiar completamente los campos al abrir o cerrar el modal para no exponer datos previos
   useEffect(() => {
-    if (isOpen) {
+    if (!isOpen) {
+      resetAllFields();
+    } else {
       setErrorMsg('');
       setBlockedAccountInfo(null);
-      setPassword('');
-      setResetStep('request');
-      setResetCode('');
-      setResetNewPassword('');
-      setResetInfoMsg('');
-      setResetPreviewCode('');
-      setSubmittedRecovery(null);
     }
   }, [isOpen]);
 
@@ -303,6 +331,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           localStorage.setItem('rodo_user_session', JSON.stringify(customerPayload));
         } catch {}
 
+        resetAllFields();
         onCustomerLogin(customerPayload, 'register');
         onClose();
         return;
@@ -371,6 +400,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           localStorage.setItem('rodo_user_session', JSON.stringify(customerPayload));
         } catch {}
 
+        resetAllFields();
         onCustomerLogin(customerPayload, 'register');
         onClose();
         return;
@@ -399,6 +429,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       identifySocketSession(res.token);
 
       if (res.isAdmin) {
+        resetAllFields();
         onAdminLoginSuccess();
         onClose();
         return;
@@ -418,6 +449,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         localStorage.setItem('rodo_user_session', JSON.stringify(customerPayload));
       } catch {}
 
+      resetAllFields();
       onCustomerLogin(customerPayload, 'login');
       onClose();
       return;
@@ -511,6 +543,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       identifySocketSession(res.token);
 
       if (res.isAdmin) {
+        resetAllFields();
         onAdminLoginSuccess();
         onClose();
         return;
@@ -528,6 +561,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         localStorage.setItem('rodo_user_session', JSON.stringify(customerPayload));
       } catch {}
 
+      resetAllFields();
       onCustomerLogin(customerPayload, 'password_reset');
       onClose();
     } catch (err: any) {
