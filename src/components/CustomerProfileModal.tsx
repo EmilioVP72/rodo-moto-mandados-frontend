@@ -24,11 +24,15 @@ interface SavedAddress {
   id: string;
   label: string;
   calle: string;
-  numero: string;
+  numero?: string | null;
+  numeroInterior?: string | null;
   colonia: string;
-  referencias?: string;
+  referencias?: string | null;
   isDefault: boolean;
 }
+
+const ADDRESS_LABEL_OPTIONS = ['Casa', 'Departamento', 'Empresa', 'Otro'] as const;
+type AddressLabelOption = (typeof ADDRESS_LABEL_OPTIONS)[number];
 
 interface ActiveSessionInfo {
   id: string;
@@ -86,9 +90,11 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
   const [copiedRef, setCopiedRef] = useState(false);
 
   // Formulario de nueva dirección
-  const [newLabel, setNewLabel] = useState('Casa');
+  const [newLabelType, setNewLabelType] = useState<AddressLabelOption>('Casa');
+  const [newCustomLabel, setNewCustomLabel] = useState('');
   const [newCalle, setNewCalle] = useState('');
   const [newNumero, setNewNumero] = useState('');
+  const [newNumeroInterior, setNewNumeroInterior] = useState('');
   const [newColonia, setNewColonia] = useState('Centro Histórico');
   const [newRefs, setNewRefs] = useState('');
   const [savingAddr, setSavingAddr] = useState(false);
@@ -156,27 +162,39 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
 
   const handleAddAddress = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCalle.trim() || !newNumero.trim() || !newColonia.trim()) {
-      setErrorMsg('Completa calle, número y colonia.');
+    if (!newCalle.trim() || !newColonia.trim()) {
+      setErrorMsg('Completa al menos la calle y la colonia.');
       return;
     }
     setErrorMsg('');
     setSavingAddr(true);
     try {
+      const resolvedLabel =
+        newLabelType === 'Otro' && newCustomLabel.trim()
+          ? newCustomLabel.trim()
+          : newLabelType;
+
       const created = await apiFetch<SavedAddress>('/api/profile/addresses', {
         method: 'POST',
         body: {
-          label: newLabel.trim() || 'Casa',
+          label: resolvedLabel,
           calle: newCalle.trim(),
-          numero: newNumero.trim(),
+          numero: newNumero.trim() ? newNumero.trim() : null,
+          numeroInterior:
+            newLabelType === 'Departamento' && newNumeroInterior.trim()
+              ? newNumeroInterior.trim()
+              : null,
           colonia: newColonia.trim(),
-          referencias: newRefs.trim() || undefined,
+          referencias: newRefs.trim() || null,
           isDefault: addresses.length === 0,
         },
       });
       setAddresses((prev) => [created, ...prev]);
+      setNewLabelType('Casa');
+      setNewCustomLabel('');
       setNewCalle('');
       setNewNumero('');
+      setNewNumeroInterior('');
       setNewRefs('');
       onShowToast('¡Dirección guardada exitosamente en tu perfil!');
     } catch (err: any) {
@@ -435,7 +453,8 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
                             {addr.label} {addr.isDefault && <span className="text-[10px] text-emerald-600">(Principal)</span>}
                           </strong>
                           <p className="text-gray-600 dark:text-gray-300">
-                            Calle {addr.calle} #{addr.numero}, Col. {addr.colonia}
+                            Calle {addr.calle} {addr.numero ? `#${addr.numero}` : 'S/N'}
+                            {addr.numeroInterior ? `, Int. ${addr.numeroInterior}` : ''}, Col. {addr.colonia}
                           </p>
                           {addr.referencias && (
                             <p className="text-[10px] text-gray-500">{addr.referencias}</p>
@@ -460,13 +479,23 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
                   <Plus className="w-3.5 h-3.5 text-[#ed0718]" /> Agregar Nueva Dirección en SMA
                 </h4>
                 <div className="grid grid-cols-3 gap-2">
-                  <input
-                    type="text"
-                    value={newLabel}
-                    onChange={(e) => setNewLabel(e.target.value)}
-                    placeholder="Etiqueta (Casa)"
-                    className="border border-gray-300 dark:border-slate-600 dark:bg-slate-800 rounded-xl p-2 text-xs font-bold outline-none focus:border-[#ed0718]"
-                  />
+                  <select
+                    aria-label="Tipo de domicilio"
+                    value={newLabelType}
+                    onChange={(e) => {
+                      const val = e.target.value as AddressLabelOption;
+                      setNewLabelType(val);
+                      if (val !== 'Departamento') setNewNumeroInterior('');
+                      if (val !== 'Otro') setNewCustomLabel('');
+                    }}
+                    className="border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-xl p-2 text-xs font-bold outline-none focus:border-[#ed0718] cursor-pointer"
+                  >
+                    {ADDRESS_LABEL_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
                   <input
                     type="text"
                     required
@@ -476,24 +505,68 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
                     className="col-span-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 rounded-xl p-2 text-xs font-bold outline-none focus:border-[#ed0718]"
                   />
                 </div>
-                <div className="grid grid-cols-3 gap-2">
+
+                {newLabelType === 'Otro' && (
                   <input
                     type="text"
-                    required
-                    value={newNumero}
-                    onChange={(e) => setNewNumero(e.target.value)}
-                    placeholder="Núm. *"
-                    className="border border-gray-300 dark:border-slate-600 dark:bg-slate-800 rounded-xl p-2 text-xs font-bold outline-none focus:border-[#ed0718]"
+                    value={newCustomLabel}
+                    onChange={(e) => setNewCustomLabel(e.target.value)}
+                    placeholder="Nombre personalizado (opcional, ej. Oficina, Casa de mamá)"
+                    maxLength={50}
+                    className="w-full border border-gray-300 dark:border-slate-600 dark:bg-slate-800 rounded-xl p-2 text-xs font-semibold outline-none focus:border-[#ed0718]"
                   />
-                  <input
-                    type="text"
-                    required
-                    value={newColonia}
-                    onChange={(e) => setNewColonia(e.target.value)}
-                    placeholder="Colonia *"
-                    className="col-span-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 rounded-xl p-2 text-xs font-bold outline-none focus:border-[#ed0718]"
-                  />
-                </div>
+                )}
+
+                {newLabelType === 'Departamento' ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="text"
+                        value={newNumero}
+                        onChange={(e) => setNewNumero(e.target.value)}
+                        placeholder="Núm. exterior (opcional)"
+                        maxLength={40}
+                        className="border border-gray-300 dark:border-slate-600 dark:bg-slate-800 rounded-xl p-2 text-xs font-bold outline-none focus:border-[#ed0718]"
+                      />
+                      <input
+                        type="text"
+                        value={newNumeroInterior}
+                        onChange={(e) => setNewNumeroInterior(e.target.value)}
+                        placeholder="Núm. interno / Depto."
+                        maxLength={40}
+                        className="border border-emerald-400 dark:border-emerald-600 bg-emerald-50/40 dark:bg-slate-800 rounded-xl p-2 text-xs font-bold outline-none focus:border-[#ed0718]"
+                      />
+                    </div>
+                    <input
+                      type="text"
+                      required
+                      value={newColonia}
+                      onChange={(e) => setNewColonia(e.target.value)}
+                      placeholder="Colonia *"
+                      className="w-full border border-gray-300 dark:border-slate-600 dark:bg-slate-800 rounded-xl p-2 text-xs font-bold outline-none focus:border-[#ed0718]"
+                    />
+                  </>
+                ) : (
+                  <div className="grid grid-cols-3 gap-2">
+                    <input
+                      type="text"
+                      value={newNumero}
+                      onChange={(e) => setNewNumero(e.target.value)}
+                      placeholder="Núm. (opcional)"
+                      maxLength={40}
+                      className="border border-gray-300 dark:border-slate-600 dark:bg-slate-800 rounded-xl p-2 text-xs font-bold outline-none focus:border-[#ed0718]"
+                    />
+                    <input
+                      type="text"
+                      required
+                      value={newColonia}
+                      onChange={(e) => setNewColonia(e.target.value)}
+                      placeholder="Colonia *"
+                      className="col-span-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 rounded-xl p-2 text-xs font-bold outline-none focus:border-[#ed0718]"
+                    />
+                  </div>
+                )}
+
                 <input
                   type="text"
                   value={newRefs}
