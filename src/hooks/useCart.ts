@@ -1,17 +1,20 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { OrderItem } from '../types';
 import { vibrateLight } from '../utils/haptics';
+import {
+  StoredUserCart,
+  loadUserCart,
+  saveUserCart,
+  clearUserCartStorage,
+  clearLegacySharedCart,
+  addItemToCartState,
+  removeItemFromCartState,
+} from '../utils/cartStorage';
 
-const CART_STORAGE_KEY = 'rodo_customer_cart';
-
-export function useCart() {
-  const [cart, setCart] = useState<OrderItem[]>(() => {
-    try {
-      const saved = localStorage.getItem(CART_STORAGE_KEY);
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
+export function useCart(ownerKey: string) {
+  const [cartState, setCartState] = useState<StoredUserCart>(() => {
+    clearLegacySharedCart();
+    return loadUserCart(ownerKey);
   });
 
   const [cartToastState, setCartToastState] = useState<{
@@ -20,24 +23,71 @@ export function useCart() {
   }>({ visible: false, itemName: '' });
 
   const cartToastTimerRef = useRef<number | null>(null);
+  const previousOwnerKeyRef = useRef<string>(ownerKey);
 
+  // Cambiar de carrito de forma 100% aislada cada vez que cambia el usuario autenticado
   useEffect(() => {
-    try {
-      localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
-    } catch {}
-  }, [cart]);
+    const prevOwner = previousOwnerKeyRef.current;
+    if (prevOwner === ownerKey) return;
+    previousOwnerKeyRef.current = ownerKey;
 
-  const handleAddToCart = useCallback((item: OrderItem) => {
-    vibrateLight();
-    setCart((prev) => {
-      const idx = prev.findIndex((i) => i.id === item.id);
-      if (idx >= 0) {
-        return prev.map((it, i) =>
-          i === idx ? { ...it, quantity: it.quantity + 1 } : it
-        );
+    const targetCart = loadUserCart(ownerKey);
+
+    // Si un visitante ('guest') agregó platillos y acaba de iniciar sesión/registrarse,
+    // transferimos su canasta temporal a su cuenta SOLO si su cuenta tenía el carrito vacío,
+    // y borramos inmediatamente la canasta de invitado para evitar fugas entre usuarios.
+    if (prevOwner === 'guest' && ownerKey.startsWith('user_')) {
+      const guestCart = loadUserCart('guest');
+      if (guestCart.items.length > 0 && targetCart.items.length === 0) {
+        saveUserCart(ownerKey, guestCart);
+        clearUserCartStorage('guest');
+        setCartState(guestCart);
+        return;
       }
-      return [...prev, { ...item, quantity: item.quantity ? Math.max(1, item.quantity) : 1 }];
-    });
+      clearUserCartStorage('guest');
+    }
+
+    // Al cerrar sesión (volver a 'guest'), garantizamos canasta completamente vacía
+    if (ownerKey === 'guest') {
+      clearUserCartStorage('guest');
+      setCartState({ items: [], restaurantId: null });
+      return;
+    }
+
+    setCartState(targetCart);
+  }, [ownerKey]);
+
+  // Persistir únicamente en la clave privada del usuario actual
+  useEffect(() => {
+    saveUserCart(ownerKey, cartState);
+  }, [ownerKey, cartState]);
+
+  const setCart = useCallback(
+    (nextItemsOrUpdater: OrderItem[] | ((prev: OrderItem[]) => OrderItem[]), restaurantId?: string | null) => {
+      setCartState((prev) => {
+        const nextItems =
+          typeof nextItemsOrUpdater === 'function'
+            ? nextItemsOrUpdater(prev.items)
+            : nextItemsOrUpdater;
+        const resolvedRestId =
+          nextItems.length === 0
+            ? null
+            : restaurantId !== undefined
+            ? restaurantId
+            : prev.restaurantId;
+        return { items: nextItems, restaurantId: resolvedRestId };
+      });
+    },
+    []
+  );
+
+  const clearCart = useCallback(() => {
+    setCartState({ items: [], restaurantId: null });
+  }, []);
+
+  const handleAddToCart = useCallback((item: OrderItem, restaurantId?: string | null) => {
+    vibrateLight();
+    setCartState((prev) => addItemToCartState(prev, item, restaurantId));
     setCartToastState({ visible: true, itemName: item.name });
     if (cartToastTimerRef.current) {
       window.clearTimeout(cartToastTimerRef.current);
@@ -48,26 +98,14 @@ export function useCart() {
   }, []);
 
   const handleRemoveFromCart = useCallback((itemId: string) => {
-    setCart((prev) => {
-      let idx = prev.findIndex((i) => i.id === itemId);
-      if (idx < 0) {
-        idx = prev.findIndex((i) => i.id.startsWith(`${itemId}-`));
-      }
-      if (idx >= 0) {
-        if (prev[idx].quantity > 1) {
-          return prev.map((it, i) =>
-            i === idx ? { ...it, quantity: it.quantity - 1 } : it
-          );
-        }
-        return prev.filter((_, i) => i !== idx);
-      }
-      return prev;
-    });
+    setCartState((prev) => removeItemFromCartState(prev, itemId));
   }, []);
 
   return {
-    cart,
+    cart: cartState.items,
+    cartRestaurantId: cartState.restaurantId,
     setCart,
+    clearCart,
     cartToastState,
     setCartToastState,
     handleAddToCart,

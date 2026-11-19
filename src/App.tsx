@@ -51,6 +51,7 @@ import {
 import { apiFetch, getAuthToken, logoutSession } from './api/httpClient';
 import { identifySocketSession } from './api/socketClient';
 import { useCart } from './hooks/useCart';
+import { resolveCartOwnerKey, resolveCartRestaurant } from './utils/cartStorage';
 import { useRealtimeSync } from './hooks/useRealtimeSync';
 import {
   Star,
@@ -148,18 +149,42 @@ export default function App() {
   const [showFavoritesOnly, setShowFavoritesOnly] = useState<boolean>(false);
   const [highlightedCatalog, setHighlightedCatalog] = useState<boolean>(false);
 
+  // Usuario autenticado con persistencia en localStorage (se declara antes del carrito para aislamiento por usuario)
+  const [currentUser, setCurrentUser] = useState<{
+    id: string;
+    name: string;
+    phone: string;
+    email: string;
+    ine10Digits?: string;
+    referralCode?: string;
+  } | null>(() => {
+    try {
+      const saved = localStorage.getItem('rodo_user_session');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(() => {
+    return localStorage.getItem('rodo_admin_session') === 'true';
+  });
+
   // Modales automáticos de Tracking en Vivo, Calificación y Cart Toast
   const [liveTrackingOrder, setLiveTrackingOrder] = useState<Order | null>(null);
   const [ratingModalOrder, setRatingModalOrder] = useState<Order | null>(null);
   const [ordersHistoryFilter, setOrdersHistoryFilter] = useState<'todos' | 'en_camino' | 'entregado' | 'cancelado'>('todos');
+  const cartOwnerKey = resolveCartOwnerKey(currentUser?.id, isAdminLoggedIn);
   const {
     cart,
+    cartRestaurantId,
     setCart,
+    clearCart,
     cartToastState,
     setCartToastState,
     handleAddToCart,
     handleRemoveFromCart,
-  } = useCart();
+  } = useCart(cartOwnerKey);
   useRealtimeSync({ setRestaurants, setSettings });
   const dismissedRatingIdsRef = useRef<Set<string>>(new Set());
   const seenBroadcastIdsRef = useRef<Set<string>>(new Set());
@@ -176,8 +201,12 @@ export default function App() {
     }
   }, [favorites]);
 
-  // Carrito de compras con persistencia
+  // Restaurante actualmente abierto en modal de menú (separado del restaurante dueño del carrito)
   const [selectedRestaurant, setSelectedRestaurant] = useState<Restaurant | null>(null);
+  const cartRestaurant = useMemo(
+    () => resolveCartRestaurant(cartRestaurantId, cart, restaurants) || selectedRestaurant,
+    [cartRestaurantId, cart, restaurants, selectedRestaurant]
+  );
   const [reorderError, setReorderError] = useState<string | null>(null);
   const [showPushNotificationPrompt, setShowPushNotificationPrompt] = useState<boolean>(false);
   const [showCartDrawer, setShowCartDrawer] = useState(false);
@@ -245,26 +274,6 @@ export default function App() {
   const [showCustomOrderModal, setShowCustomOrderModal] = useState(false);
   const [customOrderInitialLocal, setCustomOrderInitialLocal] = useState<string | undefined>(undefined);
 
-  // Usuario autenticado con persistencia en localStorage
-  const [currentUser, setCurrentUser] = useState<{
-    id: string;
-    name: string;
-    phone: string;
-    email: string;
-    ine10Digits?: string;
-    referralCode?: string;
-  } | null>(() => {
-    try {
-      const saved = localStorage.getItem('rodo_user_session');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
-
-  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(() => {
-    return localStorage.getItem('rodo_admin_session') === 'true';
-  });
   const [returnToAdminAfterTicket, setReturnToAdminAfterTicket] = useState<boolean>(false);
 
   useEffect(() => {
@@ -338,14 +347,6 @@ export default function App() {
       localStorage.removeItem('rodo_user_session');
     }
   }, [currentUser]);
-
-  useEffect(() => {
-    if (selectedRestaurant) {
-      localStorage.setItem('rodo_selected_restaurant', JSON.stringify(selectedRestaurant));
-    } else {
-      localStorage.removeItem('rodo_selected_restaurant');
-    }
-  }, [selectedRestaurant]);
 
   useEffect(() => {
     localStorage.setItem('rodo_customer_address', customerDeliveryAddress);
@@ -524,10 +525,18 @@ export default function App() {
   // Abrir checkout: El cliente puede llenar el carrito libremente como visitante,
   // y antes de pagar se le solicita iniciar sesión con su INE.
   const handleProceedToCheckout = () => {
+    if (cart.length === 0) return;
     if (!currentUser || !currentUser.id || currentUser.id.startsWith('guest')) {
+      setShowCartDrawer(false);
       setShowAuthModal(true);
       return;
     }
+    if (!cartRestaurant) {
+      showSuccessToast('Selecciona un establecimiento para continuar con tu pedido.');
+      return;
+    }
+    setShowCartDrawer(false);
+    setSelectedRestaurant(null);
     setShowCheckout(true);
   };
 
@@ -554,6 +563,9 @@ export default function App() {
     setIsAdminLoggedIn(false);
     setCurrentUser(null);
     setOrders([]);
+    setShowCheckout(false);
+    setShowCartDrawer(false);
+    setSelectedRestaurant(null);
     setShowAdminPanel(false);
     setShowProfileModal(false);
     setReturnToAdminAfterTicket(false);
@@ -581,7 +593,7 @@ export default function App() {
     setShowCheckout(false);
     setShowCustomOrderModal(false);
     setSelectedRestaurant(null);
-    setCart([]);
+    clearCart();
 
     dispatchRodoNotification(
       '✓ Pedido Confirmado',
@@ -912,7 +924,6 @@ export default function App() {
             setCustomOrderInitialLocal(rest.name);
             setShowCustomOrderModal(true);
           } else {
-            if (selectedRestaurant?.id !== rest.id) setCart([]);
             setSelectedRestaurant(rest);
           }
         }}
@@ -1218,9 +1229,6 @@ export default function App() {
                             setCustomOrderInitialLocal(restaurant.name);
                             setShowCustomOrderModal(true);
                           } else {
-                            if (selectedRestaurant?.id !== restaurant.id) {
-                              setCart([]);
-                            }
                             setSelectedRestaurant(restaurant);
                           }
                         }}
@@ -1363,9 +1371,6 @@ export default function App() {
                           ) : (
                             <button
                               onClick={() => {
-                                if (selectedRestaurant?.id !== restaurant.id) {
-                                  setCart([]);
-                                }
                                 setSelectedRestaurant(restaurant);
                               }}
                               className={`w-full font-extrabold text-xs py-2.5 px-4 rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 ${
@@ -1498,26 +1503,24 @@ export default function App() {
         isOpen={showCartDrawer}
         onClose={() => setShowCartDrawer(false)}
         cart={cart}
-        restaurant={selectedRestaurant}
-        onAddToCart={handleAddToCart}
+        restaurant={cartRestaurant}
+        onAddToCart={(item) => handleAddToCart(item, cartRestaurant?.id || null)}
         onRemoveFromCart={handleRemoveFromCart}
         onClearCart={() => {
-          setCart([]);
-          setSelectedRestaurant(null);
+          clearCart();
         }}
-        onProceedToCheckout={() => {
-          setShowCartDrawer(false);
-          if (selectedRestaurant && cart.length > 0) {
-            handleProceedToCheckout();
-          }
-        }}
+        onProceedToCheckout={handleProceedToCheckout}
       />
 
       {/* 3. Modal de Menú y Detalle del Restaurante */}
       <RestaurantDetailModal
         restaurant={selectedRestaurant}
-        cart={cart}
-        onAddToCart={handleAddToCart}
+        cart={
+          selectedRestaurant && (!cartRestaurantId || cartRestaurantId === selectedRestaurant.id)
+            ? cart
+            : []
+        }
+        onAddToCart={(item) => handleAddToCart(item, selectedRestaurant?.id || null)}
         onRemoveFromCart={handleRemoveFromCart}
         onProceedToCheckout={handleProceedToCheckout}
         onClose={() => {
@@ -1526,9 +1529,9 @@ export default function App() {
       />
 
       {/* 4. Modal de Checkout con Folio Único, Cupón, Alergias, Geofencing y Validación de Cierre en Vivo */}
-      {showCheckout && selectedRestaurant && (
+      {showCheckout && cartRestaurant && (
         <CheckoutModal
-          restaurant={selectedRestaurant}
+          restaurant={cartRestaurant}
           restaurants={restaurants}
           coveragePolygon={settings.coveragePolygon}
           cart={cart}
@@ -1542,6 +1545,7 @@ export default function App() {
           bancoRodoFallback={settings.bancoRodo}
           rainPauseEnabled={settings.rainPauseEnabled}
           rainPauseMessage={settings.rainPauseMessage}
+          onAddToCart={(item) => handleAddToCart(item, cartRestaurant.id)}
           onOrderSuccess={handleOrderSuccess}
           onRequireLogin={() => setShowAuthModal(true)}
           onClose={() => setShowCheckout(false)}
@@ -1604,7 +1608,7 @@ export default function App() {
         adminPasscode={settings.adminPasscode}
         onCustomerLogin={(cust, mode: AuthSuccessMode = 'login') => {
           setCurrentUser(cust);
-          const hasPendingCart = !!(selectedRestaurant && cart.length > 0);
+          const hasPendingCart = cart.length > 0;
           const firstName = (cust.name || 'Cliente').split(' ')[0];
 
           if (mode === 'register') {
@@ -1789,8 +1793,8 @@ export default function App() {
                             return;
                           }
                           // Cargar productos del ticket previo al carrito y redirigir al checkout
-                          setCart(o.items);
-                          setSelectedRestaurant(rest);
+                          setCart(o.items, rest.id);
+                          setSelectedRestaurant(null);
                           setShowOrdersHistory(false);
                           setShowCheckout(true);
                         }}
