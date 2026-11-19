@@ -45,6 +45,7 @@ interface TicketModalProps {
   settings: DispatchSettings;
   onClose: () => void;
   isAdmin?: boolean;
+  onShowToast?: (msg: string) => void;
 }
 
 export const TicketModal: React.FC<TicketModalProps> = ({
@@ -52,6 +53,7 @@ export const TicketModal: React.FC<TicketModalProps> = ({
   settings,
   onClose,
   isAdmin = false,
+  onShowToast,
 }) => {
   const { t } = useLanguage();
   const [copied, setCopied] = useState(false);
@@ -184,6 +186,7 @@ export const TicketModal: React.FC<TicketModalProps> = ({
       });
       setReceptionConfirmed(true);
       vibrateSuccess();
+      onShowToast?.('¡Recepción confirmada con éxito! Gracias por usar RODO.');
       dispatchIntegrationEvent('order.status_changed', {
         order: { ...order, status: 'entregado', receptionConfirmed: true },
       });
@@ -296,6 +299,7 @@ export const TicketModal: React.FC<TicketModalProps> = ({
       setReceptionConfirmed(true);
       setShowSignaturePanel(false);
       vibrateSuccess();
+      onShowToast?.('¡Comprobante de entrega guardado exitosamente!');
     } catch (err) {
       console.error('Error guardando evidencia de firma/foto:', err);
     } finally {
@@ -324,6 +328,7 @@ export const TicketModal: React.FC<TicketModalProps> = ({
       setReceptionConfirmed(true);
       setRatingSaved(true);
       vibrateSuccess();
+      onShowToast?.('⭐ ¡Gracias! Tu calificación fue registrada con éxito.');
       if (finalRider) setRiderRating(finalRider);
       if (finalFood) setFoodRating(finalFood);
     } catch (err) {

@@ -22,7 +22,9 @@ import { RestaurantDetailModal } from './components/RestaurantDetailModal';
 import { CheckoutModal } from './components/CheckoutModal';
 import { CartDrawerModal } from './components/CartDrawerModal';
 import { TicketModal } from './components/TicketModal';
-import { AuthModal } from './components/AuthModal';
+import { AuthModal, AuthSuccessMode } from './components/AuthModal';
+import { ActionFeedbackModal, SuccessToastBanner, TransactionFeedbackPayload } from './components/ActionFeedbackModal';
+import { CustomerProfileModal } from './components/CustomerProfileModal';
 import { ExpressDeliveryPanel } from './components/ExpressDeliveryPanel';
 import { TopLeftMenuModal } from './components/TopLeftMenuModal';
 import { CustomerMicroLocationModal } from './components/CustomerMicroLocationModal';
@@ -47,6 +49,7 @@ import {
   requestBrowserNotificationPermission,
 } from './services/notifications';
 import { apiFetch, getAuthToken, logoutSession } from './api/httpClient';
+import { identifySocketSession } from './api/socketClient';
 import { useCart } from './hooks/useCart';
 import { useRealtimeSync } from './hooks/useRealtimeSync';
 import {
@@ -184,6 +187,20 @@ export default function App() {
   const [viewingTicketOrder, setViewingTicketOrder] = useState<Order | null>(null);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [transactionFeedback, setTransactionFeedback] = useState<TransactionFeedbackPayload | null>(null);
+  const [successToast, setSuccessToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+
+  const showSuccessToast = (message: string) => {
+    setSuccessToast(message);
+    if (toastTimerRef.current) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+    toastTimerRef.current = window.setTimeout(() => {
+      setSuccessToast(null);
+    }, 3600);
+  };
   const [showOrdersHistory, setShowOrdersHistory] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [showTopLeftMenu, setShowTopLeftMenu] = useState(false);
@@ -234,6 +251,8 @@ export default function App() {
     name: string;
     phone: string;
     email: string;
+    ine10Digits?: string;
+    referralCode?: string;
   } | null>(() => {
     try {
       const saved = localStorage.getItem('rodo_user_session');
@@ -302,6 +321,7 @@ export default function App() {
     setShowPushNotificationPrompt(false);
     const granted = await requestBrowserNotificationPermission();
     if (granted) {
+      showSuccessToast('🔔 ¡Notificaciones en tiempo real activadas!');
       dispatchRodoNotification(
         '🔔 Notificaciones RODO Activadas',
         'Recibirás alertas en tiempo real cuando tu pedido esté en camino y cuando el repartidor llegue a tu domicilio.',
@@ -377,7 +397,18 @@ export default function App() {
 
     const token = getAuthToken();
     if (token) {
-      apiFetch<{ user?: { id: string; name: string; phone: string; email: string; role?: string } }>('/api/auth/me')
+      identifySocketSession(token);
+      apiFetch<{
+        user?: {
+          id: string;
+          name: string;
+          phone: string;
+          email: string;
+          role?: string;
+          ine10Digits?: string;
+          referralCode?: string;
+        };
+      }>('/api/auth/me')
         .then((res) => {
           if (res?.user) {
             if (res.user.role === 'ADMIN') {
@@ -388,6 +419,8 @@ export default function App() {
                 name: res.user.name,
                 phone: res.user.phone || '',
                 email: res.user.email,
+                ine10Digits: res.user.ine10Digits,
+                referralCode: res.user.referralCode,
               });
             }
           }
@@ -498,12 +531,57 @@ export default function App() {
     setShowCheckout(true);
   };
 
+  // Abrir cuenta según el estado de la sesión actual (Admin -> Panel Admin, Cliente -> Mi Perfil, Invitado -> Login/Registro)
+  const handleOpenAccount = () => {
+    if (isAdminLoggedIn) {
+      setShowAdminPanel(true);
+    } else if (currentUser) {
+      setShowProfileModal(true);
+    } else {
+      setShowAuthModal(true);
+    }
+  };
+
+  // Cierre de sesión completo con revocación en PostgreSQL, limpieza de privacidad y alerta de confirmación
+  const handleFullLogout = async (allDevices = false) => {
+    const loggedOutName = currentUser?.name || (isAdminLoggedIn ? 'Administrador' : '');
+    try {
+      await logoutSession(allDevices);
+    } catch (e) {
+      console.error(e);
+    }
+    identifySocketSession(null);
+    setIsAdminLoggedIn(false);
+    setCurrentUser(null);
+    setOrders([]);
+    setShowAdminPanel(false);
+    setShowProfileModal(false);
+    setReturnToAdminAfterTicket(false);
+    localStorage.removeItem('rodo_admin_session');
+    localStorage.removeItem('rodo_user_session');
+
+    setTransactionFeedback({
+      variant: 'logout',
+      title: '¡Sesión Cerrada Correctamente!',
+      subtitle: allDevices
+        ? 'Se cerraron todas tus sesiones activas en todos los dispositivos por seguridad.'
+        : 'Tu sesión se cerró de forma segura y tu historial privado quedó protegido.',
+      details: loggedOutName
+        ? [
+            { label: 'Cuenta', value: loggedOutName },
+            { label: 'Estado', value: 'Sesión revocada y privada', highlight: true },
+          ]
+        : undefined,
+      primaryActionLabel: 'Volver al Inicio',
+    });
+  };
+
   // Pedido completado con éxito
   const handleOrderSuccess = (newOrder: Order) => {
     setShowCheckout(false);
+    setShowCustomOrderModal(false);
     setSelectedRestaurant(null);
     setCart([]);
-    setViewingTicketOrder(newOrder);
 
     dispatchRodoNotification(
       '✓ Pedido Confirmado',
@@ -511,6 +589,25 @@ export default function App() {
       { orderId: newOrder.id, folio: newOrder.folio, type: 'info', playSound: true }
     );
     setUnreadNotifsCount((prev) => prev + 1);
+
+    setTransactionFeedback({
+      variant: 'order',
+      title: '¡Pedido Confirmado!',
+      subtitle: 'Tu pedido fue registrado exitosamente en el sistema y ya fue enviado a despacho en tiempo real.',
+      details: [
+        { label: 'Folio del Pedido', value: newOrder.folio, highlight: true },
+        { label: 'Establecimiento', value: newOrder.restaurantName || 'Servicio RODO' },
+        { label: 'Total', value: `$${Number(newOrder.total || 0).toFixed(2)} MXN` },
+        {
+          label: 'Método de Pago',
+          value: newOrder.paymentMethod === 'transferencia' ? 'Transferencia SPEI' : 'Efectivo al recibir',
+        },
+      ],
+      primaryActionLabel: 'Ver Mi Ticket Digital',
+      onPrimaryAction: () => {
+        setViewingTicketOrder(newOrder);
+      },
+    });
   };
 
   // Toggle favoritos
@@ -623,11 +720,11 @@ export default function App() {
     customerCoords,
   ]);
 
-  // Pedidos del cliente actual y filtro de historial
+  // Pedidos del cliente actual y filtro de historial (aislamiento estricto por usuario)
   const myOrders = useMemo(() => {
-    if (!currentUser) return orders.slice(0, 8);
+    if (!currentUser) return isAdminLoggedIn ? orders : [];
     return orders.filter((o) => o.customerId === currentUser.id);
-  }, [orders, currentUser]);
+  }, [orders, currentUser, isAdminLoggedIn]);
 
   const filteredMyOrders = useMemo(() => {
     if (ordersHistoryFilter === 'todos') return myOrders;
@@ -658,6 +755,7 @@ export default function App() {
     if (showCheckout) { setShowCheckout(false); return; }
     if (viewingTicketOrder) { setViewingTicketOrder(null); return; }
     if (showAdminPanel) { setShowAdminPanel(false); return; }
+    if (showProfileModal) { setShowProfileModal(false); return; }
     if (showAuthModal) { setShowAuthModal(false); return; }
     if (showCoverageModal) { setShowCoverageModal(false); return; }
     if (showOrdersHistory) { setShowOrdersHistory(false); return; }
@@ -681,6 +779,7 @@ export default function App() {
     setShowCheckout(false);
     setViewingTicketOrder(null);
     setShowAdminPanel(false);
+    setShowProfileModal(false);
     setShowAuthModal(false);
     setShowCoverageModal(false);
     setShowBackupsModal(false);
@@ -793,6 +892,8 @@ export default function App() {
         onSearchChange={setSearchQuery}
         onOpenMenu={() => setShowTopLeftMenu(true)}
         userName={currentUser?.name}
+        isAdminLoggedIn={isAdminLoggedIn}
+        onOpenAccount={handleOpenAccount}
         onOpenLocationModal={() => setShowMicroLocationModal(true)}
         currentAddressLabel={customerDeliveryAddress}
         onShareApp={() => setShowShareModal(true)}
@@ -1459,6 +1560,7 @@ export default function App() {
           }
         }}
         isAdmin={isAdminLoggedIn}
+        onShowToast={showSuccessToast}
       />
 
       {/* 6. Panel de Administración y Despacho del Propietario (Requiere Sesión Activa de Administrador) */}
@@ -1489,16 +1591,7 @@ export default function App() {
             isDarkMode={isDarkMode}
             onToggleDarkMode={handleToggleTheme}
             onLogoutAdmin={async () => {
-              setIsAdminLoggedIn(false);
-              setCurrentUser(null);
-              setShowAdminPanel(false);
-              setReturnToAdminAfterTicket(false);
-              localStorage.removeItem('rodo_admin_session');
-              try {
-                await logoutSession();
-              } catch (e) {
-                console.error(e);
-              }
+              await handleFullLogout(false);
             }}
           />
         </React.Suspense>
@@ -1509,16 +1602,78 @@ export default function App() {
         isOpen={showAuthModal}
         onClose={() => setShowAuthModal(false)}
         adminPasscode={settings.adminPasscode}
-        onCustomerLogin={(cust) => {
+        onCustomerLogin={(cust, mode: AuthSuccessMode = 'login') => {
           setCurrentUser(cust);
-          if (selectedRestaurant && cart.length > 0) {
-            setShowCheckout(true);
+          const hasPendingCart = !!(selectedRestaurant && cart.length > 0);
+          const firstName = (cust.name || 'Cliente').split(' ')[0];
+
+          if (mode === 'register') {
+            setTransactionFeedback({
+              variant: 'register',
+              title: '¡Registro Completado!',
+              subtitle: `¡Bienvenido a RODO Moto Mandados, ${firstName}! Tu cuenta verificada ya está lista para pedir comida, mandados y envíos.`,
+              details: [
+                { label: 'Titular', value: cust.name },
+                { label: 'Correo', value: cust.email },
+                {
+                  label: 'Identidad INE',
+                  value: cust.ine10Digits ? `Verificada (****${cust.ine10Digits.slice(-4)})` : 'Verificada',
+                  highlight: true,
+                },
+                { label: 'Privacidad', value: 'Historial y perfil 100% privados' },
+              ],
+              copyableCode: cust.referralCode
+                ? {
+                    label: '🎁 Tu Código de Referido ($35 MXN de descuento)',
+                    value: cust.referralCode,
+                  }
+                : undefined,
+              primaryActionLabel: hasPendingCart ? 'Continuar con mi Pedido' : '¡Empezar a Explorar!',
+              onPrimaryAction: hasPendingCart ? () => setShowCheckout(true) : undefined,
+            });
+          } else if (mode === 'password_reset') {
+            setTransactionFeedback({
+              variant: 'password_reset',
+              title: '¡Contraseña Restablecida!',
+              subtitle: `Tu contraseña ha sido actualizada correctamente, ${firstName}. Iniciamos tu nueva sesión de forma segura.`,
+              details: [
+                { label: 'Cuenta', value: cust.email },
+                { label: 'Seguridad', value: 'Sesiones anteriores cerradas', highlight: true },
+              ],
+              primaryActionLabel: hasPendingCart ? 'Continuar con mi Pedido' : 'Ir a Explorar RODO',
+              onPrimaryAction: hasPendingCart ? () => setShowCheckout(true) : undefined,
+            });
+          } else {
+            setTransactionFeedback({
+              variant: 'login',
+              title: `¡Bienvenido de vuelta, ${firstName}!`,
+              subtitle: 'Has iniciado sesión correctamente. Ahora puedes ver tu perfil, direcciones y pedidos privados.',
+              details: [
+                { label: 'Usuario', value: cust.name },
+                { label: 'Correo', value: cust.email },
+                { label: 'Sesión', value: 'Activa y cifrada (JWT)', highlight: true },
+              ],
+              primaryActionLabel: hasPendingCart ? 'Continuar con mi Pedido' : 'Continuar en RODO',
+              onPrimaryAction: hasPendingCart ? () => setShowCheckout(true) : undefined,
+            });
           }
         }}
         onAdminLoginSuccess={() => {
           setIsAdminLoggedIn(true);
           setShowAdminPanel(true);
+          showSuccessToast('🛡️ ¡Acceso Administrativo concedido! Bienvenido al Panel RODO.');
         }}
+      />
+
+      {/* 7.5 Modal de Perfil Privado del Cliente (Datos, Direcciones, Referidos y Sesiones) */}
+      <CustomerProfileModal
+        isOpen={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+        currentUser={currentUser}
+        onUserUpdated={(updated) => setCurrentUser(updated)}
+        onOpenMyOrders={() => setShowOrdersHistory(true)}
+        onLogout={handleFullLogout}
+        onShowToast={showSuccessToast}
       />
 
       {/* 8. Modal de Historial de Pedidos con Filtros de Estado y Rastreo en Vivo */}
@@ -1685,6 +1840,7 @@ export default function App() {
         currentUser={currentUser}
         isAdminLoggedIn={isAdminLoggedIn}
         onOpenAuth={() => setShowAuthModal(true)}
+        onOpenProfile={() => setShowProfileModal(true)}
         onOpenAdmin={() => {
           if (isAdminLoggedIn) {
             setShowAdminPanel(true);
@@ -1703,9 +1859,7 @@ export default function App() {
         onOpenDeveloperModal={() => setShowDeveloperModal(true)}
         onOpenTutorial={() => setShowTutorial(true)}
         onLogout={async () => {
-          await logoutSession();
-          setIsAdminLoggedIn(false);
-          setCurrentUser(null);
+          await handleFullLogout(false);
         }}
       />
 
@@ -1838,6 +1992,7 @@ export default function App() {
           setCustomerDeliveryAddress(addr);
           setCustomerCoords(coords);
           setShowMicroLocationModal(false);
+          showSuccessToast('📍 ¡Ubicación de entrega actualizada correctamente!');
         }}
       />
 
@@ -1860,10 +2015,7 @@ export default function App() {
         onRequireLogin={() => setShowAuthModal(true)}
         rainPauseEnabled={!!settings.rainPauseEnabled}
         rainPauseMessage={settings.rainPauseMessage}
-        onOrderSuccess={(order) => {
-          setShowCustomOrderModal(false);
-          setViewingTicketOrder(order);
-        }}
+        onOrderSuccess={handleOrderSuccess}
       />
 
       {/* Modales cargados perezosamente con React.Suspense */}
@@ -1956,7 +2108,20 @@ export default function App() {
         }}
         onSubmitted={(orderId) => {
           dismissedRatingIdsRef.current.add(orderId);
+          showSuccessToast('⭐ ¡Gracias! Tu calificación fue registrada exitosamente.');
         }}
+      />
+
+      {/* Modal Celebratorio de Confirmación de Transacciones (Registro, Login, Contraseña, Pedido, Logout) */}
+      <ActionFeedbackModal
+        feedback={transactionFeedback}
+        onClose={() => setTransactionFeedback(null)}
+      />
+
+      {/* Toast Superior Animado de Confirmaciones Exitosas */}
+      <SuccessToastBanner
+        message={successToast}
+        onDismiss={() => setSuccessToast(null)}
       />
 
       {/* 20. Barra de Navegación Inferior Móvil (Tecladito Inferior: Atrás, Inicio, Envíos, Carrito, Mi Cuenta) */}
@@ -1970,7 +2135,9 @@ export default function App() {
           setActiveSection('envios');
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
-        onOpenAccount={() => setShowAuthModal(true)}
+        onOpenAccount={handleOpenAccount}
+        userName={currentUser?.name}
+        isAdminLoggedIn={isAdminLoggedIn}
       />
     </div>
   );

@@ -1,4 +1,4 @@
-﻿import type { Restaurant, DispatchSettings, PartnerLocal, SpecialtyCategory } from '../types';
+import type { Restaurant, DispatchSettings, PartnerLocal, SpecialtyCategory } from '../types';
 
 export const DEFAULT_PARTNER_LOCALS: PartnerLocal[] = [
   {

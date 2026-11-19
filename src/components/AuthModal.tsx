@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   apiFetch,
   setAuthSessionTokens,
@@ -39,16 +39,22 @@ import {
   findApprovedRecoveryForEmailAsync,
 } from '../services/db';
 
+export type AuthSuccessMode = 'login' | 'register' | 'password_reset';
+
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCustomerLogin: (customer: {
-    id: string;
-    name: string;
-    phone: string;
-    email: string;
-    ine10Digits?: string;
-  }) => void;
+  onCustomerLogin: (
+    customer: {
+      id: string;
+      name: string;
+      phone: string;
+      email: string;
+      ine10Digits?: string;
+      referralCode?: string;
+    },
+    mode?: AuthSuccessMode
+  ) => void;
   onAdminLoginSuccess: () => void;
   adminPasscode: string;
 }
@@ -98,6 +104,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [blockedAccountInfo, setBlockedAccountInfo] = useState<CustomerAccount | null>(null);
+
+  // Limpiar mensajes de error y estados transitorios cada vez que se abre el modal
+  useEffect(() => {
+    if (isOpen) {
+      setErrorMsg('');
+      setBlockedAccountInfo(null);
+      setPassword('');
+      setResetStep('request');
+      setResetCode('');
+      setResetNewPassword('');
+      setResetInfoMsg('');
+      setResetPreviewCode('');
+      setSubmittedRecovery(null);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -282,7 +303,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           localStorage.setItem('rodo_user_session', JSON.stringify(customerPayload));
         } catch {}
 
-        onCustomerLogin(customerPayload);
+        onCustomerLogin(customerPayload, 'register');
         onClose();
         return;
       } catch (err: any) {
@@ -350,7 +371,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           localStorage.setItem('rodo_user_session', JSON.stringify(customerPayload));
         } catch {}
 
-        onCustomerLogin(customerPayload);
+        onCustomerLogin(customerPayload, 'register');
         onClose();
         return;
       } finally {
@@ -397,7 +418,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         localStorage.setItem('rodo_user_session', JSON.stringify(customerPayload));
       } catch {}
 
-      onCustomerLogin(customerPayload);
+      onCustomerLogin(customerPayload, 'login');
       onClose();
       return;
     } catch (err: any) {
@@ -409,70 +430,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         setIsLoading(false);
         return;
       }
+      setErrorMsg(
+        'No se pudo conectar con el servidor de autenticación RODO. Verifica tu conexión e inténtalo nuevamente.'
+      );
+      setIsLoading(false);
+      return;
     } finally {
       setIsLoading(false);
     }
-
-    // Fallback offline (cuando no hay conexión con el servidor)
-    const accounts = getStoredIneAccounts();
-    let existing = accounts.find(
-      (a) => a.email.toLowerCase() === cleanEmail || (phone.trim() && a.phone === phone.trim())
-    );
-
-    if (!existing) {
-      const approvedRec = findApprovedRecoveryForEmail(cleanEmail);
-      if (approvedRec) {
-        const migratedAccount: CustomerAccount = {
-          id: 'cust-' + (approvedRec.phone.replace(/[^0-9]/g, '') || Date.now().toString()),
-          name: approvedRec.customerName,
-          phone: approvedRec.phone,
-          email: cleanEmail,
-          ineVerified: true,
-          ineDigits: approvedRec.ine10Digits || '0000000000',
-          ine10Digits: approvedRec.ine10Digits || '0000000000',
-          inePhotoUploaded: true,
-          ineVerifiedAt: approvedRec.reviewedAt || new Date().toISOString(),
-          pendingDebt: 0,
-          status: 'activo',
-          createdAt: new Date().toISOString(),
-        };
-        saveIneAccount(migratedAccount);
-        existing = migratedAccount;
-      }
-    }
-
-    if (!existing) {
-      setErrorMsg(
-        '⚠️ No existe ninguna cuenta registrada con este correo o teléfono. Si olvidaste tu acceso, usa la pestaña "Recuperar Cuenta" para solicitar reactivación con soporte, o crea tu cuenta verificada con INE.'
-      );
-      setIsLoading(false);
-      return;
-    }
-
-    if (existing.pendingDebt > 0 || existing.status === 'bloqueado_fraude') {
-      setErrorMsg(
-        `⛔ Esta cuenta tiene un adeudo pendiente de $${existing.pendingDebt.toFixed(2)} MXN por cancelación tardía. No puedes realizar pedidos hasta liquidar el adeudo.`
-      );
-      setBlockedAccountInfo(existing);
-      setIsLoading(false);
-      return;
-    }
-
-    const customerPayload = {
-      id: existing.id,
-      name: existing.name,
-      phone: existing.phone,
-      email: existing.email,
-      ine10Digits: existing.ine10Digits,
-      referralCode: existing.referralCode,
-    };
-
-    try {
-      localStorage.setItem('rodo_user_session', JSON.stringify(customerPayload));
-    } catch (e) {}
-
-    onCustomerLogin(customerPayload);
-    onClose();
   };
 
   // Auto-servicio: Solicitar código de recuperación de contraseña de 6 dígitos en PostgreSQL
@@ -563,7 +528,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         localStorage.setItem('rodo_user_session', JSON.stringify(customerPayload));
       } catch {}
 
-      onCustomerLogin(customerPayload);
+      onCustomerLogin(customerPayload, 'password_reset');
       onClose();
     } catch (err: any) {
       setErrorMsg(err?.message || 'Código incorrecto o expirado.');
