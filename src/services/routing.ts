@@ -226,3 +226,114 @@ export async function fetchCachedOsrmStreetRoute(
   } catch {}
   return [fromCoords, toCoords];
 }
+
+export interface ExpressRouteQuote {
+  distanceKm: number;
+  estimatedMinutes: number;
+  baseFee: number;
+  extraKm: number;
+  baseCalculatedFee: number;
+  expressSurcharge: number;
+  totalFee: number;
+  source: 'osrm' | 'haversine';
+  pickupCoords: { lat: number; lng: number };
+  deliveryCoords: { lat: number; lng: number };
+}
+
+/**
+ * Fórmula oficial de tarifa para Envíos Express (Punto A -> Punto B):
+ * Base $30 MXN (primeros 2.0 km) + $10 MXN por cada km adicional + recargo exprés opcional.
+ */
+export function calculateExpressShippingTariff(
+  distanceKm: number,
+  deliveryType: 'normal' | 'express' | 'programada' = 'normal',
+  expressSurcharge: number = 25
+): {
+  distanceKm: number;
+  baseFee: number;
+  extraKm: number;
+  baseCalculatedFee: number;
+  expressSurcharge: number;
+  totalFee: number;
+  estimatedMinutes: number;
+} {
+  const safeKm = Math.max(0.5, Math.round(distanceKm * 10) / 10);
+  const baseFee = 30;
+  const baseKm = 2.0;
+  const perExtraKm = 10;
+  const extraKm = Math.max(0, Number((safeKm - baseKm).toFixed(1)));
+  const baseCalculatedFee = Math.round(baseFee + extraKm * perExtraKm);
+  const appliedExpress = deliveryType === 'express' ? expressSurcharge : 0;
+  const totalFee = baseCalculatedFee + appliedExpress;
+  const estimatedMinutes = Math.round(
+    (deliveryType === 'express' ? 5 : 8) + safeKm * (deliveryType === 'express' ? 3 : 4)
+  );
+
+  return {
+    distanceKm: safeKm,
+    baseFee,
+    extraKm,
+    baseCalculatedFee,
+    expressSurcharge: appliedExpress,
+    totalFee,
+    estimatedMinutes,
+  };
+}
+
+/**
+ * Calcula automáticamente la distancia real (OSRM) y tarifa entre Punto A y Punto B
+ * usando la API del backend para impedir manipulación manual de kilómetros.
+ */
+export async function fetchExpressRouteQuote(params: {
+  pickupCoords?: { lat: number; lng: number } | null;
+  deliveryCoords?: { lat: number; lng: number } | null;
+  pickupAddress?: string;
+  deliveryAddress?: string;
+  deliveryType?: 'normal' | 'express' | 'programada';
+}): Promise<ExpressRouteQuote | null> {
+  const deliveryType = params.deliveryType || 'normal';
+
+  try {
+    const res = await fetch('/api/routing/express-quote', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        pickupCoords: params.pickupCoords || undefined,
+        deliveryCoords: params.deliveryCoords || undefined,
+        pickupAddress: params.pickupAddress || undefined,
+        deliveryAddress: params.deliveryAddress || undefined,
+        deliveryType,
+      }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data && typeof data.distanceKm === 'number' && typeof data.totalFee === 'number') {
+        return data as ExpressRouteQuote;
+      }
+    }
+  } catch {
+    // Fallback local solo si ya existen coordenadas GPS de ambos puntos
+  }
+
+  if (params.pickupCoords && params.deliveryCoords) {
+    const km = calculateHaversineDistance(
+      params.pickupCoords.lat,
+      params.pickupCoords.lng,
+      params.deliveryCoords.lat,
+      params.deliveryCoords.lng
+    );
+    const tariff = calculateExpressShippingTariff(km, deliveryType);
+    return {
+      ...tariff,
+      source: 'haversine',
+      pickupCoords: params.pickupCoords,
+      deliveryCoords: params.deliveryCoords,
+    };
+  }
+
+  return null;
+}

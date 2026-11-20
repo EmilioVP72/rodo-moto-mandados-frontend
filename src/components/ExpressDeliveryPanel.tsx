@@ -1,35 +1,43 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Order } from '../types';
-import { generateUniqueTicketFolio, createOrderInDb } from '../services/db';
 import { submitOrderWithQueue } from '../services/orderQueue';
 import { InteractiveMapPicker } from './InteractiveMapPicker';
+import { SmaColoniaCombobox } from './SmaColoniaCombobox';
+import { SMA_COLONIAS_CATALOG, normalizeSearchText } from '../data/smaColonias';
+import {
+  CustomerSavedAddress,
+  cleanStreetNumber,
+  formatSavedAddressLine,
+} from '../utils/customerAddresses';
+import {
+  ExpressRouteQuote,
+  calculateExpressShippingTariff,
+  fetchExpressRouteQuote,
+} from '../services/routing';
 import {
   FileText,
   Flower2,
   Package,
   ShoppingBag,
   MapPin,
-  Phone,
-  User,
   AlertCircle,
   Loader2,
-  Bike,
   CreditCard,
   Banknote,
-  Navigation,
-  Gauge,
   Clock,
-  Sparkles,
   ShieldCheck,
   Zap,
   X,
   CloudRain,
+  Route,
+  CheckCircle2,
 } from 'lucide-react';
 
 interface ExpressDeliveryPanelProps {
   customerId: string;
   customerDefaultName?: string;
   customerDefaultPhone?: string;
+  savedAddresses?: CustomerSavedAddress[];
   onOrderSuccess: (order: Order) => void;
   onRequireLogin?: () => void;
   rainPauseEnabled?: boolean;
@@ -63,20 +71,29 @@ const SHIPPING_CATEGORIES = [
   },
 ];
 
-// Zonas habituales en San Miguel con distancias promedio de referencia
-const SAN_MIGUEL_ZONES = [
-  { name: 'Misma Zona / Centro (1.5 km)', km: 1.5 },
-  { name: 'Centro a San Antonio (2.5 km)', km: 2.5 },
-  { name: 'Centro a La Aurora (3.5 km)', km: 3.5 },
-  { name: 'Centro a La Lejona / Frailes (5.0 km)', km: 5.0 },
-  { name: 'Centro a Ventanas / Independencia (6.5 km)', km: 6.5 },
-  { name: 'Zona Periférica / Conurbada (9.0 km)', km: 9.0 },
-];
+function resolveOfficialColonia(raw?: string | null): string {
+  const cleaned = (raw || '').trim();
+  if (!cleaned) return '';
+  const withoutPrefix = cleaned.replace(/^Col\.?\s*/i, '').trim();
+  const norm = normalizeSearchText(withoutPrefix);
+  const exact = SMA_COLONIAS_CATALOG.find(
+    (item) =>
+      item.label === cleaned ||
+      item.searchKey === norm ||
+      normalizeSearchText(item.name) === norm
+  );
+  return exact ? exact.label : withoutPrefix;
+}
+
+function stripColoniaTypeForGeocode(colonia: string): string {
+  return colonia.split(' - ')[0].trim();
+}
 
 export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
   customerId,
   customerDefaultName = '',
   customerDefaultPhone = '',
+  savedAddresses = [],
   onOrderSuccess,
   onRequireLogin,
   rainPauseEnabled = false,
@@ -84,7 +101,7 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<'documentos' | 'flores' | 'articulos' | 'mandados'>('documentos');
 
-  // Dirección estructurada de Recolección (A): Calle, Número, Colonia, Referencias
+  // Dirección estructurada de Recolección (A): Calle, Número (opcional), Colonia, Referencias
   const [pickupCalle, setPickupCalle] = useState('');
   const [pickupNumero, setPickupNumero] = useState('');
   const [pickupColonia, setPickupColonia] = useState('');
@@ -93,7 +110,7 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
   const [pickupPhone, setPickupPhone] = useState(customerDefaultPhone);
   const [pickupCoords, setPickupCoords] = useState<{ lat: number; lng: number } | null>(null);
 
-  // Dirección estructurada de Entrega (B): Calle, Número, Colonia, Referencias
+  // Dirección estructurada de Entrega (B): Calle, Número (opcional), Colonia, Referencias
   const [deliveryCalle, setDeliveryCalle] = useState('');
   const [deliveryNumero, setDeliveryNumero] = useState('');
   const [deliveryColonia, setDeliveryColonia] = useState('');
@@ -105,14 +122,15 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
   // Modal para seleccionar en mapa (A o B)
   const [activeMapPickerTarget, setActiveMapPickerTarget] = useState<'pickup' | 'delivery' | null>(null);
 
-  // Opciones de Envío solicitadas por el usuario: Exprés, Programado y Normal (3 recuadritos)
+  // Modalidad de Envío: Normal, Exprés, Programado
   const [deliveryType, setDeliveryType] = useState<'normal' | 'express' | 'programada'>('normal');
   const [scheduledTime, setScheduledTime] = useState('16:00');
-  const expressSurcharge = 25; // Tarifa exprés
+  const expressSurcharge = 25;
 
-  // Medición de Distancia en Kilómetros y Tarificación Estimada
-  const [distanceKm, setDistanceKm] = useState<number>(2.5);
-  const [isCustomDistance, setIsCustomDistance] = useState(false);
+  // Cotización automática calculada por la API interna (Punto A -> Punto B, sin selector manual de km)
+  const [routeQuote, setRouteQuote] = useState<ExpressRouteQuote | null>(null);
+  const [isCalculatingRoute, setIsCalculatingRoute] = useState(false);
+  const [quoteNotice, setQuoteNotice] = useState('');
 
   const [itemDescription, setItemDescription] = useState('');
   const [instructions, setInstructions] = useState('');
@@ -123,17 +141,111 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
 
   const activeCategory = SHIPPING_CATEGORIES.find((c) => c.type === selectedCategory) || SHIPPING_CATEGORIES[0];
 
-  // Cálculo de tarifa por kilómetros:
-  // Base: $30 MXN (incluye los primeros 2 km) + $10 MXN por cada km adicional
-  const baseKm = 2.0;
-  const baseFee = 30;
-  const perExtraKmRate = 10;
-  const extraKm = Math.max(0, distanceKm - baseKm);
-  const baseCalculatedFee = Math.round(baseFee + extraKm * perExtraKmRate);
-  const totalCalculatedFee = baseCalculatedFee + (deliveryType === 'express' ? expressSurcharge : 0);
+  const hasPickupInput = Boolean(pickupCoords || (pickupCalle.trim() && pickupColonia.trim()));
+  const hasDeliveryInput = Boolean(deliveryCoords || (deliveryCalle.trim() && deliveryColonia.trim()));
 
-  // Estimación de tiempo en moto (aprox 4 min por km + 8 min de recolección/entrega)
-  const estimatedMinutes = Math.round((deliveryType === 'express' ? 5 : 8) + distanceKm * (deliveryType === 'express' ? 3 : 4));
+  const buildGeocodeQuery = (calle: string, numero: string, colonia: string) => {
+    const cleanNum = cleanStreetNumber(numero);
+    const streetPart = `${calle.trim()}${cleanNum ? ` ${cleanNum}` : ''}`.trim();
+    const colPart = stripColoniaTypeForGeocode(colonia);
+    return [streetPart, colPart].filter(Boolean).join(', ');
+  };
+
+  // Cálculo automático en segundo plano vía API (OSRM + Nominatim con caché Redis)
+  useEffect(() => {
+    if (!hasPickupInput || !hasDeliveryInput) {
+      setRouteQuote(null);
+      setQuoteNotice('');
+      setIsCalculatingRoute(false);
+      return;
+    }
+
+    let cancelled = false;
+    const delayMs = pickupCoords && deliveryCoords ? 120 : 550;
+
+    const timer = window.setTimeout(async () => {
+      setIsCalculatingRoute(true);
+      setQuoteNotice('');
+      try {
+        const quote = await fetchExpressRouteQuote({
+          pickupCoords,
+          deliveryCoords,
+          pickupAddress: buildGeocodeQuery(pickupCalle, pickupNumero, pickupColonia),
+          deliveryAddress: buildGeocodeQuery(deliveryCalle, deliveryNumero, deliveryColonia),
+          deliveryType,
+        });
+        if (cancelled) return;
+        if (quote) {
+          setRouteQuote(quote);
+          setQuoteNotice('');
+        } else {
+          setRouteQuote(null);
+          setQuoteNotice(
+            'No pudimos geolocalizar alguna calle automáticamente. Usa "Ubicar en mapa (A / B)" para calcular tu tarifa exacta.'
+          );
+        }
+      } catch {
+        if (!cancelled) {
+          setRouteQuote(null);
+          setQuoteNotice('Ubica Punto A y Punto B en el mapa para calcular tu tarifa exacta.');
+        }
+      } finally {
+        if (!cancelled) setIsCalculatingRoute(false);
+      }
+    }, delayMs);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [
+    pickupCoords?.lat,
+    pickupCoords?.lng,
+    deliveryCoords?.lat,
+    deliveryCoords?.lng,
+    pickupCalle,
+    pickupNumero,
+    pickupColonia,
+    deliveryCalle,
+    deliveryNumero,
+    deliveryColonia,
+    deliveryType,
+    hasPickupInput,
+    hasDeliveryInput,
+  ]);
+
+  // Recálculo instantáneo al cambiar modalidad (Normal / Exprés / Programado) manteniendo los km reales de la API
+  const liveTariff = routeQuote
+    ? calculateExpressShippingTariff(routeQuote.distanceKm, deliveryType, expressSurcharge)
+    : null;
+
+  const applySavedAddressToPoint = (target: 'pickup' | 'delivery', addr: CustomerSavedAddress) => {
+    const cleanCalle = addr.calle.replace(/^calle\s+/i, '').trim();
+    const cleanNum = cleanStreetNumber(addr.numero);
+    const numCombined = cleanNum
+      ? addr.numeroInterior
+        ? `${cleanNum} Int. ${addr.numeroInterior}`
+        : cleanNum
+      : addr.numeroInterior
+      ? `Int. ${addr.numeroInterior}`
+      : '';
+    const officialCol = resolveOfficialColonia(addr.colonia);
+    const coords = addr.lat && addr.lng ? { lat: addr.lat, lng: addr.lng } : null;
+
+    if (target === 'pickup') {
+      setPickupCalle(cleanCalle);
+      setPickupNumero(numCombined);
+      setPickupColonia(officialCol);
+      setPickupRef((addr.referencias || '').trim());
+      setPickupCoords(coords);
+    } else {
+      setDeliveryCalle(cleanCalle);
+      setDeliveryNumero(numCombined);
+      setDeliveryColonia(officialCol);
+      setDeliveryRef((addr.referencias || '').trim());
+      setDeliveryCoords(coords);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -147,19 +259,18 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
       return;
     }
 
-    // Validación obligatoria de inicio de sesión
     if (!customerId || customerId === 'guest' || customerId === 'guest-envio') {
       setErrorMsg('⚠️ Para solicitar un envío express es necesario iniciar sesión o crear tu cuenta con validación de INE.');
       if (onRequireLogin) onRequireLogin();
       return;
     }
 
-    if (!pickupCalle.trim() || !pickupNumero.trim() || !pickupColonia.trim() || !pickupPhone.trim()) {
-      setErrorMsg('Por favor completa la Calle, Número exterior/interior y Colonia del punto de recolección (A), además del teléfono.');
+    if (!pickupCalle.trim() || !pickupColonia.trim() || !pickupPhone.trim()) {
+      setErrorMsg('Por favor completa la Calle, Colonia y Teléfono del Punto A (Recolección).');
       return;
     }
-    if (!deliveryCalle.trim() || !deliveryNumero.trim() || !deliveryColonia.trim() || !recipientPhone.trim()) {
-      setErrorMsg('Por favor completa la Calle, Número exterior/interior y Colonia del punto de entrega (B), además del teléfono.');
+    if (!deliveryCalle.trim() || !deliveryColonia.trim() || !recipientPhone.trim()) {
+      setErrorMsg('Por favor completa la Calle, Colonia y Teléfono del Punto B (Entrega).');
       return;
     }
     if (!itemDescription.trim()) {
@@ -169,49 +280,83 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
 
     setIsSubmitting(true);
     try {
-      const folio = generateUniqueTicketFolio();
-      const orderId = 'env-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 6);
+      // Garantizar cotización oficial calculada por la API antes de generar la orden
+      let confirmedQuote = routeQuote;
+      if (!confirmedQuote) {
+        confirmedQuote = await fetchExpressRouteQuote({
+          pickupCoords,
+          deliveryCoords,
+          pickupAddress: buildGeocodeQuery(pickupCalle, pickupNumero, pickupColonia),
+          deliveryAddress: buildGeocodeQuery(deliveryCalle, deliveryNumero, deliveryColonia),
+          deliveryType,
+        });
+      }
 
-      const fullPickupAddress = `Calle ${pickupCalle.trim()} #${pickupNumero.trim()}, Col. ${pickupColonia.trim()}${pickupRef.trim() ? ' (' + pickupRef.trim() + ')' : ''}`;
-      const fullDeliveryAddress = `Calle ${deliveryCalle.trim()} #${deliveryNumero.trim()}, Col. ${deliveryColonia.trim()}${deliveryRef.trim() ? ' (' + deliveryRef.trim() + ')' : ''}`;
+      if (!confirmedQuote) {
+        setErrorMsg(
+          '📍 No pudimos verificar la distancia exacta entre el Punto A y el Punto B. Fija ambos puntos en el mapa para calcular la tarifa oficial.'
+        );
+        setIsSubmitting(false);
+        return;
+      }
+
+      const finalTariff = calculateExpressShippingTariff(
+        confirmedQuote.distanceKm,
+        deliveryType,
+        expressSurcharge
+      );
+
+      const fullPickupBase = formatSavedAddressLine({
+        calle: pickupCalle,
+        numero: pickupNumero.trim() || null,
+        colonia: pickupColonia,
+      });
+      const fullDeliveryBase = formatSavedAddressLine({
+        calle: deliveryCalle,
+        numero: deliveryNumero.trim() || null,
+        colonia: deliveryColonia,
+      });
+
+      const fullPickupAddress = `${fullPickupBase}${pickupRef.trim() ? ' (' + pickupRef.trim() + ')' : ''}`;
+      const fullDeliveryAddress = `${fullDeliveryBase}${deliveryRef.trim() ? ' (' + deliveryRef.trim() + ')' : ''}`;
 
       const orderPayload: Omit<Order, 'id' | 'folio' | 'createdAt' | 'updatedAt'> = {
         orderType: 'envio',
         packageType: selectedCategory,
-        customerId: customerId,
+        customerId,
         customerName: recipientName.trim() || pickupContact.trim() || 'Cliente RODO',
         customerPhone: recipientPhone.trim() || pickupPhone.trim(),
         restaurantId: 'servicio-envios-rodo',
-        restaurantName: `Envío ${deliveryType === 'express' ? 'Exprés' : deliveryType === 'programada' ? 'Programado' : 'Normal'} (${distanceKm.toFixed(1)} km)`,
-        restaurantDeliveryFee: totalCalculatedFee,
+        restaurantName: `Envío ${deliveryType === 'express' ? 'Exprés' : deliveryType === 'programada' ? 'Programado' : 'Normal'} (${finalTariff.distanceKm.toFixed(1)} km)`,
+        restaurantDeliveryFee: finalTariff.totalFee,
         restaurantCommissionRate: 100,
         deliveryType,
-        deliveryTypeSurcharge: deliveryType === 'express' ? expressSurcharge : 0,
+        deliveryTypeSurcharge: finalTariff.expressSurcharge,
         scheduledDeliveryTime: deliveryType === 'programada' ? scheduledTime : undefined,
         items: [
           {
             id: 'it-' + selectedCategory,
-            name: `${activeCategory.title}: ${itemDescription.trim()} (${distanceKm.toFixed(1)} km · ${deliveryType.toUpperCase()})`,
-            price: totalCalculatedFee,
+            name: `${activeCategory.title}: ${itemDescription.trim()} (${finalTariff.distanceKm.toFixed(1)} km · ${deliveryType.toUpperCase()})`,
+            price: finalTariff.totalFee,
             quantity: 1,
             notes: instructions.trim(),
           },
         ],
-        subtotal: totalCalculatedFee,
-        deliveryFee: totalCalculatedFee,
-        commissionAmount: totalCalculatedFee,
-        total: totalCalculatedFee,
+        subtotal: finalTariff.totalFee,
+        deliveryFee: finalTariff.totalFee,
+        commissionAmount: finalTariff.totalFee,
+        total: finalTariff.totalFee,
         paymentMethod,
         paymentStatus: paymentMethod === 'transferencia' ? 'verificado' : 'en_efectivo',
         pickupAddress: fullPickupAddress,
         pickupPhone: pickupPhone.trim(),
         deliveryAddress: fullDeliveryAddress,
-        deliveryNotes: `MODALIDAD: ${deliveryType.toUpperCase()}${deliveryType === 'programada' ? ' (Hora: ' + scheduledTime + ')' : ''} | DISTANCIA: ~${distanceKm.toFixed(1)} km | TIEMPO APROX: ~${estimatedMinutes} min | RECOGER CON: ${pickupContact || 'Contacto'} (${pickupPhone}). NOTAS: ${instructions || 'Sin notas'}`,
-        distanceKm: Number(distanceKm.toFixed(1)),
-        routeEstimateMinutes: estimatedMinutes,
-        routePathSummary: `${fullPickupAddress.slice(0, 25)}... ➔ ${fullDeliveryAddress.slice(0, 25)}... (${distanceKm.toFixed(1)} km · ~${estimatedMinutes} min)`,
+        deliveryNotes: `MODALIDAD: ${deliveryType.toUpperCase()}${deliveryType === 'programada' ? ' (Hora: ' + scheduledTime + ')' : ''} | DISTANCIA REAL API (${confirmedQuote.source.toUpperCase()}): ${finalTariff.distanceKm.toFixed(1)} km | TIEMPO APROX: ~${finalTariff.estimatedMinutes} min | RECOGER CON: ${pickupContact || 'Contacto'} (${pickupPhone}). NOTAS: ${instructions || 'Sin notas'}`,
+        distanceKm: finalTariff.distanceKm,
+        routeEstimateMinutes: finalTariff.estimatedMinutes,
+        routePathSummary: `${fullPickupAddress.slice(0, 25)}... ➔ ${fullDeliveryAddress.slice(0, 25)}... (${finalTariff.distanceKm.toFixed(1)} km · ~${finalTariff.estimatedMinutes} min)`,
         status: 'nuevo',
-        coordinates: deliveryCoords || pickupCoords || undefined,
+        coordinates: confirmedQuote.deliveryCoords || deliveryCoords || pickupCoords || undefined,
       };
 
       const completedOrder = await submitOrderWithQueue(orderPayload);
@@ -228,13 +373,13 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
       <div className="max-w-3xl mx-auto space-y-5 sm:space-y-6">
         <div>
           <span className="bg-[#ed0718] text-white text-[10px] sm:text-xs font-black px-3 py-1 rounded-full uppercase tracking-widest">
-            TARIFA MEDIDA POR KILÓMETROS
+            TARIFA CALCULADA AUTOMÁTICAMENTE (PUNTO A ➔ PUNTO B)
           </span>
           <h2 className="text-xl sm:text-2xl font-black text-gray-900 mt-2">
             Envío Express de Paquetes, Documentos y Flores
           </h2>
           <p className="text-xs sm:text-sm text-gray-500">
-            Calcula el costo estimado según la distancia exacta de tu trayecto en San Miguel de Allende.
+            Ingresa el Punto A (recolección) y el Punto B (entrega) y el sistema calculará automáticamente la ruta real y el costo exacto en San Miguel de Allende.
           </p>
         </div>
 
@@ -274,7 +419,7 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
                   key={cat.type}
                   type="button"
                   onClick={() => setSelectedCategory(cat.type)}
-                  className={`p-4 rounded-2xl border-2 text-left transition flex items-start gap-3.5 ${
+                  className={`p-4 rounded-2xl border-2 text-left transition flex items-start gap-3.5 cursor-pointer ${
                     isSelected
                       ? 'border-[#ed0718] bg-red-50/50 shadow-xs'
                       : 'border-gray-200 hover:border-gray-300 bg-white'
@@ -293,111 +438,14 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
           </div>
         </div>
 
-        {/* 2. MEDICIÓN DE DISTANCIA POR KILÓMETROS Y COSTO ESTIMADO */}
-        <div className="bg-gradient-to-br from-gray-900 to-[#101b29] text-white p-4 sm:p-5 rounded-2xl shadow-md space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <span className="p-2 rounded-xl bg-[#ed0718] text-white shrink-0">
-                <Gauge className="w-5 h-5" />
-              </span>
-              <div className="min-w-0">
-                <h3 className="font-black text-sm sm:text-base text-white">
-                  Medidor de Distancia y Costo Estimado
-                </h3>
-                <p className="text-[11px] sm:text-xs text-gray-400">
-                  Tarifa base $30 (primeros 2 km) + $10/km adicional
-                </p>
-              </div>
-            </div>
-            <div className="flex sm:block items-baseline justify-between bg-white/5 sm:bg-transparent px-3 py-2 sm:p-0 rounded-xl sm:text-right shrink-0">
-              <div className="text-2xl sm:text-3xl font-black font-mono text-amber-400 leading-none">
-                ${totalCalculatedFee} MXN
-              </div>
-              <span className="text-[10px] text-gray-400 font-medium">
-                {deliveryType === 'express' ? 'Tarifa Exprés' : 'Costo estimado'}
-              </span>
-            </div>
-          </div>
-
-          {/* Rutas habituales para clic rápido */}
-          <div>
-            <label className="block text-[11px] font-bold text-gray-300 mb-2">
-              Trayectos frecuentes en San Miguel:
-            </label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {SAN_MIGUEL_ZONES.map((zone) => (
-                <button
-                  key={zone.name}
-                  type="button"
-                  onClick={() => {
-                    setDistanceKm(zone.km);
-                    setIsCustomDistance(false);
-                  }}
-                  className={`p-2 rounded-xl text-xs text-left transition border ${
-                    distanceKm === zone.km && !isCustomDistance
-                      ? 'bg-[#ed0718] text-white border-[#ed0718] font-black shadow-xs'
-                      : 'bg-white/10 hover:bg-white/15 text-gray-200 border-white/10'
-                  }`}
-                >
-                  <span className="block truncate font-semibold">{zone.name}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Slider interactivo de distancia en Km */}
-          <div className="pt-2 border-t border-white/10 space-y-2">
-            <div className="flex justify-between items-center text-xs">
-              <span className="text-gray-300 font-bold flex items-center gap-1.5">
-                <Navigation className="w-4 h-4 text-[#ed0718]" />
-                Ajustar distancia personalizada:
-              </span>
-              <span className="font-mono font-black text-amber-400 text-sm">
-                {distanceKm.toFixed(1)} km
-              </span>
-            </div>
-
-            <input
-              type="range"
-              min="0.5"
-              max="15.0"
-              step="0.5"
-              value={distanceKm}
-              onChange={(e) => {
-                setDistanceKm(parseFloat(e.target.value));
-                setIsCustomDistance(true);
-              }}
-              className="w-full h-2 bg-white/20 rounded-lg appearance-none cursor-pointer accent-[#ed0718]"
-            />
-
-            <div className="flex justify-between text-[11px] text-gray-400 font-mono">
-              <span>0.5 km (Centro)</span>
-              <span>5 km</span>
-              <span>10 km</span>
-              <span>15 km (Periferia)</span>
-            </div>
-          </div>
-
-          {/* Resumen del cálculo en vivo */}
-          <div className="bg-white/10 p-3 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-1.5 text-gray-200">
-              <Clock className="w-4 h-4 text-emerald-400" />
-              <span>Tiempo estimado de entrega en moto: <b>~{estimatedMinutes} min</b></span>
-            </div>
-            <div className="text-gray-300 font-medium">
-              Base $30 {extraKm > 0 ? `+ (${extraKm.toFixed(1)} km x $10)` : '(Hasta 2 km)'} {deliveryType === 'express' ? '+ $25 Exprés ' : ''}= <b className="text-amber-400 font-black">${totalCalculatedFee} MXN</b>
-            </div>
-          </div>
-        </div>
-
-        {/* 3. Formulario de Direcciones */}
-        <form onSubmit={handleSubmit} className="space-y-5 pt-2">
-          {/* Dónde Recoger */}
+        {/* 2. Formulario directo de Punto A y Punto B (cálculo automático interno por API) */}
+        <form onSubmit={handleSubmit} className="space-y-5 pt-1">
+          {/* PUNTO A: Dónde Recoger */}
           <div className="bg-gray-50 p-4 sm:p-5 rounded-2xl border border-gray-200 space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-xs font-black text-gray-800 uppercase tracking-wider">
                 <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px]">A</span>
-                Punto de Recolección (Dónde recoge la moto)
+                Punto A · Recolección (Dónde recoge la moto)
               </div>
               <button
                 type="button"
@@ -409,13 +457,32 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
               </button>
             </div>
 
+            {savedAddresses.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] font-bold text-gray-500">Usar guardada:</span>
+                {savedAddresses.map((addr) => (
+                  <button
+                    key={`pickup-${addr.id}`}
+                    type="button"
+                    onClick={() => applySavedAddressToPoint('pickup', addr)}
+                    className="text-[11px] font-bold bg-white hover:bg-blue-50 text-blue-900 border border-blue-200 px-2.5 py-1 rounded-lg transition cursor-pointer"
+                  >
+                    📍 {addr.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="sm:col-span-2">
-                <label className="block text-xs font-bold text-gray-700 mb-1">Calle</label>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Calle *</label>
                 <input
                   type="text"
                   value={pickupCalle}
-                  onChange={(e) => setPickupCalle(e.target.value)}
+                  onChange={(e) => {
+                    setPickupCoords(null);
+                    setPickupCalle(e.target.value);
+                  }}
                   required
                   placeholder="Ej. Ancha de San Antonio, Nemesio Diez..."
                   className="w-full border border-gray-300 rounded-xl p-2.5 text-xs bg-white font-semibold outline-none focus:border-[#ed0718]"
@@ -423,13 +490,14 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">Número Ext / Int</label>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  Número Ext / Int <span className="text-gray-400 font-normal">(Opcional)</span>
+                </label>
                 <input
                   type="text"
                   value={pickupNumero}
                   onChange={(e) => setPickupNumero(e.target.value)}
-                  required
-                  placeholder="Ej. #45 o Int. 3B"
+                  placeholder="Ej. 45 o vacío S/N"
                   className="w-full border border-gray-300 rounded-xl p-2.5 text-xs bg-white font-semibold outline-none focus:border-[#ed0718]"
                 />
               </div>
@@ -437,14 +505,14 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">Colonia</label>
-                <input
-                  type="text"
+                <label className="block text-xs font-bold text-gray-700 mb-1">Colonia / Fraccionamiento *</label>
+                <SmaColoniaCombobox
                   value={pickupColonia}
-                  onChange={(e) => setPickupColonia(e.target.value)}
-                  required
-                  placeholder="Ej. San Antonio, Centro, San Rafael..."
-                  className="w-full border border-gray-300 rounded-xl p-2.5 text-xs bg-white font-semibold outline-none focus:border-[#ed0718]"
+                  onChange={(col) => {
+                    setPickupCoords(null);
+                    setPickupColonia(col);
+                  }}
+                  placeholder="Busca y selecciona la colonia (A) *"
                 />
               </div>
 
@@ -473,13 +541,13 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">Teléfono de Recolección</label>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Teléfono de Recolección *</label>
                 <input
                   type="tel"
                   value={pickupPhone}
                   onChange={(e) => setPickupPhone(e.target.value)}
                   required
-                  placeholder="5512345678"
+                  placeholder="4151234567"
                   className="w-full border border-gray-300 rounded-xl p-2.5 text-xs bg-white font-mono font-semibold outline-none focus:border-[#ed0718]"
                 />
               </div>
@@ -487,18 +555,20 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
 
             {pickupCoords && (
               <div className="text-[11px] text-blue-900 bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-200 font-bold flex items-center justify-between">
-                <span>📍 Punto de recolección fijado en GPS ({pickupCoords.lat.toFixed(4)}, {pickupCoords.lng.toFixed(4)})</span>
-                <button type="button" onClick={() => setActiveMapPickerTarget('pickup')} className="text-[#ed0718] hover:underline">Cambiar</button>
+                <span>📍 Punto A fijado en GPS ({pickupCoords.lat.toFixed(4)}, {pickupCoords.lng.toFixed(4)})</span>
+                <button type="button" onClick={() => setActiveMapPickerTarget('pickup')} className="text-[#ed0718] hover:underline cursor-pointer">
+                  Cambiar
+                </button>
               </div>
             )}
           </div>
 
-          {/* Dónde Entregar */}
+          {/* PUNTO B: Dónde Entregar */}
           <div className="bg-gray-50 p-4 sm:p-5 rounded-2xl border border-gray-200 space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-xs font-black text-gray-800 uppercase tracking-wider">
                 <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px]">B</span>
-                Punto de Entrega (Destino del Cliente)
+                Punto B · Entrega (Destino del Cliente)
               </div>
               <button
                 type="button"
@@ -510,13 +580,32 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
               </button>
             </div>
 
+            {savedAddresses.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] font-bold text-gray-500">Usar guardada:</span>
+                {savedAddresses.map((addr) => (
+                  <button
+                    key={`delivery-${addr.id}`}
+                    type="button"
+                    onClick={() => applySavedAddressToPoint('delivery', addr)}
+                    className="text-[11px] font-bold bg-white hover:bg-emerald-50 text-emerald-900 border border-emerald-200 px-2.5 py-1 rounded-lg transition cursor-pointer"
+                  >
+                    📍 {addr.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="sm:col-span-2">
-                <label className="block text-xs font-bold text-gray-700 mb-1">Calle</label>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Calle *</label>
                 <input
                   type="text"
                   value={deliveryCalle}
-                  onChange={(e) => setDeliveryCalle(e.target.value)}
+                  onChange={(e) => {
+                    setDeliveryCoords(null);
+                    setDeliveryCalle(e.target.value);
+                  }}
                   required
                   placeholder="Ej. Calzada de la Aurora, Mesones..."
                   className="w-full border border-gray-300 rounded-xl p-2.5 text-xs bg-white font-semibold outline-none focus:border-[#ed0718]"
@@ -524,13 +613,14 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">Número Ext / Int</label>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  Número Ext / Int <span className="text-gray-400 font-normal">(Opcional)</span>
+                </label>
                 <input
                   type="text"
                   value={deliveryNumero}
                   onChange={(e) => setDeliveryNumero(e.target.value)}
-                  required
-                  placeholder="Ej. #12 o Depto 4"
+                  placeholder="Ej. 12 o vacío S/N"
                   className="w-full border border-gray-300 rounded-xl p-2.5 text-xs bg-white font-semibold outline-none focus:border-[#ed0718]"
                 />
               </div>
@@ -538,14 +628,14 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">Colonia</label>
-                <input
-                  type="text"
+                <label className="block text-xs font-bold text-gray-700 mb-1">Colonia / Fraccionamiento *</label>
+                <SmaColoniaCombobox
                   value={deliveryColonia}
-                  onChange={(e) => setDeliveryColonia(e.target.value)}
-                  required
-                  placeholder="Ej. La Aurora, Allende, Malanquín..."
-                  className="w-full border border-gray-300 rounded-xl p-2.5 text-xs bg-white font-semibold outline-none focus:border-[#ed0718]"
+                  onChange={(col) => {
+                    setDeliveryCoords(null);
+                    setDeliveryColonia(col);
+                  }}
+                  placeholder="Busca y selecciona la colonia (B) *"
                 />
               </div>
 
@@ -574,13 +664,13 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">Teléfono de Quien Recibe</label>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Teléfono de Quien Recibe *</label>
                 <input
                   type="tel"
                   value={recipientPhone}
                   onChange={(e) => setRecipientPhone(e.target.value)}
                   required
-                  placeholder="5598765432"
+                  placeholder="4159876543"
                   className="w-full border border-gray-300 rounded-xl p-2.5 text-xs bg-white font-mono font-semibold outline-none focus:border-[#ed0718]"
                 />
               </div>
@@ -588,8 +678,10 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
 
             {deliveryCoords && (
               <div className="text-[11px] text-emerald-900 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 font-bold flex items-center justify-between">
-                <span>📍 Punto de entrega fijado en GPS ({deliveryCoords.lat.toFixed(4)}, {deliveryCoords.lng.toFixed(4)})</span>
-                <button type="button" onClick={() => setActiveMapPickerTarget('delivery')} className="text-[#ed0718] hover:underline">Cambiar</button>
+                <span>📍 Punto B fijado en GPS ({deliveryCoords.lat.toFixed(4)}, {deliveryCoords.lng.toFixed(4)})</span>
+                <button type="button" onClick={() => setActiveMapPickerTarget('delivery')} className="text-[#ed0718] hover:underline cursor-pointer">
+                  Cambiar
+                </button>
               </div>
             )}
           </div>
@@ -598,7 +690,7 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
           <div className="space-y-3">
             <div>
               <label className="block text-xs font-bold text-gray-800 mb-1">
-                ¿Qué estamos transportando? (Detalles del paquete)
+                ¿Qué estamos transportando? (Detalles del paquete) *
               </label>
               <input
                 type="text"
@@ -624,7 +716,7 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
             </div>
           </div>
 
-          {/* 4. MODALIDAD DE ENVÍO: 3 RECUADROS COMPACTOS ABAJO (Normal, Exprés, Programado) */}
+          {/* 3. MODALIDAD DE ENVÍO: Normal, Exprés, Programado */}
           <div className="space-y-2 pt-1 bg-white p-4 rounded-2xl border border-gray-200 shadow-xs">
             <label className="block text-xs font-black text-gray-900 uppercase tracking-wider">
               Selecciona Modalidad de Envío
@@ -633,26 +725,28 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
               <button
                 type="button"
                 onClick={() => setDeliveryType('normal')}
-                className={`p-3 rounded-2xl border text-center transition ${
+                className={`p-3 rounded-2xl border text-center transition cursor-pointer ${
                   deliveryType === 'normal'
                     ? 'border-[#ed0718] bg-red-50 text-[#ed0718] font-black shadow-xs ring-2 ring-red-400'
                     : 'border-gray-200 bg-white hover:bg-gray-50 text-gray-700'
                 }`}
               >
                 <div className="text-xs font-black">🛵 Normal</div>
-                <div className="text-[10px] text-gray-500 mt-0.5">Estándar · ~{estimatedMinutes} min</div>
+                <div className="text-[10px] text-gray-500 mt-0.5">
+                  {liveTariff ? `Estándar · ~${liveTariff.estimatedMinutes} min` : 'Estándar'}
+                </div>
               </button>
 
               <button
                 type="button"
                 onClick={() => setDeliveryType('express')}
-                className={`p-3 rounded-2xl border text-center transition relative ${
+                className={`p-3 rounded-2xl border text-center transition relative cursor-pointer ${
                   deliveryType === 'express'
                     ? 'border-[#ed0718] bg-red-50 text-[#ed0718] font-black shadow-xs ring-2 ring-red-400'
                     : 'border-gray-200 bg-white hover:bg-gray-50 text-gray-700'
                 }`}
               >
-                <span className="absolute -top-1.5 -right-1 bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.2 rounded-full">
+                <span className="absolute -top-1.5 -right-1 bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full">
                   +${expressSurcharge} MXN
                 </span>
                 <div className="text-xs font-black flex items-center justify-center gap-1">
@@ -664,7 +758,7 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
               <button
                 type="button"
                 onClick={() => setDeliveryType('programada')}
-                className={`p-3 rounded-2xl border text-center transition ${
+                className={`p-3 rounded-2xl border text-center transition cursor-pointer ${
                   deliveryType === 'programada'
                     ? 'border-[#ed0718] bg-red-50 text-[#ed0718] font-black shadow-xs ring-2 ring-red-400'
                     : 'border-gray-200 bg-white hover:bg-gray-50 text-gray-700'
@@ -699,17 +793,54 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
             )}
           </div>
 
-          {/* Método de Pago del Envío */}
-          <div className="bg-gray-50 p-4 rounded-2xl border border-gray-200">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-black text-gray-800 uppercase tracking-wider">
-                Cobro del Envío ({distanceKm.toFixed(1)} km · {deliveryType.toUpperCase()})
-              </span>
-              <span className="font-mono text-base font-black text-[#ed0718]">
-                ${totalCalculatedFee} MXN
-              </span>
+          {/* Resumen Automático de Tarifa Calculada por API (solo lectura) + Método de Pago */}
+          <div className="bg-gray-50 p-4 rounded-2xl border border-gray-200 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Route className="w-4 h-4 text-[#ed0718] shrink-0" />
+                <div>
+                  <span className="text-xs font-black text-gray-900 uppercase tracking-wider block">
+                    Tarifa Calculada Automáticamente (A ➔ B)
+                  </span>
+                  {isCalculatingRoute ? (
+                    <span className="text-[11px] text-gray-500 font-semibold flex items-center gap-1">
+                      <Loader2 className="w-3 h-3 animate-spin" /> Calculando ruta real en San Miguel...
+                    </span>
+                  ) : liveTariff ? (
+                    <span className="text-[11px] text-emerald-700 font-bold inline-flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Ruta verificada: {liveTariff.distanceKm.toFixed(1)} km · ~{liveTariff.estimatedMinutes} min
+                      {deliveryType === 'express' ? ` · incluye +$${expressSurcharge} Exprés` : ''}
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-gray-500 font-medium">
+                      Completa Punto A y Punto B (o ubícalos en el mapa) para obtener el costo exacto.
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="text-right">
+                <span className="font-mono text-lg sm:text-xl font-black text-[#ed0718]">
+                  {isCalculatingRoute
+                    ? '...'
+                    : liveTariff
+                    ? `$${liveTariff.totalFee} MXN`
+                    : 'Por calcular'}
+                </span>
+                <span className="block text-[10px] text-gray-500 font-semibold">
+                  Base $30 (2 km) + $10/km extra
+                </span>
+              </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-bold">
+
+            {quoteNotice && (
+              <div className="bg-amber-50 border border-amber-200 text-amber-900 px-3 py-2 rounded-xl text-[11px] font-semibold">
+                ⚠️ {quoteNotice}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-bold pt-1">
               <label className={`p-3 rounded-xl border flex items-center gap-2 cursor-pointer transition ${paymentMethod === 'efectivo' ? 'bg-white border-[#ed0718] text-[#ed0718]' : 'bg-gray-100 text-gray-700'}`}>
                 <input
                   type="radio"
@@ -738,32 +869,36 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
           <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl text-[11px] text-gray-600 flex items-start gap-2">
             <ShieldCheck className="w-4 h-4 text-[#ed0718] shrink-0 mt-0.5" />
             <p className="leading-relaxed">
-              <b>Intermediación y Entrega:</b> RODO es una empresa independiente de mensajería. Los paquetes se transportan cerrados. En recolección y entrega se cuenta con un margen de tolerancia máximo de 10 minutos. No se almacenan datos bancarios; pagos SPEI se auditan únicamente para validar este servicio.
+              <b>Intermediación y Entrega:</b> RODO es una empresa independiente de mensajería. Los paquetes se transportan cerrados. En recolección y entrega se cuenta con un margen de tolerancia máximo de 10 minutos. La tarifa se calcula automáticamente por la ruta real entre el Punto A y el Punto B.
             </p>
           </div>
 
-          {/* Botón de Confirmación con el total calculado */}
+          {/* Botón de Confirmación */}
           <button
             type="submit"
-            disabled={isSubmitting}
-            className="w-full bg-[#ed0718] hover:bg-[#c90012] disabled:bg-gray-400 text-white font-black text-sm py-3.5 px-4 rounded-xl shadow-md transition flex items-center justify-center gap-2"
+            disabled={isSubmitting || isCalculatingRoute}
+            className="w-full bg-[#ed0718] hover:bg-[#c90012] disabled:bg-gray-400 text-white font-black text-sm py-3.5 px-4 rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
           >
             {isSubmitting ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                <span>Generando ticket de envío...</span>
+                <span>Calculando ruta y generando ticket...</span>
               </>
+            ) : liveTariff ? (
+              <span>
+                🚀 Solicitar Repartidor RODO · ${liveTariff.totalFee} MXN ({liveTariff.distanceKm.toFixed(1)} km)
+              </span>
             ) : (
-              <span>🚀 Solicitar Repartidor RODO · ${totalCalculatedFee} MXN ({deliveryType.toUpperCase()})</span>
+              <span>🚀 Calcular Ruta y Solicitar Repartidor RODO</span>
             )}
           </button>
         </form>
 
         {/* MODAL DE SELECCIÓN EN MAPA (Para A o B) */}
         {activeMapPickerTarget && (
-          <div className="fixed inset-0 z-80 bg-black/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
-            <div className="bg-white rounded-3xl w-full max-w-lg p-5 sm:p-6 space-y-4 shadow-2xl border border-gray-200 my-auto">
-              <div className="flex items-center justify-between border-b pb-3">
+          <div className="fixed inset-0 z-80 bg-black/80 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
+            <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-lg max-h-[92dvh] flex flex-col overflow-hidden shadow-2xl border border-gray-200">
+              <div className="flex items-center justify-between border-b p-4 sm:p-5 shrink-0">
                 <div>
                   <span className="text-[10px] font-black uppercase text-[#ed0718] bg-red-50 px-2 py-0.5 rounded-full">
                     {activeMapPickerTarget === 'pickup' ? 'Punto A · Recolección' : 'Punto B · Entrega'}
@@ -778,57 +913,59 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => setActiveMapPickerTarget(null)}
-                  className="text-gray-400 hover:text-black p-1.5 rounded-xl hover:bg-gray-100 transition"
+                  className="text-gray-400 hover:text-black p-1.5 rounded-xl hover:bg-gray-100 transition cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <InteractiveMapPicker
-                initialLat={
-                  activeMapPickerTarget === 'pickup'
-                    ? (pickupCoords?.lat || 20.9144)
-                    : (deliveryCoords?.lat || 20.9205)
-                }
-                initialLng={
-                  activeMapPickerTarget === 'pickup'
-                    ? (pickupCoords?.lng || -100.7437)
-                    : (deliveryCoords?.lng || -100.7380)
-                }
-                onLocationSelect={(loc) => {
-                  if (activeMapPickerTarget === 'pickup') {
-                    setPickupCoords({ lat: loc.lat, lng: loc.lng });
-                    if (loc.street && loc.street.trim()) {
-                      setPickupCalle(loc.street.trim());
-                    }
-                    if (loc.streetNumber && loc.streetNumber.trim()) {
-                      setPickupNumero(loc.streetNumber.trim().replace(/^#/, ''));
-                    }
-                    if (loc.neighborhood && loc.neighborhood.trim()) {
-                      setPickupColonia(loc.neighborhood.trim());
-                    }
-                  } else {
-                    setDeliveryCoords({ lat: loc.lat, lng: loc.lng });
-                    if (loc.street && loc.street.trim()) {
-                      setDeliveryCalle(loc.street.trim());
-                    }
-                    if (loc.streetNumber && loc.streetNumber.trim()) {
-                      setDeliveryNumero(loc.streetNumber.trim().replace(/^#/, ''));
-                    }
-                    if (loc.neighborhood && loc.neighborhood.trim()) {
-                      setDeliveryColonia(loc.neighborhood.trim());
-                    }
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-5 space-y-4">
+                <InteractiveMapPicker
+                  initialLat={
+                    activeMapPickerTarget === 'pickup'
+                      ? (pickupCoords?.lat || 20.9144)
+                      : (deliveryCoords?.lat || 20.9205)
                   }
-                }}
-              />
+                  initialLng={
+                    activeMapPickerTarget === 'pickup'
+                      ? (pickupCoords?.lng || -100.7437)
+                      : (deliveryCoords?.lng || -100.738)
+                  }
+                  onLocationSelect={(loc) => {
+                    if (activeMapPickerTarget === 'pickup') {
+                      setPickupCoords({ lat: loc.lat, lng: loc.lng });
+                      if (loc.street && loc.street.trim()) {
+                        setPickupCalle(loc.street.trim());
+                      }
+                      if (loc.streetNumber && loc.streetNumber.trim()) {
+                        setPickupNumero(cleanStreetNumber(loc.streetNumber));
+                      }
+                      if (loc.neighborhood && loc.neighborhood.trim()) {
+                        setPickupColonia(resolveOfficialColonia(loc.neighborhood));
+                      }
+                    } else {
+                      setDeliveryCoords({ lat: loc.lat, lng: loc.lng });
+                      if (loc.street && loc.street.trim()) {
+                        setDeliveryCalle(loc.street.trim());
+                      }
+                      if (loc.streetNumber && loc.streetNumber.trim()) {
+                        setDeliveryNumero(cleanStreetNumber(loc.streetNumber));
+                      }
+                      if (loc.neighborhood && loc.neighborhood.trim()) {
+                        setDeliveryColonia(resolveOfficialColonia(loc.neighborhood));
+                      }
+                    }
+                  }}
+                />
 
-              <button
-                type="button"
-                onClick={() => setActiveMapPickerTarget(null)}
-                className="w-full bg-[#ed0718] hover:bg-[#c90012] text-white font-black text-xs py-3 rounded-xl shadow-md transition"
-              >
-                ✓ Confirmar Punto en el Mapa
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveMapPickerTarget(null)}
+                  className="w-full bg-[#ed0718] hover:bg-[#c90012] text-white font-black text-xs py-3 rounded-xl shadow-md transition cursor-pointer"
+                >
+                  ✓ Confirmar Punto en el Mapa
+                </button>
+              </div>
             </div>
           </div>
         )}

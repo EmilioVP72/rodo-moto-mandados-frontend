@@ -1166,6 +1166,7 @@ export default function App() {
             customerId={currentUser?.id || 'guest-envio'}
             customerDefaultName={currentUser?.name}
             customerDefaultPhone={currentUser?.phone}
+            savedAddresses={customerAddresses}
             rainPauseEnabled={settings.rainPauseEnabled}
             rainPauseMessage={settings.rainPauseMessage}
             onOrderSuccess={handleOrderSuccess}

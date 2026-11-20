@@ -4,6 +4,7 @@ import {
   SMA_CENTER_COORDS,
   calculateHaversineDistance,
   calculateDynamicDeliveryFee,
+  calculateExpressShippingTariff,
   estimateMotoDeliveryTime,
   computeOrderRoute,
   extractOsrmRoutePoints,
@@ -148,6 +149,26 @@ describe('Frontend Routing, Tariffs & San Miguel de Allende Geolocation Unit Tes
       assert.equal(points.length, 3);
       assert.deepEqual(points[0], { lat: 20.9144, lng: -100.7437 });
       assert.deepEqual(points[2], { lat: 20.9205, lng: -100.7380 });
+    });
+  });
+
+  describe('6. calculateExpressShippingTariff (Tarifa Automática Punto A -> Punto B sin selección manual de km)', () => {
+    it('cobra tarifa base de $30 MXN hasta 2.0 km y suma $10/km adicional en modalidad normal', () => {
+      const shortTrip = calculateExpressShippingTariff(1.4, 'normal');
+      assert.equal(shortTrip.baseFee, 30);
+      assert.equal(shortTrip.extraKm, 0);
+      assert.equal(shortTrip.totalFee, 30);
+
+      const mediumTrip = calculateExpressShippingTariff(3.5, 'normal');
+      assert.equal(mediumTrip.extraKm, 1.5);
+      assert.equal(mediumTrip.totalFee, 45);
+    });
+
+    it('suma el recargo Exprés (+$25 MXN) sobre la distancia real calculada por la API', () => {
+      const expressTrip = calculateExpressShippingTariff(2.5, 'express');
+      assert.equal(expressTrip.baseCalculatedFee, 35);
+      assert.equal(expressTrip.expressSurcharge, 25);
+      assert.equal(expressTrip.totalFee, 60);
     });
   });
 });
