@@ -792,7 +792,7 @@ export default function App() {
 
   return (
     <div
-      className={`w-full max-w-full overflow-x-hidden min-h-dvh bg-[#f5f6f8] dark:bg-slate-950 text-[#101b29] dark:text-slate-100 font-sans pb-32 sm:pb-28 transition-colors relative ${
+      className={`w-full max-w-full overflow-x-clip min-h-dvh bg-[#f5f6f8] dark:bg-slate-950 text-[#101b29] dark:text-slate-100 font-sans pb-32 sm:pb-28 transition-colors relative ${
         deviceInfo.isMobile ? 'device-mobile' : deviceInfo.isTablet ? 'device-tablet' : 'device-desktop'
       }`}
     >

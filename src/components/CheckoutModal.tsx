@@ -569,7 +569,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         </div>
 
         {/* Formulario */}
-        <form onSubmit={handlePlaceOrder} className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4">
+        <form onSubmit={handlePlaceOrder} className="p-4 sm:p-6 min-h-0 overflow-y-auto overscroll-contain flex-1 space-y-4">
           {rainPauseEnabled && (
             <div className="bg-sky-50 border-2 border-sky-400 text-sky-950 p-3.5 rounded-xl text-xs flex items-start gap-2.5 shadow-xs">
               <CloudRain className="w-5 h-5 shrink-0 text-sky-600 mt-0.5" />

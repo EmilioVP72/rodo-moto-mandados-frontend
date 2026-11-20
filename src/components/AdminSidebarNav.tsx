@@ -216,7 +216,7 @@ const NavGroupsList: React.FC<{
   activeTab: AdminTabId;
   onSelect: (tab: AdminTabId) => void;
 }> = ({ groups, activeTab, onSelect }) => (
-  <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-5 scrollbar-none">
+  <nav className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-3 space-y-5">
     {groups.map((group) => (
       <div key={group.title} className="space-y-1">
         <div className="px-2.5 text-[10px] font-black uppercase tracking-widest text-slate-400">
@@ -277,7 +277,7 @@ export const AdminSidebarNav: React.FC<AdminSidebarNavProps> = ({
   return (
     <>
       {/* Sidebar fijo en Escritorio (lg+) */}
-      <aside className="hidden lg:flex lg:flex-col w-64 shrink-0 bg-[#0b1220] text-slate-100 border-r border-slate-800">
+      <aside className="hidden lg:flex lg:flex-col w-64 shrink-0 h-full min-h-0 bg-[#0b1220] text-slate-100 border-r border-slate-800">
         <div className="px-4 py-4 border-b border-slate-800/90 flex items-center gap-3">
           <img
             src="/assets/aistudio/IMG-20260902-WA0090_1__d4eb6002.jpg"

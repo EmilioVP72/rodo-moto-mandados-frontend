@@ -217,7 +217,7 @@ export const RestaurantDetailModal: React.FC<RestaurantDetailModalProps> = ({
         </div>
 
         {/* Cuerpo del Menú */}
-        <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4">
+        <div className="p-4 sm:p-6 min-h-0 overflow-y-auto overscroll-contain flex-1 space-y-4">
           <p className="text-xs sm:text-sm text-gray-600 leading-relaxed">
             {restaurant.description}
           </p>

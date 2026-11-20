@@ -659,7 +659,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         </div>
 
         {/* Contenido con scroll */}
-        <div className="p-5 sm:p-6 space-y-4 overflow-y-auto flex-1">
+        <div className="p-5 sm:p-6 space-y-4 min-h-0 overflow-y-auto overscroll-contain flex-1">
           {errorMsg && (
             <div className="bg-red-50 border border-red-200 text-red-900 p-3.5 rounded-2xl text-xs font-semibold flex items-start gap-2.5 shadow-2xs">
               <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />

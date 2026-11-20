@@ -100,7 +100,7 @@ export const TopLeftMenuModal: React.FC<TopLeftMenuModalProps> = ({
         </div>
 
         {/* Contenido dinámico según la sección elegida */}
-        <div className="p-4 sm:p-6 overflow-y-auto flex-1">
+        <div className="p-4 sm:p-6 min-h-0 overflow-y-auto overscroll-contain flex-1">
           {activeSection === 'menu' && (
             <div className="space-y-3">
               <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">

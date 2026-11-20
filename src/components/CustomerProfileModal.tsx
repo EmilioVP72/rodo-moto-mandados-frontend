@@ -295,7 +295,7 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
         </div>
 
         {/* Contenido */}
-        <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-4 text-left">
+        <div className="p-4 sm:p-5 min-h-0 overflow-y-auto overscroll-contain flex-1 space-y-4 text-left">
           {errorMsg && (
             <div className="bg-red-50 border border-red-200 text-red-800 text-xs font-bold p-3 rounded-xl">
               ⚠️ {errorMsg}

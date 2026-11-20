@@ -953,7 +953,7 @@ _RODO Moto Mandados · San Miguel de Allende_`;
         />
 
         {/* Columna Principal del Workspace */}
-        <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+        <div className="flex-1 flex flex-col min-w-0 min-h-0 h-full overflow-hidden">
           {/* Cabecera Limpia con Título de Sección Activa y Acciones Globales */}
           <header className="bg-white dark:bg-[#0d121d] border-b border-slate-200 dark:border-slate-800 px-3 sm:px-5 py-3 pt-safe flex items-center justify-between gap-2 shrink-0">
             <div className="flex items-center gap-2.5 min-w-0">
@@ -1102,7 +1102,7 @@ _RODO Moto Mandados · San Miguel de Allende_`;
           </div>
 
           {/* Contenido principal con scroll independiente */}
-          <div className="flex-1 overflow-y-auto p-3 sm:p-5 lg:p-6 bg-slate-100 dark:bg-[#070a10] transition-colors space-y-4">
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 sm:p-5 lg:p-6 bg-slate-100 dark:bg-[#070a10] transition-colors space-y-4">
           {/* Mensaje de retroalimentación no bloqueante */}
           {feedbackNotice && (
             <div
