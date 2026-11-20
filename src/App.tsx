@@ -88,6 +88,8 @@ import {
   BarChart3,
   X,
   CloudRain,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 
 const FALLBACK_FOOD_IMG =
@@ -157,6 +159,50 @@ export default function App() {
   const [selectedPriceRange, setSelectedPriceRange] = useState<'all' | '$' | '$$' | '$$$' | '$$$$'>('all');
   const [showFavoritesOnly, setShowFavoritesOnly] = useState<boolean>(false);
   const [highlightedCatalog, setHighlightedCatalog] = useState<boolean>(false);
+  const categoriesCarouselRef = useRef<HTMLDivElement | null>(null);
+  const [carouselScrollState, setCarouselScrollState] = useState<{
+    canLeft: boolean;
+    canRight: boolean;
+  }>({ canLeft: false, canRight: false });
+
+  const updateCarouselScrollState = () => {
+    const el = categoriesCarouselRef.current;
+    if (!el) return;
+    const maxScroll = el.scrollWidth - el.clientWidth;
+    setCarouselScrollState({
+      canLeft: el.scrollLeft > 4,
+      canRight: maxScroll > 4 && el.scrollLeft < maxScroll - 4,
+    });
+  };
+
+  const scrollCategoriesCarousel = (direction: 'left' | 'right') => {
+    const el = categoriesCarouselRef.current;
+    if (!el) return;
+    const step = Math.max(260, Math.round(el.clientWidth * 0.7));
+    el.scrollBy({
+      left: direction === 'left' ? -step : step,
+      behavior: 'smooth',
+    });
+  };
+
+  useEffect(() => {
+    const el = categoriesCarouselRef.current;
+    if (el) {
+      el.scrollLeft = 0;
+    }
+    const rafId = window.requestAnimationFrame(updateCarouselScrollState);
+    window.addEventListener('resize', updateCarouselScrollState);
+    let observer: ResizeObserver | null = null;
+    if (el && typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(updateCarouselScrollState);
+      observer.observe(el);
+    }
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      window.removeEventListener('resize', updateCarouselScrollState);
+      observer?.disconnect();
+    };
+  }, [activeSection]);
 
   // Usuario autenticado con persistencia en localStorage (se declara antes del carrito para aislamiento por usuario)
   const [currentUser, setCurrentUser] = useState<{
@@ -1127,57 +1173,113 @@ export default function App() {
           />
         ) : (
           <>
-            {/* Carrusel de Categorías (con scroll + highlight automático al catálogo) */}
+            {/* Carrusel de Categorías (con flechas de navegación para PC + scroll táctil en móvil) */}
             <section>
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center justify-between gap-2 mb-3">
                 <h2 className="font-extrabold text-base sm:text-lg text-gray-900 dark:text-white">
                   {activeSection === 'restaurantes' ? t('whatDoYouCrave') : t('motoAndStalls')}
                 </h2>
-                <button
-                  onClick={() => handleSelectCategoryWithHighlight('Todos')}
-                  className="text-xs font-extrabold text-[#c90012] hover:underline cursor-pointer"
-                >
-                  {t('viewAll')}
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  {(carouselScrollState.canLeft || carouselScrollState.canRight) && (
+                    <div className="hidden sm:flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => scrollCategoriesCarousel('left')}
+                        disabled={!carouselScrollState.canLeft}
+                        aria-label="Desplazar categorías a la izquierda"
+                        title="Anterior"
+                        className="w-8 h-8 rounded-full border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-800 dark:text-white hover:bg-[#ed0718] hover:text-white hover:border-[#ed0718] disabled:opacity-35 disabled:hover:bg-white disabled:dark:hover:bg-slate-800 disabled:hover:text-gray-800 disabled:hover:border-gray-300 disabled:cursor-not-allowed flex items-center justify-center shadow-xs transition cursor-pointer"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => scrollCategoriesCarousel('right')}
+                        disabled={!carouselScrollState.canRight}
+                        aria-label="Desplazar categorías a la derecha"
+                        title="Siguiente"
+                        className="w-8 h-8 rounded-full border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-800 dark:text-white hover:bg-[#ed0718] hover:text-white hover:border-[#ed0718] disabled:opacity-35 disabled:hover:bg-white disabled:dark:hover:bg-slate-800 disabled:hover:text-gray-800 disabled:hover:border-gray-300 disabled:cursor-not-allowed flex items-center justify-center shadow-xs transition cursor-pointer"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+                  <button
+                    onClick={() => handleSelectCategoryWithHighlight('Todos')}
+                    className="text-xs font-extrabold text-[#c90012] hover:underline cursor-pointer"
+                  >
+                    {t('viewAll')}
+                  </button>
+                </div>
               </div>
 
-              <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none">
-                {(CATEGORIES_DATA[activeSection] || CATEGORIES_DATA.restaurantes).map(([catName, catImg]) => (
+              <div className="relative group/carousel">
+                {/* Botón flotante izquierdo para PC */}
+                {carouselScrollState.canLeft && (
                   <button
-                    key={catName}
-                    onClick={(e) => {
-                      handleSelectCategoryWithHighlight(catName);
-                      e.currentTarget.scrollIntoView({
-                        behavior: 'smooth',
-                        inline: 'center',
-                        block: 'nearest',
-                      });
-                    }}
-                    className={`flex flex-col items-center min-w-[85px] sm:min-w-[95px] p-1.5 rounded-2xl transition cursor-pointer ${
-                      selectedCategory === catName
-                        ? 'text-[#c90012] font-black'
-                        : 'text-gray-700 dark:text-gray-300 hover:text-black dark:hover:text-white font-bold'
-                    }`}
+                    type="button"
+                    onClick={() => scrollCategoriesCarousel('left')}
+                    aria-label="Ver categorías anteriores"
+                    className="hidden sm:flex absolute left-0 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-white/95 dark:bg-slate-900/95 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white hover:bg-[#ed0718] hover:text-white hover:border-[#ed0718] shadow-lg items-center justify-center transition cursor-pointer"
                   >
-                    <div
-                      className={`w-16 h-16 sm:w-20 sm:h-20 rounded-2xl overflow-hidden mb-1.5 shadow-sm transition bg-gray-200 dark:bg-slate-800 ${
-                        selectedCategory === catName ? 'ring-3 ring-[#ed0718] ring-offset-2' : ''
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                )}
+
+                <div
+                  ref={categoriesCarouselRef}
+                  onScroll={updateCarouselScrollState}
+                  className="flex gap-3 overflow-x-auto pb-2 scrollbar-none scroll-smooth px-0.5 sm:px-2"
+                >
+                  {(CATEGORIES_DATA[activeSection] || CATEGORIES_DATA.restaurantes).map(([catName, catImg]) => (
+                    <button
+                      key={catName}
+                      onClick={(e) => {
+                        handleSelectCategoryWithHighlight(catName);
+                        e.currentTarget.scrollIntoView({
+                          behavior: 'smooth',
+                          inline: 'center',
+                          block: 'nearest',
+                        });
+                      }}
+                      className={`flex flex-col items-center min-w-[85px] sm:min-w-[95px] p-1.5 rounded-2xl transition cursor-pointer shrink-0 ${
+                        selectedCategory === catName
+                          ? 'text-[#c90012] font-black'
+                          : 'text-gray-700 dark:text-gray-300 hover:text-black dark:hover:text-white font-bold'
                       }`}
                     >
-                      <img
-                        src={catImg}
-                        alt={catName}
-                        loading="lazy"
-                        decoding="async"
-                        onError={(e) => {
-                          e.currentTarget.src = FALLBACK_FOOD_IMG;
-                        }}
-                        className="w-full h-full object-cover transition-opacity duration-300"
-                      />
-                    </div>
-                    <span className="text-xs tracking-tight text-center">{catName}</span>
+                      <div
+                        className={`w-16 h-16 sm:w-20 sm:h-20 rounded-2xl overflow-hidden mb-1.5 shadow-sm transition bg-gray-200 dark:bg-slate-800 ${
+                          selectedCategory === catName ? 'ring-3 ring-[#ed0718] ring-offset-2' : ''
+                        }`}
+                      >
+                        <img
+                          src={catImg}
+                          alt={catName}
+                          loading="lazy"
+                          decoding="async"
+                          onError={(e) => {
+                            e.currentTarget.src = FALLBACK_FOOD_IMG;
+                          }}
+                          className="w-full h-full object-cover transition-opacity duration-300"
+                        />
+                      </div>
+                      <span className="text-xs tracking-tight text-center">{catName}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Botón flotante derecho para PC */}
+                {carouselScrollState.canRight && (
+                  <button
+                    type="button"
+                    onClick={() => scrollCategoriesCarousel('right')}
+                    aria-label="Ver más categorías"
+                    className="hidden sm:flex absolute right-0 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-white/95 dark:bg-slate-900/95 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white hover:bg-[#ed0718] hover:text-white hover:border-[#ed0718] shadow-lg items-center justify-center transition cursor-pointer"
+                  >
+                    <ChevronRight className="w-5 h-5" />
                   </button>
-                ))}
+                )}
               </div>
             </section>
 
