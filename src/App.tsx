@@ -37,8 +37,6 @@ import { OrderRatingModal } from './components/OrderRatingModal';
 
 // Carga perezosa (React.lazy y Suspense) para optimizar el bundle inicial en móviles
 const AdminPanel = React.lazy(() => import('./components/AdminPanel').then((m) => ({ default: m.AdminPanel })));
-const ProjectBackupsModal = React.lazy(() => import('./components/ProjectBackupsModal').then((m) => ({ default: m.ProjectBackupsModal })));
-const DeveloperShareModal = React.lazy(() => import('./components/DeveloperShareModal').then((m) => ({ default: m.DeveloperShareModal })));
 const CustomerCoverageModal = React.lazy(() => import('./components/CustomerCoverageModal').then((m) => ({ default: m.CustomerCoverageModal })));
 const NotificationCenterModal = React.lazy(() => import('./components/NotificationCenterModal').then((m) => ({ default: m.NotificationCenterModal })));
 import { getThemePreference, applyTheme, toggleTheme, ThemeMode } from './services/theme';
@@ -233,13 +231,8 @@ export default function App() {
   const [showOrdersHistory, setShowOrdersHistory] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [showTopLeftMenu, setShowTopLeftMenu] = useState(false);
-  const [showShareModal, setShowShareModal] = useState(false);
   const [showPhonePermissionsModal, setShowPhonePermissionsModal] = useState(false);
   const [showCoverageModal, setShowCoverageModal] = useState(false);
-  const [showBackupsModal, setShowBackupsModal] = useState(false);
-  const [showDeveloperModal, setShowDeveloperModal] = useState(false);
-  const [shareTab, setShareTab] = useState<'clientes' | 'inversionista'>('clientes');
-  const [copiedLink, setCopiedLink] = useState(false);
 
   // Modo Obscuro / Claro con persistencia
   const [themeMode, setThemeMode] = useState<ThemeMode>(getThemePreference);
@@ -299,14 +292,6 @@ export default function App() {
         }
       } else if (hash === '#envios' || params.get('view') === 'envios') {
         setActiveSection('envios');
-      } else if (
-        hash === '#respaldo' ||
-        hash === '#respaldos' ||
-        hash === '#backup' ||
-        hash === '#backups' ||
-        params.get('view') === 'respaldo'
-      ) {
-        setShowBackupsModal(true);
       }
     };
     handleRouteTrigger();
@@ -773,8 +758,6 @@ export default function App() {
     if (showOrdersHistory) { setShowOrdersHistory(false); return; }
     if (showHelpModal) { setShowHelpModal(false); return; }
     if (showTopLeftMenu) { setShowTopLeftMenu(false); return; }
-    if (showShareModal) { setShowShareModal(false); return; }
-    if (showBackupsModal) { setShowBackupsModal(false); return; }
     if (showPhonePermissionsModal) { setShowPhonePermissionsModal(false); return; }
     if (showMicroLocationModal) { setShowMicroLocationModal(false); return; }
     if (showCustomOrderModal) { setShowCustomOrderModal(false); return; }
@@ -794,11 +777,9 @@ export default function App() {
     setShowProfileModal(false);
     setShowAuthModal(false);
     setShowCoverageModal(false);
-    setShowBackupsModal(false);
     setShowOrdersHistory(false);
     setShowHelpModal(false);
     setShowTopLeftMenu(false);
-    setShowShareModal(false);
     setShowPhonePermissionsModal(false);
     setShowMicroLocationModal(false);
     setShowCustomOrderModal(false);
@@ -811,7 +792,7 @@ export default function App() {
 
   return (
     <div
-      className={`w-full max-w-full overflow-x-hidden min-h-screen bg-[#f5f6f8] dark:bg-slate-950 text-[#101b29] dark:text-slate-100 font-sans pb-28 transition-colors relative ${
+      className={`w-full max-w-full overflow-x-hidden min-h-dvh bg-[#f5f6f8] dark:bg-slate-950 text-[#101b29] dark:text-slate-100 font-sans pb-32 sm:pb-28 transition-colors relative ${
         deviceInfo.isMobile ? 'device-mobile' : deviceInfo.isTablet ? 'device-tablet' : 'device-desktop'
       }`}
     >
@@ -908,7 +889,6 @@ export default function App() {
         onOpenAccount={handleOpenAccount}
         onOpenLocationModal={() => setShowMicroLocationModal(true)}
         currentAddressLabel={customerDeliveryAddress}
-        onShareApp={() => setShowShareModal(true)}
         onOpenNotifications={() => {
           setShowNotificationCenter(true);
           setUnreadNotifsCount(0);
@@ -917,7 +897,6 @@ export default function App() {
         isDarkMode={isDarkMode}
         onToggleDarkMode={handleToggleTheme}
         holidayThemeId={settings.activeHolidayTheme}
-        onOpenDeveloperModal={() => setShowDeveloperModal(true)}
         restaurants={restaurants}
         onSelectSuggestionRestaurant={(rest) => {
           if (rest.hasFixedMenu === false) {
@@ -934,9 +913,9 @@ export default function App() {
       />
 
 
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 pt-5 space-y-6">
+      <main className="max-w-6xl mx-auto px-3 sm:px-6 pt-3.5 sm:pt-5 space-y-5 sm:space-y-6">
         {/* Banner Hero RODO */}
-        <section className="relative h-56 sm:h-64 rounded-3xl overflow-hidden shadow-md flex items-center p-6 sm:p-10 text-white bg-linear-to-r from-black/90 via-black/70 to-transparent">
+        <section className="relative min-h-[188px] sm:h-64 rounded-2xl sm:rounded-3xl overflow-hidden shadow-md flex items-center p-4 sm:p-10 text-white bg-linear-to-r from-black/90 via-black/75 to-black/25">
           <img
             src="https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=1500&q=85"
             alt="RODO Banner"
@@ -1068,18 +1047,18 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Barra de Filtros Rápidos y Ordenamiento Avanzado */}
-              <div className="mb-6 p-3 sm:p-4 rounded-2xl bg-white/5 border border-white/10 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2.5">
+              {/* Barra de Filtros Rápidos y Ordenamiento Avanzado (Scroll táctil horizontal en móvil) */}
+              <div className="mb-5 sm:mb-6 p-3 sm:p-4 rounded-2xl bg-white/5 border border-white/10 space-y-2.5 sm:space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   {/* Selector de Orden */}
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-[11px] font-black uppercase tracking-wider text-gray-400 mr-1 flex items-center gap-1">
+                  <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5 -mx-1 px-1 sm:flex-wrap sm:overflow-visible">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-gray-400 mr-1 flex items-center gap-1 shrink-0 whitespace-nowrap">
                       <Clock className="w-3.5 h-3.5 text-amber-400" /> {t('sortLabel')}
                     </span>
                     <button
                       type="button"
                       onClick={() => setSortOption('default')}
-                      className={`text-xs px-2.5 py-1.5 rounded-xl font-bold transition cursor-pointer ${
+                      className={`text-xs px-2.5 py-1.5 rounded-xl font-bold transition cursor-pointer shrink-0 whitespace-nowrap ${
                         sortOption === 'default'
                           ? 'bg-[#ed0718] text-white shadow-xs'
                           : 'bg-white/10 text-gray-300 hover:text-white hover:bg-white/15'
@@ -1090,7 +1069,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => setSortOption('fastest')}
-                      className={`text-xs px-2.5 py-1.5 rounded-xl font-bold transition flex items-center gap-1 cursor-pointer ${
+                      className={`text-xs px-2.5 py-1.5 rounded-xl font-bold transition flex items-center gap-1 cursor-pointer shrink-0 whitespace-nowrap ${
                         sortOption === 'fastest'
                           ? 'bg-[#ed0718] text-white shadow-xs'
                           : 'bg-white/10 text-gray-300 hover:text-white hover:bg-white/15'
@@ -1102,7 +1081,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => setSortOption('distance')}
-                      className={`text-xs px-2.5 py-1.5 rounded-xl font-bold transition flex items-center gap-1 cursor-pointer ${
+                      className={`text-xs px-2.5 py-1.5 rounded-xl font-bold transition flex items-center gap-1 cursor-pointer shrink-0 whitespace-nowrap ${
                         sortOption === 'distance'
                           ? 'bg-[#ed0718] text-white shadow-xs'
                           : 'bg-white/10 text-gray-300 hover:text-white hover:bg-white/15'
@@ -1114,7 +1093,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => setSortOption('rating')}
-                      className={`text-xs px-2.5 py-1.5 rounded-xl font-bold transition flex items-center gap-1 cursor-pointer ${
+                      className={`text-xs px-2.5 py-1.5 rounded-xl font-bold transition flex items-center gap-1 cursor-pointer shrink-0 whitespace-nowrap ${
                         sortOption === 'rating'
                           ? 'bg-[#ed0718] text-white shadow-xs'
                           : 'bg-white/10 text-gray-300 hover:text-white hover:bg-white/15'
@@ -1126,7 +1105,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => setSortOption('cheapest_delivery')}
-                      className={`text-xs px-2.5 py-1.5 rounded-xl font-bold transition flex items-center gap-1 cursor-pointer ${
+                      className={`text-xs px-2.5 py-1.5 rounded-xl font-bold transition flex items-center gap-1 cursor-pointer shrink-0 whitespace-nowrap ${
                         sortOption === 'cheapest_delivery'
                           ? 'bg-[#ed0718] text-white shadow-xs'
                           : 'bg-white/10 text-gray-300 hover:text-white hover:bg-white/15'
@@ -1138,19 +1117,19 @@ export default function App() {
                   </div>
 
                   {/* Conteo de Resultados */}
-                  <span className="text-xs font-mono font-bold text-gray-300 ml-auto">
+                  <span className="text-[11px] sm:text-xs font-mono font-bold text-gray-300 sm:ml-auto shrink-0">
                     {filteredRestaurants.length} {t('placesCount')}
                   </span>
                 </div>
 
                 {/* Filtros Toggle y Rango de Precio */}
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-white/10">
-                  <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-white/10">
+                  <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
                     {/* Toggle Abiertos Ahora */}
                     <button
                       type="button"
                       onClick={() => setOnlyOpenNow((prev) => !prev)}
-                      className={`text-xs px-2.5 py-1 rounded-xl font-extrabold transition flex items-center gap-1.5 cursor-pointer border ${
+                      className={`text-xs px-2.5 py-1.5 rounded-xl font-extrabold transition flex items-center gap-1.5 cursor-pointer border shrink-0 whitespace-nowrap ${
                         onlyOpenNow
                           ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50'
                           : 'bg-white/5 text-gray-400 border-white/10 hover:text-white'
@@ -1164,7 +1143,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => setShowFavoritesOnly((prev) => !prev)}
-                      className={`text-xs px-2.5 py-1 rounded-xl font-extrabold transition flex items-center gap-1.5 cursor-pointer border ${
+                      className={`text-xs px-2.5 py-1.5 rounded-xl font-extrabold transition flex items-center gap-1.5 cursor-pointer border shrink-0 whitespace-nowrap ${
                         showFavoritesOnly
                           ? 'bg-red-500/20 text-red-400 border-red-500/50'
                           : 'bg-white/5 text-gray-400 border-white/10 hover:text-white'
@@ -1176,14 +1155,14 @@ export default function App() {
                   </div>
 
                   {/* Rango de Precios ($ a $$$$) */}
-                  <div className="flex items-center gap-1 text-xs">
-                    <span className="text-[10px] text-gray-400 uppercase font-black mr-1">{t('priceLabel')}</span>
+                  <div className="flex items-center gap-1 text-xs overflow-x-auto scrollbar-none">
+                    <span className="text-[10px] text-gray-400 uppercase font-black mr-1 shrink-0">{t('priceLabel')}</span>
                     {(['all', '$', '$$', '$$$', '$$$$'] as const).map((pr) => (
                       <button
                         key={pr}
                         type="button"
                         onClick={() => setSelectedPriceRange(pr)}
-                        className={`px-2 py-0.5 rounded-lg text-xs font-black transition cursor-pointer ${
+                        className={`px-2.5 py-1 rounded-lg text-xs font-black transition cursor-pointer shrink-0 ${
                           selectedPriceRange === pr
                             ? 'bg-white text-black font-black'
                             : 'bg-white/10 text-gray-300 hover:bg-white/20'
@@ -1480,21 +1459,11 @@ export default function App() {
 
         </section>
 
-        {/* Nota al pie */}
-        <footer className="text-center text-xs text-gray-500 pt-4 pb-2 space-y-2">
-          <p className="font-semibold text-gray-600">RODO Moto Mandados · San Miguel de Allende, Gto.</p>
-          <div className="flex items-center justify-center gap-3 text-[11px] text-gray-400 flex-wrap">
-            <button
-              onClick={() => {
-                setShareTab('clientes');
-                setShowShareModal(true);
-              }}
-              className="hover:text-emerald-600 underline font-semibold transition flex items-center gap-1"
-            >
-              <Share2 className="w-3 h-3 text-emerald-500 inline" />
-              <span>Compartir App</span>
-            </button>
-          </div>
+        {/* Nota al pie limpia de producción */}
+        <footer className="text-center text-xs text-gray-500 pt-4 pb-2 space-y-1">
+          <p className="font-semibold text-gray-600 dark:text-gray-400">
+            RODO Moto Mandados · San Miguel de Allende, Gto.
+          </p>
         </footer>
       </main>
 
@@ -1655,7 +1624,7 @@ export default function App() {
               details: [
                 { label: 'Usuario', value: cust.name },
                 { label: 'Correo', value: cust.email },
-                { label: 'Sesión', value: 'Activa y cifrada (JWT)', highlight: true },
+                { label: 'Sesión', value: 'Activa', highlight: true },
               ],
               primaryActionLabel: hasPendingCart ? 'Continuar con mi Pedido' : 'Continuar en RODO',
               onPrimaryAction: hasPendingCart ? () => setShowCheckout(true) : undefined,
@@ -1860,7 +1829,6 @@ export default function App() {
         }}
         isDarkMode={isDarkMode}
         onToggleDarkMode={handleToggleTheme}
-        onOpenDeveloperModal={() => setShowDeveloperModal(true)}
         onOpenTutorial={() => setShowTutorial(true)}
         onLogout={async () => {
           await handleFullLogout(false);
@@ -1872,120 +1840,6 @@ export default function App() {
         isOpen={showPhonePermissionsModal}
         onClose={() => setShowPhonePermissionsModal(false)}
       />
-
-      {/* 13. Modal para Compartir por WhatsApp (Para Clientes / Amigos y Opcional para Inversionistas) */}
-      {showShareModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl w-full max-w-xl max-h-[92vh] flex flex-col overflow-hidden shadow-2xl border border-gray-200">
-            {/* Header del modal */}
-            <div className="bg-[#101b29] text-white p-5 flex justify-between items-center border-b border-gray-800">
-              <div className="flex items-center gap-3">
-                <div className="bg-[#25D366] p-2.5 rounded-xl text-white shadow-xs">
-                  <Share2 className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-base leading-tight">
-                    Compartir RODO Moto Mandados
-                  </h3>
-                  <p className="text-[11px] text-gray-300">
-                    San Miguel de Allende · Enlace web instantáneo sin descargas
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowShareModal(false)}
-                className="text-gray-400 hover:text-white text-lg font-bold p-1 rounded-lg hover:bg-white/10"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Contenido limpio para Clientes */}
-            <div className="p-5 sm:p-6 overflow-y-auto space-y-5 text-xs text-gray-700">
-              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 space-y-1">
-                <p className="text-emerald-900 font-bold flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  Experiencia Limpia para Cualquier Persona
-                </p>
-                <p className="text-emerald-800 text-[11px] leading-relaxed">
-                  Al abrir este enlace, la persona verá la app 100% limpia como cliente: catálogo con fotos de comida (tacos, pizza, hamburguesas, pollo rostizado, etc.), motomandados, envíos express y carrito con ticket en vivo.
-                </p>
-              </div>
-
-              {/* Vista previa del mensaje de WhatsApp */}
-              <div>
-                <label className="block text-[11px] font-black uppercase tracking-wider text-gray-500 mb-1.5">
-                  Mensaje redactado para compartir por WhatsApp:
-                </label>
-                <div className="bg-gray-50 border border-gray-200 rounded-2xl p-3.5 text-[11px] text-gray-700 space-y-2 font-mono whitespace-pre-wrap leading-relaxed">
-                  {`¡Hola! Te recomiendo pedir en *RODO Moto Mandados* aquí en San Miguel de Allende 🏍️🍔🌮\n\n` +
-                    `Pide comida de tus locales favoritos, solicita compras, motomandados o envíos express directo a tu domicilio:\n` +
-                    `👉 https://ais-pre-eooztaby6uofrzjmraerfo-60690626410.us-west2.run.app\n\n` +
-                    `✨ *Servicios disponibles:* \n` +
-                    `• Comida de restaurantes y antojitos locales\n` +
-                    `• Motomandados y compras de tiendas\n` +
-                    `• Envíos express de paquetes y documentos`}
-                </div>
-              </div>
-
-              {/* Botón WhatsApp Listo para Enviar a Clientes */}
-              <a
-                href={`https://api.whatsapp.com/send?text=${encodeURIComponent(
-                  `¡Hola! Te recomiendo pedir en *RODO Moto Mandados* aquí en San Miguel de Allende 🏍️🍔🌮\n\n` +
-                  `Pide comida de tus locales favoritos, solicita compras, motomandados o envíos express directo a tu domicilio:\n` +
-                  `👉 https://ais-pre-eooztaby6uofrzjmraerfo-60690626410.us-west2.run.app\n\n` +
-                  `✨ *Servicios disponibles:* \n` +
-                  `• Comida de restaurantes y antojitos locales\n` +
-                  `• Motomandados y compras de tiendas\n` +
-                  `• Envíos express de paquetes y documentos\n\n` +
-                  `¡Entra directamente y haz tu pedido!`
-                )}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full bg-[#25D366] hover:bg-[#20ba59] text-white font-black text-sm py-3.5 px-4 rounded-2xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <Share2 className="w-4 h-4" />
-                <span>Enviar Invitación por WhatsApp a Clientes / Amigos</span>
-              </a>
-
-              {/* Caja de Enlace Copiable */}
-              <div>
-                <label className="block text-[11px] font-black uppercase tracking-wider text-gray-500 mb-1.5">
-                  O copia el enlace directo:
-                </label>
-                <div className="flex items-center gap-2 bg-gray-100 p-2.5 rounded-xl border border-gray-300 font-mono text-[11px] text-gray-800 break-all select-all">
-                  <span className="flex-1">https://ais-pre-eooztaby6uofrzjmraerfo-60690626410.us-west2.run.app</span>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText('https://ais-pre-eooztaby6uofrzjmraerfo-60690626410.us-west2.run.app');
-                      setCopiedLink(true);
-                      setTimeout(() => setCopiedLink(false), 3000);
-                    }}
-                    className={`px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition shrink-0 ${
-                      copiedLink
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-[#101b29] text-white hover:bg-black'
-                    }`}
-                  >
-                    {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedLink ? '¡Copiado!' : 'Copiar'}</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="p-4 bg-gray-100 border-t border-gray-200 flex justify-end">
-              <button
-                onClick={() => setShowShareModal(false)}
-                className="px-5 py-2 bg-gray-800 hover:bg-black text-white font-bold text-xs rounded-xl"
-              >
-                Cerrar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* 14. Modal de Micro-Ubicación del Cliente con Ajuste Fino ±30m */}
       <CustomerMicroLocationModal
@@ -2060,22 +1914,6 @@ export default function App() {
               const ord = orders.find((o) => o.folio.toUpperCase() === folio.toUpperCase());
               if (ord) setViewingTicketOrder(ord);
             }}
-          />
-        )}
-
-        {/* 19.5 Modal de Descarga de Respaldos ZIP del Proyecto para el Celular */}
-        {showBackupsModal && (
-          <ProjectBackupsModal
-            isOpen={showBackupsModal}
-            onClose={() => setShowBackupsModal(false)}
-          />
-        )}
-
-        {/* 19.6 Modal para Compartir Todo el Proyecto al Programador / Subir a la Red */}
-        {showDeveloperModal && (
-          <DeveloperShareModal
-            isOpen={showDeveloperModal}
-            onClose={() => setShowDeveloperModal(false)}
           />
         )}
       </React.Suspense>

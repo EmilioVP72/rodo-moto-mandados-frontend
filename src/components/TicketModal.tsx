@@ -469,8 +469,8 @@ _RODO Moto Mandados · Despacho San Miguel_`;
   };
 
   return (
-    <div className="fixed inset-0 z-60 flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-xs overflow-y-auto">
-      <div className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl my-auto animate-in fade-in zoom-in-95 duration-200 border border-gray-200">
+    <div className="fixed inset-0 z-60 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/70 backdrop-blur-xs overflow-y-auto">
+      <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-lg max-h-[95dvh] overflow-y-auto shadow-2xl sm:my-auto animate-in fade-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200 border border-gray-200">
         {/* Encabezado modal */}
         <div className="bg-[#101b29] text-white p-4 flex items-center justify-between">
           <div className="flex items-center gap-2">

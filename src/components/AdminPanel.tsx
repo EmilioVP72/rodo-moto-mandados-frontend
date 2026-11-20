@@ -88,7 +88,6 @@ import { SecurityOtpAction, createOtpChallenge } from '../utils/securityOtp';
 import { PilotSimulationModal } from './PilotSimulationModal';
 import { Simulation200Modal } from './Simulation200Modal';
 import { OrderStatisticsView } from './OrderStatisticsView';
-import { DeveloperShareModal } from './DeveloperShareModal';
 import { AdminAuditLogView } from './AdminAuditLogView';
 import { AdminExternalIntegrationView } from './AdminExternalIntegrationView';
 import { AdminGoogleMapsDirectionsModal } from './AdminGoogleMapsDirectionsModal';
@@ -130,7 +129,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [showPilotSimulationModal, setShowPilotSimulationModal] = useState(false);
   const [showSimulation200Modal, setShowSimulation200Modal] = useState(false);
   const [showBackupsModal, setShowBackupsModal] = useState(false);
-  const [showDeveloperModal, setShowDeveloperModal] = useState(false);
   const [themeSavedFeedback, setThemeSavedFeedback] = useState(false);
 
   // Estados para Programar Notificación de Marketing ("Enviar a todos")
@@ -896,26 +894,35 @@ _RODO Moto Mandados · San Miguel de Allende_`;
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-xs overflow-y-auto">
-      <div className="bg-white dark:bg-[#0a0c10] text-gray-900 dark:text-white rounded-2xl w-full max-w-5xl h-[92vh] flex flex-col shadow-2xl overflow-hidden border border-gray-200 dark:border-red-950/40">
-        {/* Cabecera del Panel */}
-        <div className="bg-[#101b29] text-white p-3.5 sm:p-4 flex items-center justify-between border-b border-gray-800">
-          <div className="flex items-center gap-3">
-            <img
-              src="/assets/aistudio/IMG-20260902-WA0090_1__d4eb6002.jpg"
-              alt="RODO"
-              className="h-10 w-10 rounded-xl object-cover shadow-sm border border-white/20 shrink-0"
-            />
-            <div>
-              <h2 className="font-extrabold text-base sm:text-lg leading-tight">
-                Panel de Despacho & Administración
-              </h2>
-              <p className="text-xs text-gray-400">
-                Gestión centralizada de pedidos, repartidores, restaurantes y tarifas
-              </p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-xs overflow-y-auto">
+      <div className="bg-white dark:bg-[#0a0c10] text-gray-900 dark:text-white rounded-none sm:rounded-2xl w-full max-w-5xl h-[100dvh] sm:h-[92vh] flex flex-col shadow-2xl overflow-hidden border-0 sm:border border-gray-200 dark:border-red-950/40">
+        {/* Cabecera del Panel Responsiva */}
+        <div className="bg-[#101b29] text-white p-3 sm:p-4 pt-safe flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-gray-800 shrink-0">
+          <div className="flex items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <img
+                src="/assets/aistudio/IMG-20260902-WA0090_1__d4eb6002.jpg"
+                alt="RODO"
+                className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl object-cover shadow-sm border border-white/20 shrink-0"
+              />
+              <div className="min-w-0">
+                <h2 className="font-extrabold text-sm sm:text-lg leading-tight truncate">
+                  Panel de Despacho & Admin
+                </h2>
+                <p className="text-[11px] sm:text-xs text-gray-400 truncate">
+                  Pedidos, repartidores, restaurantes y tarifas
+                </p>
+              </div>
             </div>
+            <button
+              onClick={onClose}
+              aria-label="Cerrar panel de administración"
+              className="sm:hidden text-gray-300 hover:text-white p-2 rounded-lg hover:bg-white/10 transition shrink-0"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none pb-0.5 sm:pb-0">
             {/* Botón Retroceder */}
             <button
               type="button"
@@ -1010,20 +1017,10 @@ _RODO Moto Mandados · San Miguel de Allende_`;
               type="button"
               onClick={() => setShowBackupsModal(true)}
               title="Descargar Respaldos ZIP del Proyecto para Celular"
-              className="flex items-center gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 sm:px-3 py-1.5 rounded-lg shadow-sm transition font-black border border-emerald-400 cursor-pointer"
+              className="flex items-center gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 sm:px-3 py-1.5 rounded-lg shadow-sm transition font-black border border-emerald-400 cursor-pointer shrink-0 whitespace-nowrap"
             >
               <FolderArchive className="w-3.5 h-3.5 text-white" />
               <span className="hidden sm:inline">Respaldos ZIP</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setShowDeveloperModal(true)}
-              title="Compartir paquete técnico al programador para modificar y subir a la red"
-              className="flex items-center gap-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-2.5 sm:px-3 py-1.5 rounded-lg shadow-sm transition font-black border border-indigo-400 cursor-pointer"
-            >
-              <Code2 className="w-3.5 h-3.5 text-white" />
-              <span>A Programador</span>
             </button>
             {onToggleDarkMode && (
               <button
@@ -1048,15 +1045,16 @@ _RODO Moto Mandados · San Miguel de Allende_`;
             )}
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-white p-2 rounded-lg hover:bg-white/10 transition"
+              aria-label="Cerrar panel de administración"
+              className="hidden sm:flex text-gray-400 hover:text-white p-2 rounded-lg hover:bg-white/10 transition shrink-0"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
         </div>
 
-        {/* Pestañas de Navegación del Admin */}
-        <div className="bg-gray-100 dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 px-4 flex gap-2 overflow-x-auto transition-colors">
+        {/* Pestañas de Navegación del Admin (scroll táctil fluido en móvil) */}
+        <div className="bg-gray-100 dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 px-2.5 sm:px-4 flex gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none shrink-0 transition-colors [&>button]:whitespace-nowrap [&>button]:shrink-0">
           <button
             onClick={() => setActiveTab('despacho')}
             className={`py-3 px-4 font-extrabold text-xs sm:text-sm flex items-center gap-2 border-b-2 transition cursor-pointer ${
@@ -4712,12 +4710,6 @@ _RODO Moto Mandados · San Miguel de Allende_`;
       <ProjectBackupsModal
         isOpen={showBackupsModal}
         onClose={() => setShowBackupsModal(false)}
-      />
-
-      {/* Modal de Compartir a Programador y Despliegue en la Red */}
-      <DeveloperShareModal
-        isOpen={showDeveloperModal}
-        onClose={() => setShowDeveloperModal(false)}
       />
 
       {/* Modal de Rutas de Entrega Google Maps Directions API para Pedidos Activos */}

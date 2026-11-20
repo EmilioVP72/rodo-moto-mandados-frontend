@@ -21,21 +21,48 @@
 
   body {
     width: 100%;
-    min-height: 100vh;
+    min-height: 100dvh;
     margin: 0;
     padding: 0;
     transition: background-color 0.2s ease, color 0.2s ease;
     -webkit-overflow-scrolling: touch;
+    -webkit-tap-highlight-color: transparent;
     overflow-x: hidden;
     overflow-y: auto;
+    overscroll-behavior-y: contain;
   }
 
   #root {
     width: 100%;
-    min-height: 100vh;
+    min-height: 100dvh;
     display: flex;
     flex-direction: column;
     overflow-x: hidden;
+  }
+
+  /* Evitar auto-zoom molesto de iOS Safari al enfocar inputs/selects en dispositivos móviles */
+  @media (max-width: 639px) {
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+  }
+
+  /* Ocultar scrollbar en carruseles táctiles manteniendo el scroll fluido */
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  .pb-safe {
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  }
+  .pt-safe {
+    padding-top: max(0.75rem, env(safe-area-inset-top));
   }
 
   /* Clases globales según dispositivo detectado: fluido al 100% sin rebasar el viewport */

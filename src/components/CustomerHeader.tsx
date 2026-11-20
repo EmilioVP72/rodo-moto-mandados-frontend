@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Search, MapPin, Bell, Menu, Share2, Moon, Sun, Code2, Globe, X, Store, Tag, Utensils, User, ShieldCheck } from 'lucide-react';
+import { Search, MapPin, Bell, Menu, Moon, Sun, Globe, X, Store, Tag, Utensils, User, ShieldCheck } from 'lucide-react';
 import { HolidayThemeId, Restaurant } from '../types';
 import { getHolidayTheme } from '../utils/themeManager';
 import { useLanguage } from '../utils/i18n';
@@ -15,13 +15,11 @@ interface CustomerHeaderProps {
   onOpenAccount?: () => void;
   onOpenLocationModal?: () => void;
   currentAddressLabel?: string;
-  onShareApp?: () => void;
   onOpenNotifications?: () => void;
   unreadNotificationsCount?: number;
   isDarkMode?: boolean;
   onToggleDarkMode?: () => void;
   holidayThemeId?: HolidayThemeId;
-  onOpenDeveloperModal?: () => void;
   restaurants?: Restaurant[];
   onSelectSuggestionRestaurant?: (restaurant: Restaurant) => void;
   onSelectSuggestionCategory?: (category: string, section: 'restaurantes' | 'motomandados') => void;
@@ -48,13 +46,11 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
   onOpenAccount,
   onOpenLocationModal,
   currentAddressLabel,
-  onShareApp,
   onOpenNotifications,
   unreadNotificationsCount = 0,
   isDarkMode = false,
   onToggleDarkMode,
   holidayThemeId = 'clasico_rodo',
-  onOpenDeveloperModal,
   restaurants = [],
   onSelectSuggestionRestaurant,
   onSelectSuggestionCategory,
@@ -138,7 +134,7 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
 
   return (
     <header
-      className={`text-white px-4 sm:px-8 pt-3 pb-6 shadow-lg transition-colors border-b ${
+      className={`text-white px-3 sm:px-8 pt-safe pb-4 sm:pb-6 shadow-lg transition-colors border-b ${
         isDarkMode
           ? 'bg-gradient-to-r ' + currentTheme.gradientHeader + ' dark:border-red-900/40'
           : 'bg-gradient-to-r ' + currentTheme.gradientHeader + ' border-black/10'
@@ -146,10 +142,10 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
     >
       {/* Banner temático festivo activo */}
       {isCustomTheme && (
-        <div className="max-w-6xl mx-auto mb-2.5">
-          <div className="bg-black/35 backdrop-blur-xs border border-white/25 rounded-xl px-3 py-1 flex items-center justify-between text-xs font-bold text-white shadow-xs">
+        <div className="max-w-6xl mx-auto mb-2">
+          <div className="bg-black/35 backdrop-blur-xs border border-white/25 rounded-xl px-2.5 sm:px-3 py-1 flex items-center justify-between text-xs font-bold text-white shadow-xs">
             <span className="flex items-center gap-1.5 truncate">
-              <span className="text-sm">{currentTheme.iconEmoji}</span>
+              <span className="text-sm shrink-0">{currentTheme.iconEmoji}</span>
               <span className="text-amber-300 uppercase tracking-wider text-[10px] font-black shrink-0">
                 {currentTheme.name}:
               </span>
@@ -164,36 +160,36 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
         </div>
       )}
 
-      {/* Barra superior con marca y recuadro de menú superior izquierdo */}
-      <div className="max-w-6xl mx-auto flex items-center justify-between gap-2 sm:gap-3">
+      {/* Barra superior responsiva Mobile-First */}
+      <div className="max-w-6xl mx-auto flex items-center justify-between gap-1.5 sm:gap-3">
         <button
           onClick={onOpenMenu}
           aria-label="Abrir menú de servicios y cuenta"
-          className="bg-white/15 dark:bg-white/10 hover:bg-white/25 active:scale-95 text-white px-3 py-2 rounded-2xl transition flex items-center gap-2 text-xs font-black border border-white/20 shadow-xs cursor-pointer"
+          className="bg-white/15 dark:bg-white/10 hover:bg-white/25 active:scale-95 text-white p-2 sm:px-3 sm:py-2 rounded-xl sm:rounded-2xl transition flex items-center justify-center gap-2 text-xs font-black border border-white/20 shadow-xs cursor-pointer shrink-0 min-h-[40px] min-w-[40px]"
         >
-          <Menu className="w-5 h-5 text-white" />
-          <span className="inline">{t('menu')}</span>
+          <Menu className="w-5 h-5 text-white shrink-0" />
+          <span className="hidden sm:inline">{t('menu')}</span>
         </button>
 
         {/* Marca RODO con el Logotipo Oficial */}
-        <div className="flex items-center gap-2 sm:gap-3 bg-[#ef0013]/90 dark:bg-red-950/80 px-3.5 py-1.5 sm:px-5 sm:py-2 rounded-2xl shadow-[0_7px_20px_#8d000b55] select-none border border-white/20">
+        <div className="flex items-center gap-2 sm:gap-3 bg-[#ef0013]/90 dark:bg-red-950/80 px-2.5 py-1.5 sm:px-5 sm:py-2 rounded-xl sm:rounded-2xl shadow-[0_7px_20px_#8d000b55] select-none border border-white/20 min-w-0 shrink">
           <img
             src="/assets/aistudio/IMG-20260902-WA0090_1__d4eb6002.jpg"
             alt="RODO Moto Mandados"
-            className="h-9 w-9 sm:h-11 sm:w-11 rounded-xl object-cover shadow-xs border border-white/40 shrink-0"
+            className="h-8 w-8 sm:h-11 sm:w-11 rounded-lg sm:rounded-xl object-cover shadow-xs border border-white/40 shrink-0"
           />
-          <div className="text-left leading-none">
-            <b className="block text-xl sm:text-3xl tracking-wider font-black font-sans text-white drop-shadow-xs">
+          <div className="text-left leading-none min-w-0">
+            <b className="block text-lg sm:text-3xl tracking-wider font-black font-sans text-white drop-shadow-xs">
               RODO
             </b>
-            <span className="font-black text-[9px] sm:text-[11px] tracking-widest text-white/95">
+            <span className="font-black text-[8px] sm:text-[11px] tracking-widest text-white/95 block truncate">
               MOTO MANDADOS
             </span>
           </div>
         </div>
 
-        {/* Acciones superiores: Cuenta/Sesión, Idioma ES/EN, Modo Obscuro, Compartir y Notificaciones */}
-        <div className="flex items-center gap-1.5 sm:gap-2">
+        {/* Acciones superiores limpias para producción (sin botones de Compartir / Programador) */}
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           {/* Pill de Estado de Sesión / Cuenta */}
           {onOpenAccount && (
             <button
@@ -213,7 +209,7 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
                   ? `Sesión iniciada como ${userName} · Toca para ver tu perfil`
                   : 'Iniciar sesión o crear tu cuenta'
               }
-              className={`px-2.5 sm:px-3 py-2 rounded-2xl transition border active:scale-95 cursor-pointer flex items-center gap-1.5 text-xs font-black shadow-xs ${
+              className={`px-2.5 sm:px-3 py-2 rounded-xl sm:rounded-2xl transition border active:scale-95 cursor-pointer flex items-center gap-1.5 text-[11px] sm:text-xs font-black shadow-xs min-h-[40px] ${
                 isAdminLoggedIn
                   ? 'bg-amber-400 hover:bg-amber-300 text-black border-amber-200'
                   : userName
@@ -224,12 +220,12 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
               {isAdminLoggedIn ? (
                 <>
                   <ShieldCheck className="w-4 h-4 shrink-0" />
-                  <span className="max-w-[75px] truncate">Admin</span>
+                  <span className="max-w-[64px] sm:max-w-[80px] truncate">Admin</span>
                 </>
               ) : userName ? (
                 <>
                   <span className="w-2 h-2 rounded-full bg-emerald-200 animate-pulse shrink-0" />
-                  <span className="max-w-[90px] truncate">{userName.split(' ')[0]}</span>
+                  <span className="max-w-[68px] sm:max-w-[96px] truncate">{userName.split(' ')[0]}</span>
                 </>
               ) : (
                 <>
@@ -240,13 +236,13 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
             </button>
           )}
 
-          {/* Selector de Idioma Español / Inglés */}
+          {/* Selector de Idioma Español / Inglés (visible en sm+, en móvil disponible dentro de Menú) */}
           <button
             type="button"
             onClick={toggleLang}
             aria-label={lang === 'es' ? 'Switch to English' : 'Cambiar a Español'}
             title={lang === 'es' ? 'Switch language to English' : 'Cambiar idioma a Español'}
-            className="bg-white/15 dark:bg-slate-800 hover:bg-white/25 text-white px-2.5 py-2 rounded-2xl transition border border-white/20 active:scale-95 cursor-pointer flex items-center gap-1 text-[11px] font-black"
+            className="hidden sm:flex bg-white/15 dark:bg-slate-800 hover:bg-white/25 text-white px-2.5 py-2 rounded-2xl transition border border-white/20 active:scale-95 cursor-pointer items-center gap-1 text-[11px] font-black min-h-[40px]"
           >
             <Globe className="w-4 h-4 text-amber-300" />
             <span>{lang.toUpperCase()}</span>
@@ -257,8 +253,9 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
             <button
               type="button"
               onClick={onToggleDarkMode}
+              aria-label={isDarkMode ? 'Cambiar a Modo Claro' : 'Cambiar a Modo Obscuro'}
               title={isDarkMode ? 'Cambiar a Modo Claro' : 'Cambiar a Modo Obscuro'}
-              className="bg-white/15 dark:bg-slate-800 hover:bg-white/25 text-white p-2.5 rounded-2xl transition border border-white/20 active:scale-95 cursor-pointer"
+              className="hidden sm:flex bg-white/15 dark:bg-slate-800 hover:bg-white/25 text-white p-2.5 rounded-2xl transition border border-white/20 active:scale-95 cursor-pointer items-center justify-center min-h-[40px] min-w-[40px]"
             >
               {isDarkMode ? (
                 <Sun className="w-5 h-5 text-amber-300" />
@@ -268,36 +265,12 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
             </button>
           )}
 
-          {onShareApp && (
-            <button
-              onClick={onShareApp}
-              aria-label="Compartir app por WhatsApp"
-              className="hidden sm:flex bg-emerald-600/90 hover:bg-emerald-600 active:scale-95 text-white px-3 py-2 rounded-2xl transition items-center gap-1.5 text-xs font-black border border-emerald-400/40 shadow-xs cursor-pointer"
-              title="Compartir por WhatsApp con clientes y amigos"
-            >
-              <Share2 className="w-4 h-4 text-white" />
-              <span className="hidden md:inline">{t('share')}</span>
-            </button>
-          )}
-
-          {onOpenDeveloperModal && (
-            <button
-              onClick={onOpenDeveloperModal}
-              aria-label="Entregar proyecto a Programador"
-              title="Entregar proyecto a Programador (Código completo, ZIPs y Hosting)"
-              className="hidden md:flex bg-indigo-600/90 hover:bg-indigo-600 active:scale-95 text-white px-2.5 sm:px-3 py-2 rounded-2xl transition items-center gap-1.5 text-xs font-black border border-indigo-400/40 shadow-xs cursor-pointer"
-            >
-              <Code2 className="w-4 h-4 text-white" />
-              <span>{t('developer')}</span>
-            </button>
-          )}
-
           {/* Botón Centro de Notificaciones con Badge dinámico */}
           <button
             onClick={onOpenNotifications || onOpenMenu}
             aria-label="Centro de notificaciones"
             title="Centro de notificaciones y alertas en vivo"
-            className="bg-white/15 dark:bg-slate-800 hover:bg-white/25 text-white p-2.5 rounded-2xl transition border border-white/15 relative active:scale-95 cursor-pointer"
+            className="bg-white/15 dark:bg-slate-800 hover:bg-white/25 text-white p-2 sm:p-2.5 rounded-xl sm:rounded-2xl transition border border-white/15 relative active:scale-95 cursor-pointer flex items-center justify-center min-h-[40px] min-w-[40px]"
           >
             <Bell className="w-5 h-5" />
             {unreadNotificationsCount > 0 && (
@@ -310,16 +283,16 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
       </div>
 
       {/* Selector de Ubicación y Barra de Búsqueda con Autocompletado en Tiempo Real */}
-      <div className="max-w-6xl mx-auto mt-4 space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="max-w-6xl mx-auto mt-3 sm:mt-4 space-y-2.5 sm:space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3">
           <button
             type="button"
             onClick={onOpenLocationModal}
-            className="flex items-center gap-2 text-xs text-white/95 bg-black/20 hover:bg-black/30 border border-white/20 px-3 py-1.5 rounded-xl transition text-left cursor-pointer group"
+            className="w-full sm:w-auto flex items-center gap-2 text-xs text-white/95 bg-black/20 hover:bg-black/30 border border-white/20 px-3 py-2 rounded-xl transition text-left cursor-pointer group min-h-[42px]"
             title="Toca para afinar tu ubicación exacta o ajustar ±30m"
           >
             <MapPin className="w-4 h-4 text-amber-300 shrink-0 group-hover:scale-110 transition" />
-            <div className="leading-tight">
+            <div className="leading-tight min-w-0 flex-1">
               <span className="text-[10px] text-white/80 block">{t('deliverTo')}</span>
               <strong className="text-white font-extrabold text-xs line-clamp-1 underline decoration-dotted underline-offset-2">
                 {currentAddressLabel || 'Centro, San Miguel de Allende (Toca para afinar ±30m)'} ⌄
@@ -329,7 +302,7 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
 
           {/* Barra de búsqueda + Dropdown Autocompletar */}
           <div ref={searchWrapperRef} className="relative w-full sm:max-w-md z-30">
-            <label className="flex items-center gap-2 bg-white dark:bg-slate-900 text-gray-800 dark:text-gray-100 rounded-2xl px-4 py-2.5 shadow-[0_5px_18px_#83000c22] w-full border border-transparent dark:border-slate-800 transition-colors">
+            <label className="flex items-center gap-2 bg-white dark:bg-slate-900 text-gray-800 dark:text-gray-100 rounded-xl sm:rounded-2xl px-3.5 sm:px-4 py-2 sm:py-2.5 shadow-[0_5px_18px_#83000c22] w-full border border-transparent dark:border-slate-800 transition-colors min-h-[42px]">
               <Search className="w-4 h-4 text-gray-400 shrink-0" />
               <input
                 type="text"
@@ -346,14 +319,14 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
                     ? t('searchMotomandados')
                     : t('searchRestaurants')
                 }
-                className="w-full text-xs sm:text-sm bg-transparent outline-none font-medium placeholder-gray-400 dark:placeholder-gray-500 text-gray-900 dark:text-white"
+                className="w-full text-sm bg-transparent outline-none font-medium placeholder-gray-400 dark:placeholder-gray-500 text-gray-900 dark:text-white"
               />
               {searchQuery && (
                 <button
                   type="button"
                   onClick={() => onSearchChange('')}
                   aria-label="Limpiar búsqueda"
-                  className="text-gray-400 hover:text-gray-700 dark:hover:text-white p-0.5 rounded-full cursor-pointer"
+                  className="text-gray-400 hover:text-gray-700 dark:hover:text-white p-1 rounded-full cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -361,7 +334,7 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
             </label>
 
             {searchFocused && suggestions.length > 0 && (
-              <div className="absolute left-0 right-0 mt-1.5 bg-white dark:bg-slate-900 text-gray-900 dark:text-gray-100 rounded-2xl shadow-2xl border border-gray-200 dark:border-slate-700 overflow-hidden divide-y divide-gray-100 dark:divide-slate-800">
+              <div className="absolute left-0 right-0 mt-1.5 bg-white dark:bg-slate-900 text-gray-900 dark:text-gray-100 rounded-2xl shadow-2xl border border-gray-200 dark:border-slate-700 overflow-hidden divide-y divide-gray-100 dark:divide-slate-800 max-h-72 overflow-y-auto">
                 {suggestions.map((item) => (
                   <button
                     key={item.id}
@@ -411,11 +384,11 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
           </div>
         </div>
 
-        {/* Selector de Pestañas Principales (3 tabs) */}
-        <div className="grid grid-cols-3 gap-2 pt-1" role="tablist">
+        {/* Selector de Pestañas Principales (3 tabs táctiles y compactas en móvil) */}
+        <div className="grid grid-cols-3 gap-1.5 sm:gap-2 pt-0.5" role="tablist">
           <button
             onClick={() => onSectionChange('restaurantes')}
-            className={`py-3 px-2 rounded-2xl text-xs sm:text-sm font-extrabold transition shadow-xs cursor-pointer ${
+            className={`py-2.5 sm:py-3 px-1.5 sm:px-3 rounded-xl sm:rounded-2xl text-[11px] sm:text-sm font-extrabold transition shadow-xs cursor-pointer leading-tight truncate ${
               activeSection === 'restaurantes'
                 ? 'bg-[#ed0718] text-white border-2 border-white shadow-[0_8px_18px_#85000b40]'
                 : 'bg-white dark:bg-slate-900 text-gray-800 dark:text-gray-200 border border-white/60 dark:border-slate-800 hover:bg-gray-100 dark:hover:bg-slate-800'
@@ -426,7 +399,7 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
 
           <button
             onClick={() => onSectionChange('motomandados')}
-            className={`py-3 px-2 rounded-2xl text-xs sm:text-sm font-extrabold transition shadow-xs cursor-pointer ${
+            className={`py-2.5 sm:py-3 px-1.5 sm:px-3 rounded-xl sm:rounded-2xl text-[11px] sm:text-sm font-extrabold transition shadow-xs cursor-pointer leading-tight truncate ${
               activeSection === 'motomandados'
                 ? 'bg-[#ed0718] text-white border-2 border-white shadow-[0_8px_18px_#85000b40]'
                 : 'bg-white dark:bg-slate-900 text-gray-800 dark:text-gray-200 border border-white/60 dark:border-slate-800 hover:bg-gray-100 dark:hover:bg-slate-800'
@@ -437,7 +410,7 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
 
           <button
             onClick={() => onSectionChange('envios')}
-            className={`py-3 px-2 rounded-2xl text-xs sm:text-sm font-extrabold transition shadow-xs cursor-pointer ${
+            className={`py-2.5 sm:py-3 px-1.5 sm:px-3 rounded-xl sm:rounded-2xl text-[11px] sm:text-sm font-extrabold transition shadow-xs cursor-pointer leading-tight truncate ${
               activeSection === 'envios'
                 ? 'bg-[#ed0718] text-white border-2 border-white shadow-[0_8px_18px_#85000b40]'
                 : 'bg-white dark:bg-slate-900 text-gray-800 dark:text-gray-200 border border-white/60 dark:border-slate-800 hover:bg-gray-100 dark:hover:bg-slate-800'

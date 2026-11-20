@@ -30,7 +30,7 @@ export const BottomMobileNav: React.FC<BottomMobileNavProps> = ({
   return (
     <nav
       aria-label="Navegación inferior móvil"
-      className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-gray-200/90 dark:border-slate-800 shadow-lg px-2 py-1.5 transition-colors"
+      className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-gray-200/90 dark:border-slate-800 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] px-2 pt-1.5 pb-safe transition-colors"
     >
       {/* Barra de Resumen en Tiempo Real de Artículos y Total con Framer Motion */}
       <AnimatePresence>

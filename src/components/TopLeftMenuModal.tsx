@@ -21,10 +21,9 @@ import {
   Bell,
   Moon,
   Sun,
-  BarChart3,
-  Code2,
+  Globe,
 } from 'lucide-react';
-import { downloadInvestorDossierFile } from '../utils/downloadPresentation';
+import { useLanguage } from '../utils/i18n';
 
 interface TopLeftMenuModalProps {
   isOpen: boolean;
@@ -40,8 +39,6 @@ interface TopLeftMenuModalProps {
   onOpenNotifications?: () => void;
   isDarkMode?: boolean;
   onToggleDarkMode?: () => void;
-  onOpenStats?: () => void;
-  onOpenDeveloperModal?: () => void;
   onOpenTutorial?: () => void;
 }
 
@@ -61,12 +58,10 @@ export const TopLeftMenuModal: React.FC<TopLeftMenuModalProps> = ({
   onOpenNotifications,
   isDarkMode = false,
   onToggleDarkMode,
-  onOpenStats,
-  onOpenDeveloperModal,
   onOpenTutorial,
 }) => {
+  const { lang, toggleLang } = useLanguage();
   const [activeSection, setActiveSection] = useState<MenuSection>('menu');
-  const [downloadSuccess, setDownloadSuccess] = useState(false);
 
   if (!isOpen) return null;
 
@@ -76,8 +71,8 @@ export const TopLeftMenuModal: React.FC<TopLeftMenuModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-start p-3 sm:p-5 bg-black/75 backdrop-blur-xs overflow-y-auto">
-      <div className="bg-white dark:bg-slate-900 text-gray-900 dark:text-gray-100 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-150 border border-gray-100 dark:border-slate-800 flex flex-col max-h-[92vh] transition-colors">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:justify-start p-0 sm:p-5 bg-black/75 backdrop-blur-xs overflow-y-auto">
+      <div className="bg-white dark:bg-slate-900 text-gray-900 dark:text-gray-100 rounded-t-3xl sm:rounded-3xl w-full sm:max-w-lg shadow-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 sm:zoom-in-95 duration-150 border border-gray-100 dark:border-slate-800 flex flex-col max-h-[92dvh] transition-colors">
         {/* Cabecera del Recuadro con el Logo Oficial */}
         <div className="bg-[#101b29] text-white p-4 sm:p-5 flex items-center justify-between border-b border-gray-800 shrink-0">
           <div className="flex items-center gap-3">
@@ -331,33 +326,29 @@ export const TopLeftMenuModal: React.FC<TopLeftMenuModalProps> = ({
                 </button>
               )}
 
-              {/* Entregar Proyecto a Programador / Subir a la Red */}
-              {onOpenDeveloperModal && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleClose();
-                    onOpenDeveloperModal();
-                  }}
-                  className="w-full flex items-center justify-between p-3.5 bg-indigo-50/70 dark:bg-indigo-950/40 hover:bg-indigo-100/70 rounded-2xl transition border border-indigo-200 dark:border-indigo-800 text-left group cursor-pointer"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="p-2.5 rounded-xl bg-indigo-600 text-white shadow-xs">
-                      <Code2 className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <span className="font-extrabold text-sm text-gray-900 dark:text-white block group-hover:text-indigo-600">
-                        Entregar a Programador / Subir a la Red
-                      </span>
-                      <span className="text-xs text-gray-500 dark:text-gray-400">
-                        Código completo, 2 archivos ZIP independientes y guía de hosting
-                      </span>
-                    </div>
+              {/* Selector de Idioma ES / EN (acceso rápido en dispositivos móviles) */}
+              <button
+                type="button"
+                onClick={toggleLang}
+                className="w-full flex items-center justify-between p-3.5 bg-amber-50/70 dark:bg-slate-800 hover:bg-amber-100/70 dark:hover:bg-slate-700/80 rounded-2xl transition border border-amber-200 dark:border-slate-700 text-left group cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-amber-500 text-white shadow-xs">
+                    <Globe className="w-5 h-5" />
                   </div>
-                  <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-indigo-600" />
-                </button>
-              )}
-
+                  <div>
+                    <span className="font-extrabold text-sm text-gray-900 dark:text-white block">
+                      {lang === 'es' ? 'Idioma: Español' : 'Language: English'}
+                    </span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      {lang === 'es' ? 'Toca para cambiar a English' : 'Tap to switch to Español'}
+                    </span>
+                  </div>
+                </div>
+                <span className="text-xs font-black font-mono px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-amber-300 dark:border-slate-700 text-gray-800 dark:text-gray-200">
+                  {lang.toUpperCase()}
+                </span>
+              </button>
 
             </div>
           )}
@@ -586,28 +577,10 @@ export const TopLeftMenuModal: React.FC<TopLeftMenuModalProps> = ({
                           handleClose();
                           onOpenAdmin();
                         }}
-                        className="w-full bg-[#ed0718] hover:bg-[#c90012] text-white font-black text-xs py-2 rounded-xl transition"
+                        className="w-full bg-[#ed0718] hover:bg-[#c90012] text-white font-black text-xs py-2.5 rounded-xl transition cursor-pointer"
                       >
                         Abrir Panel de Control
                       </button>
-
-                      <a
-                        href="/downloads/respaldo_rodo_completo_fuente.zip"
-                        download="respaldo_rodo_completo_fuente.zip"
-                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2 rounded-xl transition flex items-center justify-center gap-1.5 text-center"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>Descargar Respaldo ZIP #1</span>
-                      </a>
-
-                      <a
-                        href="/downloads/copia_rodo_independiente_proyecto.zip"
-                        download="copia_rodo_independiente_proyecto.zip"
-                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black text-xs py-2 rounded-xl transition flex items-center justify-center gap-1.5 text-center"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>Descargar Copia Independiente ZIP #2</span>
-                      </a>
                     </div>
                   )}
 

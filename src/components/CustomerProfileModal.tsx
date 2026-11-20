@@ -228,8 +228,8 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-xs overflow-y-auto">
-      <div className="bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl my-auto border border-gray-200 dark:border-slate-700 max-h-[92vh] flex flex-col animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-xs overflow-y-auto">
+      <div className="bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-t-3xl sm:rounded-3xl w-full sm:max-w-lg overflow-hidden shadow-2xl sm:my-auto border border-gray-200 dark:border-slate-700 max-h-[94dvh] sm:max-h-[92vh] flex flex-col animate-in fade-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200">
         {/* Cabecera */}
         <div className="bg-[#101b29] text-white p-4 sm:p-5 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
@@ -486,7 +486,7 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
                 <h4 className="text-xs font-black uppercase text-gray-500 flex items-center gap-1">
                   <Plus className="w-3.5 h-3.5 text-[#ed0718]" /> Agregar Nueva Dirección en SMA
                 </h4>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <select
                     aria-label="Tipo de domicilio"
                     value={newLabelType}
@@ -496,7 +496,7 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
                       if (val !== 'Departamento') setNewNumeroInterior('');
                       if (val !== 'Otro') setNewCustomLabel('');
                     }}
-                    className="border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-xl p-2 text-xs font-bold outline-none focus:border-[#ed0718] cursor-pointer"
+                    className="border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-xl p-2.5 sm:p-2 text-xs font-bold outline-none focus:border-[#ed0718] cursor-pointer"
                   >
                     {ADDRESS_LABEL_OPTIONS.map((option) => (
                       <option key={option} value={option}>
@@ -510,7 +510,7 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
                     value={newCalle}
                     onChange={(e) => setNewCalle(e.target.value)}
                     placeholder="Calle *"
-                    className="col-span-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 rounded-xl p-2 text-xs font-bold outline-none focus:border-[#ed0718]"
+                    className="sm:col-span-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 rounded-xl p-2.5 sm:p-2 text-xs font-bold outline-none focus:border-[#ed0718]"
                   />
                 </div>
 
@@ -552,20 +552,20 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
                     />
                   </>
                 ) : (
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <input
                       type="text"
                       value={newNumero}
                       onChange={(e) => setNewNumero(e.target.value)}
                       placeholder="Núm. (opcional)"
                       maxLength={40}
-                      className="border border-gray-300 dark:border-slate-600 dark:bg-slate-800 rounded-xl p-2 text-xs font-bold outline-none focus:border-[#ed0718]"
+                      className="border border-gray-300 dark:border-slate-600 dark:bg-slate-800 rounded-xl p-2.5 sm:p-2 text-xs font-bold outline-none focus:border-[#ed0718]"
                     />
                     <SmaColoniaCombobox
                       value={newColonia}
                       onChange={setNewColonia}
                       placeholder="Colonia * (escribe para buscar)"
-                      className="col-span-2"
+                      className="sm:col-span-2"
                     />
                   </div>
                 )}
@@ -622,7 +622,7 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
         </div>
 
         {/* Footer: Cerrar Sesión */}
-        <div className="p-4 bg-gray-50 dark:bg-slate-800/60 border-t border-gray-200 dark:border-slate-700 flex flex-col sm:flex-row gap-2 shrink-0">
+        <div className="p-3.5 sm:p-4 pb-safe bg-gray-50 dark:bg-slate-800/60 border-t border-gray-200 dark:border-slate-700 flex flex-col sm:flex-row gap-2 shrink-0">
           <button
             type="button"
             onClick={async () => {

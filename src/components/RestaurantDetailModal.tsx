@@ -133,8 +133,8 @@ export const RestaurantDetailModal: React.FC<RestaurantDetailModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/75 backdrop-blur-xs overflow-y-auto">
-      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/75 backdrop-blur-xs overflow-y-auto">
+      <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-2xl max-h-[94dvh] sm:max-h-[92vh] flex flex-col shadow-2xl overflow-hidden sm:my-auto animate-in fade-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200">
         {/* Banner de Cierre Temporal si está inactivo por desfile o evento */}
         {isClosed && (
           <div className="bg-amber-600 text-white p-3 sm:p-3.5 px-4 flex items-center gap-2.5 text-xs sm:text-sm font-bold shadow-md shrink-0">

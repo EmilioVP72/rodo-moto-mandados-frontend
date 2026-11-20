@@ -224,8 +224,8 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-3xl p-5 sm:p-8 shadow-md border border-gray-200">
-      <div className="max-w-3xl mx-auto space-y-6">
+    <div className="bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-8 shadow-md border border-gray-200">
+      <div className="max-w-3xl mx-auto space-y-5 sm:space-y-6">
         <div>
           <span className="bg-[#ed0718] text-white text-[10px] sm:text-xs font-black px-3 py-1 rounded-full uppercase tracking-widest">
             TARIFA MEDIDA POR KILÓMETROS
@@ -294,22 +294,22 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
         </div>
 
         {/* 2. MEDICIÓN DE DISTANCIA POR KILÓMETROS Y COSTO ESTIMADO */}
-        <div className="bg-gradient-to-br from-gray-900 to-[#101b29] text-white p-5 rounded-2xl shadow-md space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="p-2 rounded-xl bg-[#ed0718] text-white">
+        <div className="bg-gradient-to-br from-gray-900 to-[#101b29] text-white p-4 sm:p-5 rounded-2xl shadow-md space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <span className="p-2 rounded-xl bg-[#ed0718] text-white shrink-0">
                 <Gauge className="w-5 h-5" />
               </span>
-              <div>
+              <div className="min-w-0">
                 <h3 className="font-black text-sm sm:text-base text-white">
                   Medidor de Distancia y Costo Estimado
                 </h3>
-                <p className="text-xs text-gray-400">
+                <p className="text-[11px] sm:text-xs text-gray-400">
                   Tarifa base $30 (primeros 2 km) + $10/km adicional
                 </p>
               </div>
             </div>
-            <div className="text-right">
+            <div className="flex sm:block items-baseline justify-between bg-white/5 sm:bg-transparent px-3 py-2 sm:p-0 rounded-xl sm:text-right shrink-0">
               <div className="text-2xl sm:text-3xl font-black font-mono text-amber-400 leading-none">
                 ${totalCalculatedFee} MXN
               </div>

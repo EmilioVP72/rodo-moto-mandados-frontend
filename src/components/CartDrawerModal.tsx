@@ -79,9 +79,9 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/60 backdrop-blur-xs transition-opacity animate-in fade-in duration-200">
-      <div className="w-full max-w-md h-full bg-white shadow-2xl flex flex-col justify-between overflow-hidden animate-in slide-in-from-right duration-300">
+      <div className="w-full sm:max-w-md h-[100dvh] bg-white shadow-2xl flex flex-col justify-between overflow-hidden animate-in slide-in-from-right duration-300">
         {/* Encabezado del Carrito */}
-        <div className="bg-[#101b29] text-white p-4 flex items-center justify-between border-b border-gray-800">
+        <div className="bg-[#101b29] text-white p-3.5 sm:p-4 pt-safe flex items-center justify-between border-b border-gray-800 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="bg-[#ed0718] p-2 rounded-xl text-white shadow-xs">
               <ShoppingBag className="w-5 h-5" />
@@ -267,7 +267,7 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
 
         {/* Footer del Carrito con Subtotal y Botón de Pago */}
         {cart.length > 0 && (
-          <div className="bg-white border-t border-gray-200 p-4 space-y-3 shadow-lg">
+          <div className="bg-white border-t border-gray-200 p-4 pb-safe space-y-3 shadow-lg shrink-0">
             <div className="space-y-1.5 text-xs text-gray-600">
               <div className="flex justify-between">
                 <span>Subtotal de platillos ({totalItemsCount} productos):</span>
