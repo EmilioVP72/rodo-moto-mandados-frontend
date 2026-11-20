@@ -79,8 +79,15 @@ import {
   LifeBuoy,
   MessageCircle,
   Archive,
+  Menu,
 } from 'lucide-react';
 import { AdminOrderHistoryView } from './AdminOrderHistoryView';
+import {
+  AdminSidebarNav,
+  AdminTabId,
+  buildAdminNavGroups,
+  getAdminTabMeta,
+} from './AdminSidebarNav';
 import { splitLiveAndArchivedOrders } from '../utils/orderHistoryFilter';
 import { AdminCoverageMap } from './AdminCoverageMap';
 import { AdminSecurityAndFraud } from './AdminSecurityAndFraud';
@@ -119,9 +126,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   isDarkMode = false,
   onToggleDarkMode,
 }) => {
-  const [activeTab, setActiveTab] = useState<
-    'despacho' | 'historico' | 'rendimiento' | 'estadisticas' | 'notificaciones' | 'recuperacion' | 'locales_api' | 'restaurantes' | 'especialidades' | 'cobertura' | 'clientes' | 'seguridad_otp' | 'cortes' | 'ajustes' | 'bitacora' | 'enlaces_web'
-  >('despacho');
+  const [activeTab, setActiveTab] = useState<AdminTabId>('despacho');
+  const [mobileNavOpen, setMobileNavOpen] = useState<boolean>(false);
   const [liveClockMs, setLiveClockMs] = useState<number>(() => Date.now());
 
   // Ticker cada 60 segundos para limpiar automáticamente pedidos mayores a 24 h en Despacho en Vivo
@@ -385,6 +391,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   // Filtrado de órdenes activas en Despacho en Vivo (últimas 24 horas)
   const filteredOrders = liveOrders.filter((o) => {
     if (filterStatus === 'todos') return true;
+    if (filterStatus === 'cancelado') {
+      return o.status === 'cancelado' || o.status === 'cancelado_con_deuda';
+    }
     return o.status === filterStatus;
   });
 
@@ -902,356 +911,198 @@ _RODO Moto Mandados · San Miguel de Allende_`;
     setActiveTab('despacho');
   };
 
+  const handleSelectAdminTab = (tab: AdminTabId) => {
+    setActiveTab(tab);
+    if (tab === 'recuperacion') {
+      loadRecoveryRequests();
+    }
+  };
+
+  const navGroups = buildAdminNavGroups({
+    newLiveOrders: liveOrders.filter((o) => o.status === 'nuevo').length,
+    totalHistoryOrders: orders.length,
+    partnerLocalsCount: partnerLocals.length,
+    activeSpecialtiesCount: currentSpecialties.filter((s) => s.active).length,
+    pendingRecoveriesCount: recoveryRequests.filter((r) => r.status === 'pendiente').length,
+  });
+
+  const activeTabMeta = getAdminTabMeta(activeTab, navGroups);
+
+  // KPIs operativos de las últimas 24 horas para Despacho en Vivo
+  const liveNewCount = liveOrders.filter((o) => o.status === 'nuevo').length;
+  const liveInProgressCount = liveOrders.filter((o) =>
+    ['en_preparacion', 'asignado', 'recolectado', 'en_camino', 'afuera_del_domicilio', 'pendiente_cotizacion'].includes(
+      o.status
+    )
+  ).length;
+  const liveDeliveredCount = liveOrders.filter((o) => o.status === 'entregado').length;
+  const liveRevenue24h = liveOrders
+    .filter((o) => o.status !== 'cancelado' && o.status !== 'cancelado_con_deuda')
+    .reduce((sum, o) => sum + Number(o.total || 0), 0);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-xs overflow-y-auto">
-      <div className="bg-white dark:bg-[#0a0c10] text-gray-900 dark:text-white rounded-none sm:rounded-2xl w-full max-w-5xl h-[100dvh] sm:h-[92vh] flex flex-col shadow-2xl overflow-hidden border-0 sm:border border-gray-200 dark:border-red-950/40">
-        {/* Cabecera del Panel Responsiva */}
-        <div className="bg-[#101b29] text-white p-3 sm:p-4 pt-safe flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-gray-800 shrink-0">
-          <div className="flex items-center justify-between gap-2.5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-3 lg:p-4 bg-slate-950/80 backdrop-blur-xs">
+      <div className="bg-slate-100 dark:bg-[#070a10] text-slate-900 dark:text-slate-100 rounded-none sm:rounded-2xl w-full max-w-7xl h-[100dvh] sm:h-[94vh] flex flex-row shadow-2xl overflow-hidden border-0 sm:border border-slate-300 dark:border-slate-800">
+        {/* Sidebar de Navegación Categorizada (Escritorio fijo + Drawer en Móvil) */}
+        <AdminSidebarNav
+          groups={navGroups}
+          activeTab={activeTab}
+          onSelectTab={handleSelectAdminTab}
+          mobileDrawerOpen={mobileNavOpen}
+          onCloseMobileDrawer={() => setMobileNavOpen(false)}
+        />
+
+        {/* Columna Principal del Workspace */}
+        <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+          {/* Cabecera Limpia con Título de Sección Activa y Acciones Globales */}
+          <header className="bg-white dark:bg-[#0d121d] border-b border-slate-200 dark:border-slate-800 px-3 sm:px-5 py-3 pt-safe flex items-center justify-between gap-2 shrink-0">
             <div className="flex items-center gap-2.5 min-w-0">
-              <img
-                src="/assets/aistudio/IMG-20260902-WA0090_1__d4eb6002.jpg"
-                alt="RODO"
-                className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl object-cover shadow-sm border border-white/20 shrink-0"
-              />
+              <button
+                type="button"
+                onClick={() => setMobileNavOpen(true)}
+                aria-label="Abrir menú de secciones"
+                className="lg:hidden flex items-center gap-1.5 bg-[#0b1220] hover:bg-black text-white px-2.5 h-9 rounded-xl text-xs font-black shrink-0 cursor-pointer"
+              >
+                <Menu className="w-4 h-4" />
+                <span>Menú</span>
+              </button>
+
               <div className="min-w-0">
-                <h2 className="font-extrabold text-sm sm:text-lg leading-tight truncate">
-                  Panel de Despacho & Admin
+                <h2 className="font-black text-sm sm:text-lg text-slate-900 dark:text-white leading-tight truncate">
+                  {activeTabMeta.label}
                 </h2>
-                <p className="text-[11px] sm:text-xs text-gray-400 truncate">
-                  Pedidos, repartidores, restaurantes y tarifas
+                <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 truncate hidden sm:block">
+                  {activeTabMeta.subtitle}
                 </p>
               </div>
             </div>
-            <button
-              onClick={onClose}
-              aria-label="Cerrar panel de administración"
-              className="sm:hidden text-gray-300 hover:text-white p-2 rounded-lg hover:bg-white/10 transition shrink-0"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-          <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none pb-0.5 sm:pb-0 shrink-0">
-            {/* Botón Retroceder */}
-            <button
-              type="button"
-              onClick={handleAdminBack}
-              title="Retroceder a la vista anterior"
-              className="flex items-center gap-1.5 text-xs bg-white/10 hover:bg-white/20 text-white px-2.5 h-9 rounded-lg border border-white/20 transition font-bold cursor-pointer shrink-0 whitespace-nowrap"
-            >
-              <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden sm:inline">Atrás</span>
-            </button>
 
-            {/* Botón Inicio Admin */}
-            <button
-              type="button"
-              onClick={handleAdminGoHome}
-              title="Volver al Despacho en Vivo"
-              className="flex items-center gap-1.5 text-xs bg-white/10 hover:bg-white/20 text-white px-2.5 h-9 rounded-lg border border-white/20 transition font-bold cursor-pointer shrink-0 whitespace-nowrap"
-            >
-              <Home className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden sm:inline">Inicio Admin</span>
-            </button>
-
-            <button
-              type="button"
-              disabled={isTogglingRain}
-              onClick={async () => {
-                setIsTogglingRain(true);
-                const nextRainState = !currentSettings.rainPauseEnabled;
-                const nextSettings = {
-                  ...currentSettings,
-                  rainPauseEnabled: nextRainState,
-                  rainPauseMessage:
-                    currentSettings.rainPauseMessage ||
-                    '🌧️ Envíos pausados temporalmente por lluvia intensa en San Miguel de Allende. Reanudaremos en cuanto mejore el clima.',
-                };
-                setCurrentSettings(nextSettings);
-                try {
-                  await saveDispatchSettings(nextSettings);
-                  await saveAdminAuditLogToFirestore({
-                    id: `audit-rain-${Date.now()}`,
-                    timestamp: new Date().toISOString(),
-                    adminEmail: 'edsoncruz14999@gmail.com',
-                    actionType: 'ajuste_configuracion',
-                    details: nextRainState
-                      ? 'Activó pausa temporal de envíos por lluvia'
-                      : 'Reanudó envíos tras pausa por lluvia',
-                    previousValue: currentSettings.rainPauseEnabled ? 'PAUSADO' : 'ACTIVO',
-                    newValue: nextRainState ? 'PAUSADO' : 'ACTIVO',
-                  });
-                  await onRefreshData();
-                  showFeedback(
-                    nextRainState
-                      ? '🌧️ Envíos PAUSADOS por lluvia. Los clientes verán el aviso de suspensión temporal.'
-                      : '☀️ Envíos REANUDADOS normalmente.'
-                  );
-                } finally {
-                  setIsTogglingRain(false);
-                }
-              }}
-              title="Pausar o reanudar todos los envíos por lluvia"
-              className={`flex items-center gap-1.5 text-xs px-3 h-9 rounded-lg shadow-sm transition font-black border cursor-pointer shrink-0 whitespace-nowrap ${
-                currentSettings.rainPauseEnabled
-                  ? 'bg-sky-500 hover:bg-sky-600 text-white border-sky-300 animate-pulse'
-                  : 'bg-white/10 hover:bg-white/20 text-sky-200 border-sky-400/40'
-              }`}
-            >
-              <CloudRain className="w-3.5 h-3.5 shrink-0" />
-              <span>{currentSettings.rainPauseEnabled ? 'Lluvia: PAUSADO' : 'Pausa Lluvia'}</span>
-            </button>
-
-            {onToggleDarkMode && (
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               <button
                 type="button"
-                onClick={onToggleDarkMode}
-                title={isDarkMode ? 'Cambiar a Modo Claro' : 'Cambiar a Modo Obscuro'}
-                className="flex items-center gap-1.5 text-xs bg-white/10 hover:bg-white/20 text-white px-2.5 h-9 rounded-lg border border-white/20 transition font-bold cursor-pointer shrink-0 whitespace-nowrap"
+                disabled={isTogglingRain}
+                onClick={async () => {
+                  setIsTogglingRain(true);
+                  const nextRainState = !currentSettings.rainPauseEnabled;
+                  const nextSettings = {
+                    ...currentSettings,
+                    rainPauseEnabled: nextRainState,
+                    rainPauseMessage:
+                      currentSettings.rainPauseMessage ||
+                      '🌧️ Envíos pausados temporalmente por lluvia intensa en San Miguel de Allende. Reanudaremos en cuanto mejore el clima.',
+                  };
+                  setCurrentSettings(nextSettings);
+                  try {
+                    await saveDispatchSettings(nextSettings);
+                    await saveAdminAuditLogToFirestore({
+                      id: `audit-rain-${Date.now()}`,
+                      timestamp: new Date().toISOString(),
+                      adminEmail: 'edsoncruz14999@gmail.com',
+                      actionType: 'ajuste_configuracion',
+                      details: nextRainState
+                        ? 'Activó pausa temporal de envíos por lluvia'
+                        : 'Reanudó envíos tras pausa por lluvia',
+                      previousValue: currentSettings.rainPauseEnabled ? 'PAUSADO' : 'ACTIVO',
+                      newValue: nextRainState ? 'PAUSADO' : 'ACTIVO',
+                    });
+                    await onRefreshData();
+                    showFeedback(
+                      nextRainState
+                        ? '🌧️ Envíos PAUSADOS por lluvia. Los clientes verán el aviso de suspensión temporal.'
+                        : '☀️ Envíos REANUDADOS normalmente.'
+                    );
+                  } finally {
+                    setIsTogglingRain(false);
+                  }
+                }}
+                title="Pausar o reanudar todos los envíos por lluvia"
+                className={`flex items-center gap-1.5 text-xs px-2.5 sm:px-3 h-9 rounded-xl transition font-black border cursor-pointer shrink-0 whitespace-nowrap ${
+                  currentSettings.rainPauseEnabled
+                    ? 'bg-sky-600 hover:bg-sky-700 text-white border-sky-500 shadow-xs animate-pulse'
+                    : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700'
+                }`}
               >
-                {isDarkMode ? <Sun className="w-3.5 h-3.5 text-amber-300 shrink-0" /> : <Moon className="w-3.5 h-3.5 shrink-0" />}
-                <span className="hidden sm:inline">{isDarkMode ? 'Claro' : 'Obscuro'}</span>
+                <CloudRain className="w-4 h-4 shrink-0" />
+                <span className="hidden sm:inline">
+                  {currentSettings.rainPauseEnabled ? 'Lluvia: PAUSADO' : 'Pausa Lluvia'}
+                </span>
               </button>
-            )}
-            {onLogoutAdmin && (
+
+              {onToggleDarkMode && (
+                <button
+                  type="button"
+                  onClick={onToggleDarkMode}
+                  aria-label={isDarkMode ? 'Cambiar a Modo Claro' : 'Cambiar a Modo Obscuro'}
+                  title={isDarkMode ? 'Cambiar a Modo Claro' : 'Cambiar a Modo Obscuro'}
+                  className="flex items-center justify-center bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-amber-300 w-9 h-9 rounded-xl border border-slate-300 dark:border-slate-700 transition cursor-pointer shrink-0"
+                >
+                  {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+                </button>
+              )}
+
+              {onLogoutAdmin && (
+                <button
+                  type="button"
+                  onClick={onLogoutAdmin}
+                  title="Cerrar Sesión Administrador"
+                  className="flex items-center gap-1.5 text-xs bg-red-50 dark:bg-red-950/50 hover:bg-red-100 dark:hover:bg-red-900/60 text-red-700 dark:text-red-300 px-2.5 sm:px-3 h-9 rounded-xl border border-red-200 dark:border-red-800 transition font-bold cursor-pointer shrink-0 whitespace-nowrap"
+                >
+                  <LogOut className="w-4 h-4 shrink-0" />
+                  <span className="hidden md:inline">Salir</span>
+                </button>
+              )}
+
               <button
-                onClick={onLogoutAdmin}
-                title="Cerrar Sesión Administrador"
-                className="flex items-center gap-1.5 text-xs bg-red-950/60 hover:bg-red-900 text-red-200 px-3 h-9 rounded-lg border border-red-800 transition font-bold cursor-pointer shrink-0 whitespace-nowrap"
+                type="button"
+                onClick={onClose}
+                aria-label="Cerrar panel de administración"
+                className="flex items-center justify-center bg-slate-900 dark:bg-slate-800 hover:bg-black text-white w-9 h-9 rounded-xl transition shrink-0 cursor-pointer"
               >
-                <LogOut className="w-3.5 h-3.5 shrink-0" />
-                <span className="hidden sm:inline">Cerrar Sesión</span>
+                <X className="w-4 h-4" />
               </button>
-            )}
-            <button
-              onClick={onClose}
-              aria-label="Cerrar panel de administración"
-              className="hidden sm:flex items-center justify-center text-gray-400 hover:text-white w-9 h-9 rounded-lg hover:bg-white/10 transition shrink-0 cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            </div>
+          </header>
+
+          {/* Accesos rápidos fijos en Móvil / Tablet (< lg) */}
+          <div className="lg:hidden bg-white dark:bg-[#0d121d] border-b border-slate-200 dark:border-slate-800 px-3 py-2 flex items-center gap-1.5 overflow-x-auto scrollbar-none shrink-0">
+            {(
+              [
+                { id: 'despacho' as AdminTabId, label: 'Despacho 24h', badge: liveNewCount || undefined },
+                { id: 'historico' as AdminTabId, label: 'Histórico', badge: orders.length },
+                { id: 'restaurantes' as AdminTabId, label: 'Restaurantes' },
+                { id: 'cortes' as AdminTabId, label: 'Cortes' },
+                { id: 'ajustes' as AdminTabId, label: 'Ajustes' },
+              ]
+            ).map((quick) => {
+              const isActive = activeTab === quick.id;
+              return (
+                <button
+                  key={quick.id}
+                  type="button"
+                  onClick={() => handleSelectAdminTab(quick.id)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition shrink-0 whitespace-nowrap cursor-pointer ${
+                    isActive
+                      ? 'bg-[#ed0718] text-white shadow-xs'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  <span>{quick.label}</span>
+                  {quick.badge !== undefined && (
+                    <span
+                      className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+                        isActive ? 'bg-white text-[#ed0718]' : 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-white'
+                      }`}
+                    >
+                      {quick.badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
-        </div>
 
-        {/* Pestañas de Navegación del Admin (scroll táctil fluido en móvil) */}
-        <div className="bg-gray-100 dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 px-2.5 sm:px-4 flex gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none shrink-0 transition-colors [&>button]:whitespace-nowrap [&>button]:shrink-0">
-          <button
-            onClick={() => setActiveTab('despacho')}
-            className={`py-3 px-4 font-extrabold text-xs sm:text-sm flex items-center gap-2 border-b-2 transition cursor-pointer ${
-              activeTab === 'despacho'
-                ? 'border-[#ed0718] text-[#ed0718] bg-white dark:bg-slate-800 rounded-t-lg'
-                : 'border-transparent text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white'
-            }`}
-          >
-            <Bike className="w-4 h-4" />
-            Despacho en Vivo (24h)
-            {liveOrders.filter((o) => o.status === 'nuevo').length > 0 && (
-              <span className="bg-[#ed0718] text-white text-[10px] px-2 py-0.5 rounded-full font-black animate-pulse">
-                {liveOrders.filter((o) => o.status === 'nuevo').length}
-              </span>
-            )}
-          </button>
-
-          <button
-            onClick={() => setActiveTab('historico')}
-            className={`py-3 px-4 font-extrabold text-xs sm:text-sm flex items-center gap-2 border-b-2 transition cursor-pointer ${
-              activeTab === 'historico'
-                ? 'border-[#ed0718] text-[#ed0718] bg-white dark:bg-slate-800 rounded-t-lg'
-                : 'border-transparent text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white'
-            }`}
-          >
-            <Archive className="w-4 h-4 text-[#ed0718]" />
-            Histórico de Pedidos
-            <span className="bg-slate-800 text-white text-[10px] px-2 py-0.5 rounded-full font-mono">
-              {orders.length}
-            </span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('rendimiento')}
-            className={`py-3 px-4 font-extrabold text-xs sm:text-sm flex items-center gap-2 border-b-2 transition cursor-pointer shrink-0 ${
-              activeTab === 'rendimiento'
-                ? 'border-[#ed0718] text-[#ed0718] bg-white dark:bg-slate-800 rounded-t-lg'
-                : 'border-transparent text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white'
-            }`}
-          >
-            <TrendingUp className="w-4 h-4 text-[#ed0718]" />
-            Métricas de Rendimiento (Recharts)
-          </button>
-
-          <button
-            onClick={() => setActiveTab('estadisticas')}
-            className={`py-3 px-4 font-extrabold text-xs sm:text-sm flex items-center gap-2 border-b-2 transition cursor-pointer ${
-              activeTab === 'estadisticas'
-                ? 'border-[#ed0718] text-[#ed0718] bg-white dark:bg-slate-800 rounded-t-lg'
-                : 'border-transparent text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white'
-            }`}
-          >
-            <BarChart3 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            Estadísticas & Analítica
-          </button>
-
-          <button
-            onClick={() => setActiveTab('locales_api')}
-            className={`py-3 px-4 font-extrabold text-xs sm:text-sm flex items-center gap-2 border-b-2 transition ${
-              activeTab === 'locales_api'
-                ? 'border-[#ed0718] text-[#ed0718] bg-white rounded-t-lg'
-                : 'border-transparent text-gray-600 hover:text-black'
-            }`}
-          >
-            <KeyRound className="w-4 h-4" />
-            Códigos Locales (3 dígitos)
-            <span className="bg-gray-200 text-gray-800 text-[10px] px-2 py-0.5 rounded-full font-black">
-              {partnerLocals.length}
-            </span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('restaurantes')}
-            className={`py-3 px-4 font-extrabold text-xs sm:text-sm flex items-center gap-2 border-b-2 transition ${
-              activeTab === 'restaurantes'
-                ? 'border-[#ed0718] text-[#ed0718] bg-white rounded-t-lg'
-                : 'border-transparent text-gray-600 hover:text-black'
-            }`}
-          >
-            <Store className="w-4 h-4" />
-            Restaurantes & Tarifas
-          </button>
-
-          <button
-            onClick={() => setActiveTab('especialidades')}
-            className={`py-3 px-4 font-extrabold text-xs sm:text-sm flex items-center gap-2 border-b-2 transition ${
-              activeTab === 'especialidades'
-                ? 'border-[#ed0718] text-[#ed0718] bg-white rounded-t-lg'
-                : 'border-transparent text-gray-600 hover:text-black'
-            }`}
-          >
-            <Sparkles className="w-4 h-4 text-amber-500" />
-            Especialidades
-            <span className="bg-amber-100 text-amber-800 text-[10px] px-2 py-0.5 rounded-full font-black">
-              {currentSpecialties.filter((s) => s.active).length}
-            </span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('cobertura')}
-            className={`py-3 px-4 font-extrabold text-xs sm:text-sm flex items-center gap-2 border-b-2 transition ${
-              activeTab === 'cobertura'
-                ? 'border-[#ed0718] text-[#ed0718] bg-white rounded-t-lg'
-                : 'border-transparent text-gray-600 hover:text-black'
-            }`}
-          >
-            <Map className="w-4 h-4" />
-            Mapa Cobertura SMA
-          </button>
-
-          <button
-            onClick={() => setActiveTab('clientes')}
-            className={`py-3 px-4 font-extrabold text-xs sm:text-sm flex items-center gap-2 border-b-2 transition ${
-              activeTab === 'clientes'
-                ? 'border-[#ed0718] text-[#ed0718] bg-white rounded-t-lg'
-                : 'border-transparent text-gray-600 hover:text-black'
-            }`}
-          >
-            <Users className="w-4 h-4" />
-            Antifraude & Clientes
-          </button>
-
-          <button
-            onClick={() => setActiveTab('seguridad_otp')}
-            className={`py-3 px-4 font-extrabold text-xs sm:text-sm flex items-center gap-2 border-b-2 transition ${
-              activeTab === 'seguridad_otp'
-                ? 'border-[#ed0718] text-[#ed0718] bg-white rounded-t-lg'
-                : 'border-transparent text-gray-600 hover:text-black'
-            }`}
-          >
-            <Activity className="w-4 h-4 text-emerald-600" />
-            Diagnóstico OTP de RODO
-          </button>
-
-          <button
-            onClick={() => setActiveTab('cortes')}
-            className={`py-3 px-4 font-extrabold text-xs sm:text-sm flex items-center gap-2 border-b-2 transition ${
-              activeTab === 'cortes'
-                ? 'border-[#ed0718] text-[#ed0718] bg-white rounded-t-lg'
-                : 'border-transparent text-gray-600 hover:text-black'
-            }`}
-          >
-            <Wallet className="w-4 h-4" />
-            Cortes Diarios
-          </button>
-
-          <button
-            onClick={() => setActiveTab('ajustes')}
-            className={`py-3 px-4 font-extrabold text-xs sm:text-sm flex items-center gap-2 border-b-2 transition ${
-              activeTab === 'ajustes'
-                ? 'border-[#ed0718] text-[#ed0718] bg-white rounded-t-lg'
-                : 'border-transparent text-gray-600 hover:text-black'
-            }`}
-          >
-            <Sliders className="w-4 h-4" />
-            Repartidores & Ajustes
-          </button>
-
-          <button
-            onClick={() => setActiveTab('bitacora')}
-            className={`py-3 px-4 font-extrabold text-xs sm:text-sm flex items-center gap-2 border-b-2 transition ${
-              activeTab === 'bitacora'
-                ? 'border-[#ed0718] text-[#ed0718] bg-white rounded-t-lg'
-                : 'border-transparent text-gray-600 hover:text-black'
-            }`}
-          >
-            <History className="w-4 h-4 text-slate-700" />
-            Bitácora de Auditoría
-          </button>
-
-          <button
-            onClick={() => setActiveTab('notificaciones')}
-            className={`py-3 px-4 font-extrabold text-xs sm:text-sm flex items-center gap-2 border-b-2 transition cursor-pointer shrink-0 ${
-              activeTab === 'notificaciones'
-                ? 'border-[#ed0718] text-[#ed0718] bg-white dark:bg-slate-800 rounded-t-lg'
-                : 'border-transparent text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white'
-            }`}
-          >
-            <Bell className="w-4 h-4 text-amber-500" />
-            Programar Notificación
-          </button>
-
-          <button
-            onClick={() => {
-              setActiveTab('recuperacion');
-              loadRecoveryRequests();
-            }}
-            className={`py-3 px-4 font-extrabold text-xs sm:text-sm flex items-center gap-2 border-b-2 transition cursor-pointer shrink-0 ${
-              activeTab === 'recuperacion'
-                ? 'border-[#ed0718] text-[#ed0718] bg-white dark:bg-slate-800 rounded-t-lg'
-                : 'border-transparent text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white'
-            }`}
-          >
-            <LifeBuoy className="w-4 h-4 text-blue-600" />
-            Recuperar Cuentas
-            {recoveryRequests.filter((r) => r.status === 'pendiente').length > 0 && (
-              <span className="bg-[#ed0718] text-white text-[10px] px-2 py-0.5 rounded-full font-black">
-                {recoveryRequests.filter((r) => r.status === 'pendiente').length}
-              </span>
-            )}
-          </button>
-
-          <button
-            onClick={() => setActiveTab('enlaces_web')}
-            className={`py-3 px-4 font-extrabold text-xs sm:text-sm flex items-center gap-2 border-b-2 transition ${
-              activeTab === 'enlaces_web'
-                ? 'border-[#ed0718] text-[#ed0718] bg-white rounded-t-lg'
-                : 'border-transparent text-gray-600 hover:text-black'
-            }`}
-          >
-            <Globe2 className="w-4 h-4 text-indigo-600" />
-            Enlace con Otros Sitios
-          </button>
-        </div>
-
-        {/* Contenido según pestaña */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-gray-50 dark:bg-slate-950 transition-colors space-y-4">
+          {/* Contenido principal con scroll independiente */}
+          <div className="flex-1 overflow-y-auto p-3 sm:p-5 lg:p-6 bg-slate-100 dark:bg-[#070a10] transition-colors space-y-4">
           {/* Mensaje de retroalimentación no bloqueante */}
           {feedbackNotice && (
             <div
@@ -1343,61 +1194,131 @@ _RODO Moto Mandados · San Miguel de Allende_`;
           {/* ================= PESTAÑA 1: DESPACHO EN VIVO (VENTANA OPERATIVA 24 HORAS) ================= */}
           {activeTab === 'despacho' && (
             <div className="space-y-4">
-              {/* Banner informativo de limpieza automática cada 24h */}
-              <div className="bg-slate-900 text-white px-3.5 py-2.5 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+              {/* Tarjetas KPI Operativas (Últimas 24 horas) */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+                <div className="bg-white dark:bg-[#0f141e] rounded-2xl p-3.5 border border-slate-200 dark:border-slate-800 shadow-2xs">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Por Atender (Nuevos)
+                  </span>
+                  <div className="flex items-baseline justify-between mt-1">
+                    <span className={`text-2xl font-black font-mono ${liveNewCount > 0 ? 'text-[#ed0718]' : 'text-slate-900 dark:text-white'}`}>
+                      {liveNewCount}
+                    </span>
+                    {liveNewCount > 0 && (
+                      <span className="text-[10px] font-black bg-red-100 dark:bg-red-950 text-[#ed0718] px-2 py-0.5 rounded-full">
+                        Urgente
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-[#0f141e] rounded-2xl p-3.5 border border-slate-200 dark:border-slate-800 shadow-2xs">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    En Preparación / Ruta
+                  </span>
+                  <div className="text-2xl font-black font-mono text-blue-600 dark:text-blue-400 mt-1">
+                    {liveInProgressCount}
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-[#0f141e] rounded-2xl p-3.5 border border-slate-200 dark:border-slate-800 shadow-2xs">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Entregados (24h)
+                  </span>
+                  <div className="text-2xl font-black font-mono text-emerald-600 dark:text-emerald-400 mt-1">
+                    {liveDeliveredCount}
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-[#0f141e] rounded-2xl p-3.5 border border-slate-200 dark:border-slate-800 shadow-2xs">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Volumen (24h)
+                  </span>
+                  <div className="text-xl sm:text-2xl font-black font-mono text-slate-900 dark:text-white mt-1">
+                    ${liveRevenue24h.toFixed(0)} <span className="text-xs font-bold text-slate-400">MXN</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Aviso limpio de limpieza automática 24h */}
+              <div className="bg-[#0b1220] text-slate-100 px-3.5 py-2.5 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs border border-slate-800">
                 <div className="flex items-center gap-2">
                   <Clock className="w-4 h-4 text-amber-400 shrink-0" />
                   <span>
-                    <b>Limpieza automática 24h:</b> Mostrando <b>{liveOrders.length}</b> pedido(s) de las últimas 24 horas.
+                    <b>Limpieza automática cada 24h:</b> Mostrando <b>{liveOrders.length}</b> pedido(s) recientes.
                     {archivedOrders.length > 0 && (
-                      <span className="text-gray-300">
-                        {' '}· {archivedOrders.length} archivado(s) en el registro histórico.
+                      <span className="text-slate-400">
+                        {' '}· {archivedOrders.length} archivado(s) permanentemente.
                       </span>
                     )}
                   </span>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setActiveTab('historico')}
-                  className="bg-white/15 hover:bg-white/25 text-amber-300 font-black px-3 py-1.5 rounded-lg transition text-xs cursor-pointer shrink-0 self-start sm:self-auto"
+                  onClick={() => handleSelectAdminTab('historico')}
+                  className="bg-white/10 hover:bg-white/20 text-white font-bold px-3 py-1.5 rounded-xl transition text-xs cursor-pointer shrink-0 self-start sm:self-auto"
                 >
-                  Ver Histórico Completo ({orders.length}) →
+                  Ir al Histórico ({orders.length}) →
                 </button>
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-gray-200">
-                <div className="flex items-center gap-2 overflow-x-auto">
-                  <span className="text-xs font-bold text-gray-500 uppercase">Filtrar:</span>
-                  {(['todos', 'nuevo', 'asignado', 'en_camino', 'entregado', 'cancelado'] as const).map((st) => (
+              {/* Barra de Filtros de Estatus con Conteo */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-white dark:bg-[#0f141e] p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs">
+                <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5 sm:pb-0">
+                  {(
+                    [
+                      { id: 'todos', label: 'Todos', count: liveOrders.length },
+                      { id: 'nuevo', label: 'Nuevos', count: liveOrders.filter((o) => o.status === 'nuevo').length },
+                      { id: 'en_preparacion', label: 'Preparación', count: liveOrders.filter((o) => o.status === 'en_preparacion').length },
+                      { id: 'asignado', label: 'Asignados', count: liveOrders.filter((o) => o.status === 'asignado').length },
+                      { id: 'en_camino', label: 'En Camino', count: liveOrders.filter((o) => o.status === 'en_camino').length },
+                      { id: 'entregado', label: 'Entregados', count: liveOrders.filter((o) => o.status === 'entregado').length },
+                      { id: 'cancelado', label: 'Cancelados', count: liveOrders.filter((o) => o.status === 'cancelado' || o.status === 'cancelado_con_deuda').length },
+                    ] as const
+                  ).map((st) => (
                     <button
-                      key={st}
-                      onClick={() => setFilterStatus(st)}
-                      className={`text-xs px-3 py-1.5 rounded-lg font-bold capitalize transition ${
-                        filterStatus === st
-                          ? 'bg-[#101b29] text-white shadow-xs'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      key={st.id}
+                      type="button"
+                      onClick={() => setFilterStatus(st.id)}
+                      className={`text-xs px-3 py-1.5 rounded-xl font-bold transition cursor-pointer shrink-0 whitespace-nowrap flex items-center gap-1.5 ${
+                        filterStatus === st.id
+                          ? 'bg-[#0b1220] dark:bg-[#ed0718] text-white shadow-xs'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
                       }`}
                     >
-                      {st.replace('_', ' ')}
+                      <span>{st.label}</span>
+                      <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${filterStatus === st.id ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'}`}>
+                        {st.count}
+                      </span>
                     </button>
                   ))}
                 </div>
 
                 <button
+                  type="button"
                   onClick={onRefreshData}
-                  className="text-xs text-gray-600 hover:text-black flex items-center gap-1.5 font-bold"
+                  className="text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 px-3 py-1.5 rounded-xl flex items-center justify-center gap-1.5 font-bold transition cursor-pointer shrink-0"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
-                  Actualizar órdenes
+                  <span>Actualizar</span>
                 </button>
               </div>
 
               {filteredOrders.length === 0 ? (
-                <div className="text-center py-16 bg-white rounded-2xl border border-gray-200">
-                  <Bike className="w-12 h-12 text-gray-300 mx-auto mb-2" />
-                  <p className="text-gray-500 font-semibold text-sm">
-                    No hay órdenes con el filtro seleccionado.
+                <div className="text-center py-14 bg-white dark:bg-[#0f141e] rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
+                  <Bike className="w-11 h-11 text-slate-300 dark:text-slate-700 mx-auto" />
+                  <p className="text-slate-600 dark:text-slate-400 font-bold text-sm">
+                    No hay pedidos en las últimas 24 horas con este filtro.
                   </p>
+                  {archivedOrders.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => handleSelectAdminTab('historico')}
+                      className="text-xs font-black text-[#ed0718] hover:underline cursor-pointer"
+                    >
+                      Consultar {archivedOrders.length} pedido(s) en Histórico →
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-3">
@@ -1409,243 +1330,269 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                     const msg2 = buildWhatsAppDispatchMessage(order, settings.defaultRider2Name);
                     const waLink2 = generateWhatsAppLink(settings.defaultRider2Phone, msg2);
 
+                    const statusBorderColor =
+                      order.status === 'nuevo'
+                        ? 'border-l-[#ed0718]'
+                        : order.status === 'entregado'
+                        ? 'border-l-emerald-500'
+                        : order.status === 'afuera_del_domicilio'
+                        ? 'border-l-amber-500'
+                        : order.status === 'cancelado' || order.status === 'cancelado_con_deuda'
+                        ? 'border-l-slate-400'
+                        : 'border-l-blue-600';
+
+                    const cleanAddress = (order.deliveryAddress || '').replace(/##+/g, '#');
+
                     return (
                       <div
                         key={order.id}
-                        className={`bg-white rounded-xl border p-4 sm:p-5 shadow-xs transition ${
-                          order.status === 'nuevo'
-                            ? 'border-red-300 ring-2 ring-red-100'
-                            : 'border-gray-200'
-                        }`}
+                        className={`bg-white dark:bg-[#0f141e] rounded-2xl border border-slate-200 dark:border-slate-800 border-l-4 ${statusBorderColor} p-4 sm:p-5 shadow-2xs transition`}
                       >
-                        <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono font-black text-sm text-gray-900 bg-gray-100 px-2 py-0.5 rounded">
+                        {/* Encabezado de Orden */}
+                        <div className="flex flex-wrap items-start justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="font-mono font-black text-xs sm:text-sm text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
                                 {order.folio}
                               </span>
-                              <span className="text-xs text-gray-500">
+                              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                                 {new Date(order.createdAt).toLocaleTimeString('es-MX', {
                                   hour: '2-digit',
                                   minute: '2-digit',
                                 })}
                               </span>
                               {order.status === 'nuevo' && (
-                                <span className="bg-[#ed0718] text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-bounce">
-                                  ¡NUEVA ORDEN!
+                                <span className="bg-[#ed0718] text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-pulse">
+                                  NUEVA ORDEN
                                 </span>
                               )}
                               {order.deliveryType === 'programada' && (
-                                <span className="bg-amber-500 text-black text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 shadow-2xs">
-                                  🕒 PROGRAMADO: {order.scheduledDeliveryDate || 'Hoy'} a las {order.scheduledDeliveryTime || ''}
-                                  {order.scheduledConfirmationStatus === 'pendiente_confirmacion' ? ' · ⚠️ Confirmación previa requerida' : ' · ✔️ Confirmado'}
+                                <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black px-2 py-0.5 rounded-full">
+                                  🕒 PROGRAMADO: {order.scheduledDeliveryDate || 'Hoy'} {order.scheduledDeliveryTime || ''}
                                 </span>
                               )}
                             </div>
-                            <h3 className="font-extrabold text-base text-gray-900 mt-1">
+                            <h3 className="font-black text-base text-slate-900 dark:text-white mt-1.5">
                               {order.restaurantName}
                             </h3>
                           </div>
 
-                          <div className="flex flex-col items-end">
-                            <span className="font-mono font-black text-lg text-[#ed0718]">
+                          <div className="flex flex-col items-end shrink-0">
+                            <span className="font-mono font-black text-lg text-[#ed0718] leading-none">
                               ${order.total.toFixed(2)} MXN
                             </span>
-                            <span className="text-[11px] text-gray-500">
-                              (Envío: ${order.deliveryFee} · Comis RODO: ${order.commissionAmount.toFixed(2)})
+                            <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                              Envío ${order.deliveryFee} · Comis. ${order.commissionAmount.toFixed(2)}
                             </span>
                           </div>
                         </div>
 
                         {/* Si es solicitud de repartidores de local */}
                         {order.orderType === 'solicitud_local' && (
-                          <div className="bg-red-50 border border-red-200 text-[#101b29] p-3 rounded-lg mb-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+                          <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-slate-900 dark:text-white p-3 rounded-xl my-3 flex flex-wrap items-center justify-between gap-2 text-xs">
                             <div className="flex items-center gap-2">
-                              <span className="bg-[#ed0718] text-white p-1 rounded-md font-bold">
+                              <span className="bg-[#ed0718] text-white p-1.5 rounded-lg">
                                 <Bike className="w-4 h-4" />
                               </span>
                               <div>
-                                <strong className="text-gray-900 block">
+                                <strong className="block font-black">
                                   SOLICITUD DE LOCAL · CÓDIGO #{order.localCode}
                                 </strong>
-                                <span className="text-gray-600">
+                                <span className="text-slate-600 dark:text-slate-300">
                                   {order.urgencyTiming || 'Inmediato'}
                                 </span>
                               </div>
                             </div>
-                            <span className="bg-[#101b29] text-white text-xs font-black px-3 py-1 rounded-md">
-                              {order.ridersRequestedCount || 1} MOTO(S) SOLICITADA(S)
+                            <span className="bg-[#0b1220] text-white text-xs font-black px-3 py-1 rounded-lg">
+                              {order.ridersRequestedCount || 1} MOTO(S)
                             </span>
                           </div>
                         )}
 
-                        {/* Datos del Cliente y Entrega */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs bg-gray-50 p-3 rounded-lg mb-3">
-                          <div>
-                            <span className="text-gray-500 font-semibold">
-                              {order.orderType === 'solicitud_local' ? 'Local Solicitante:' : 'Cliente:'}
-                            </span>{' '}
-                            <strong className="text-gray-900">{order.customerName}</strong> ({order.customerPhone})
-                          </div>
-                          <div>
-                            <span className="text-gray-500 font-semibold">
-                              {order.orderType === 'solicitud_local' ? 'Punto de Salida:' : 'Dirección:'}
-                            </span>{' '}
-                            <span className="text-gray-900 font-bold">{order.deliveryAddress}</span>
-                            {order.mapsUrl && (
-                              <a
-                                href={order.mapsUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="block text-[#ed0718] hover:underline font-bold text-[11px] mt-0.5"
-                              >
-                                📍 Abrir ubicación en Google Maps
-                              </a>
-                            )}
-                          </div>
-                          {order.deliveryNotes && (
-                            <div className="col-span-1 sm:col-span-2 text-gray-700 bg-white p-2 rounded border border-gray-200 text-xs">
-                              <b>Observaciones / Salidas:</b> {order.deliveryNotes}
+                        {/* Cuerpo de Datos: Cliente + Dirección + Artículos */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 py-3 text-xs">
+                          <div className="bg-slate-50 dark:bg-slate-900/70 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 space-y-1.5">
+                            <div>
+                              <span className="text-[10px] font-black uppercase text-slate-400 block">
+                                {order.orderType === 'solicitud_local' ? 'Local Solicitante' : 'Cliente'}
+                              </span>
+                              <strong className="text-slate-900 dark:text-white text-xs">
+                                {order.customerName}
+                              </strong>{' '}
+                              <span className="font-mono text-slate-600 dark:text-slate-300">
+                                ({order.customerPhone})
+                              </span>
                             </div>
-                          )}
-                        </div>
-
-                        {/* Platillos resumen */}
-                        <div className="text-xs text-gray-700 mb-3 space-y-0.5">
-                          {order.items.map((it, idx) => (
-                            <span key={idx} className="inline-block bg-gray-100 px-2 py-0.5 rounded mr-1 mb-1">
-                              <b>{it.quantity}x</b> {it.name}
-                            </span>
-                          ))}
-                        </div>
-
-                        {/* Estado de Pago y SPEI */}
-                        <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-lg mb-3 text-xs border border-dashed border-gray-300">
-                          <div className="flex items-center gap-2">
-                            {isTransfer ? (
-                              isVerified ? (
-                                <span className="bg-emerald-100 text-emerald-800 font-black px-2.5 py-1 rounded-md flex items-center gap-1">
-                                  <ShieldCheck className="w-3.5 h-3.5" /> Transferencia Verificada ✅
-                                </span>
-                              ) : (
-                                <span className="bg-amber-100 text-amber-800 font-black px-2.5 py-1 rounded-md flex items-center gap-1">
-                                  <AlertTriangle className="w-3.5 h-3.5" /> Transferencia Por Verificar
-                                </span>
-                              )
-                            ) : (
-                              <span className="bg-blue-100 text-blue-900 font-black px-2.5 py-1 rounded-md">
-                                💵 Cobro en Efectivo: ${order.total.toFixed(2)} MXN
+                            <div>
+                              <span className="text-[10px] font-black uppercase text-slate-400 block">
+                                {order.orderType === 'solicitud_local' ? 'Punto de Salida' : 'Dirección de Entrega'}
                               </span>
-                            )}
-
-                            {order.bankVerification?.trackingKey && (
-                              <span className="font-mono text-gray-500 text-[11px]">
-                                Rastreo: {order.bankVerification.trackingKey}
+                              <span className="text-slate-800 dark:text-slate-200 font-semibold">
+                                {cleanAddress}
                               </span>
+                              {order.mapsUrl && (
+                                <a
+                                  href={order.mapsUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="block text-blue-600 dark:text-blue-400 hover:underline font-bold text-[11px] mt-0.5"
+                                >
+                                  📍 Abrir ubicación en Google Maps
+                                </a>
+                              )}
+                            </div>
+                            {order.deliveryNotes && (
+                              <div className="text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-950 p-2 rounded-lg border border-slate-200 dark:border-slate-800 text-[11px]">
+                                <b>Notas:</b> {order.deliveryNotes}
+                              </div>
                             )}
                           </div>
 
-                          {isTransfer && !isVerified && (
-                            <button
-                              onClick={() => handleVerifyBankPayment(order.id)}
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-1 rounded-md transition"
-                            >
-                              Verificar Ingreso en Banco
-                            </button>
-                          )}
+                          <div className="bg-slate-50 dark:bg-slate-900/70 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 flex flex-col justify-between gap-2.5">
+                            <div>
+                              <span className="text-[10px] font-black uppercase text-slate-400 block mb-1.5">
+                                Artículos ({order.items.length})
+                              </span>
+                              <div className="flex flex-wrap gap-1.5">
+                                {order.items.map((it, idx) => (
+                                  <span
+                                    key={idx}
+                                    className="inline-block bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 px-2 py-0.5 rounded-lg text-[11px] font-semibold"
+                                  >
+                                    <b>{it.quantity}x</b> {it.name}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Pill de Pago */}
+                            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/80 dark:border-slate-800">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {isTransfer ? (
+                                  isVerified ? (
+                                    <span className="bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-black px-2.5 py-1 rounded-lg flex items-center gap-1 text-[11px]">
+                                      <ShieldCheck className="w-3.5 h-3.5" /> SPEI Verificado
+                                    </span>
+                                  ) : (
+                                    <span className="bg-amber-100 dark:bg-amber-950 text-amber-900 dark:text-amber-300 font-black px-2.5 py-1 rounded-lg flex items-center gap-1 text-[11px]">
+                                      <AlertTriangle className="w-3.5 h-3.5" /> SPEI Pendiente
+                                    </span>
+                                  )
+                                ) : (
+                                  <span className="bg-slate-900 dark:bg-slate-800 text-white font-black px-2.5 py-1 rounded-lg text-[11px]">
+                                    💵 Efectivo: ${order.total.toFixed(2)}
+                                  </span>
+                                )}
+
+                                {order.bankVerification?.trackingKey && (
+                                  <span className="font-mono text-slate-500 text-[10px]">
+                                    Clave: {order.bankVerification.trackingKey}
+                                  </span>
+                                )}
+                              </div>
+
+                              {isTransfer && !isVerified && (
+                                <button
+                                  onClick={() => handleVerifyBankPayment(order.id)}
+                                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] px-2.5 py-1 rounded-lg transition cursor-pointer"
+                                >
+                                  Confirmar SPEI
+                                </button>
+                              )}
+                            </div>
+                          </div>
                         </div>
 
-                        {/* Barra de Acciones de Despacho (WhatsApp Repartidor 1 y 2) */}
-                        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-gray-100">
+                        {/* Barra de Acciones Organizada y Clara */}
+                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
                           <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-gray-600">Estado:</span>
+                            <span className="text-[11px] font-black uppercase text-slate-500 shrink-0">
+                              Estatus:
+                            </span>
                             <select
                               value={order.status}
                               onChange={(e) => handleStatusChange(order.id, e.target.value as Order['status'])}
-                              className="text-xs border border-gray-300 rounded-lg px-2 py-1 font-bold bg-white"
+                              className="flex-1 sm:flex-none text-xs border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 font-bold bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-[#ed0718]"
                             >
-                              <option value="nuevo">Nuevo</option>
-                              <option value="en_preparacion">En Preparación</option>
-                              <option value="asignado">Asignado a Repartidor</option>
+                              <option value="nuevo">🆕 Nuevo</option>
+                              <option value="en_preparacion">👨‍🍳 En Preparación</option>
+                              <option value="asignado">📋 Asignado a Repartidor</option>
                               <option value="recolectado">🛵 Pedido Recolectado</option>
                               <option value="en_camino">🚀 En Camino</option>
                               <option value="afuera_del_domicilio">📍 Repartidor Afuera (10m)</option>
-                              <option value="entregado">Entregado</option>
-                              <option value="cancelado">Cancelado</option>
-                              <option value="cancelado_con_deuda">Cancelado con Deuda</option>
-                              <option value="pendiente_cotizacion">Pendiente Cotización</option>
+                              <option value="entregado">✅ Entregado</option>
+                              <option value="cancelado">❌ Cancelado</option>
+                              <option value="cancelado_con_deuda">⛔ Cancelado con Deuda</option>
+                              <option value="pendiente_cotizacion">💬 Pendiente Cotización</option>
                             </select>
                           </div>
 
-                          <div className="flex flex-wrap items-center gap-2">
-                            {/* Botón de aviso al cliente: Estoy afuera (10 min tolerancia) */}
-                            {order.status !== 'entregado' && order.status !== 'cancelado' && (
-                              <button
-                                type="button"
-                                onClick={() => handleNotifyArrivalOutside(order)}
-                                className={`text-xs py-1.5 px-2.5 rounded-lg font-black flex items-center gap-1 transition shadow-xs ${
-                                  order.status === 'afuera_del_domicilio'
-                                    ? 'bg-amber-500 text-white animate-pulse'
-                                    : 'bg-amber-600 hover:bg-amber-700 text-white'
-                                }`}
-                                title="Avisar por WhatsApp al cliente que el repartidor está afuera con tolerancia de 10 minutos"
-                              >
-                                <span>📢</span>
-                                <span>{order.status === 'afuera_del_domicilio' ? 'Reenviar Afuera (10m)' : 'Avisar Afuera (10m)'}</span>
-                              </button>
-                            )}
-
-                            {/* WhatsApp Enlace 1 */}
+                          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                            {/* Acciones de Comunicación WhatsApp */}
                             <a
                               href={waLink1}
                               target="_blank"
                               rel="noreferrer"
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-1.5 px-3 rounded-lg flex items-center gap-1.5 shadow-xs transition"
-                              title="Compartir por WhatsApp al Repartidor 1"
+                              className="bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-600 text-emerald-800 dark:text-emerald-300 hover:text-white border border-emerald-300 dark:border-emerald-800 font-bold text-xs py-2 px-3 rounded-xl flex items-center gap-1.5 transition"
+                              title="Despachar por WhatsApp al Repartidor 1"
                             >
-                              <span>📲</span>
+                              <MessageCircle className="w-3.5 h-3.5" />
                               <span>Rider 1</span>
                             </a>
 
-                            {/* WhatsApp Enlace 2 */}
                             <a
                               href={waLink2}
                               target="_blank"
                               rel="noreferrer"
-                              className="bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs py-1.5 px-3 rounded-lg flex items-center gap-1.5 shadow-xs transition"
-                              title="Compartir por WhatsApp al Repartidor 2"
+                              className="bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-600 text-emerald-800 dark:text-emerald-300 hover:text-white border border-emerald-300 dark:border-emerald-800 font-bold text-xs py-2 px-3 rounded-xl flex items-center gap-1.5 transition"
+                              title="Despachar por WhatsApp al Repartidor 2"
                             >
-                              <span>📲</span>
+                              <MessageCircle className="w-3.5 h-3.5" />
                               <span>Rider 2</span>
                             </a>
 
-                            {/* Botón Ver Ruta de Entrega Google Maps */}
+                            {order.status !== 'entregado' && order.status !== 'cancelado' && (
+                              <button
+                                type="button"
+                                onClick={() => handleNotifyArrivalOutside(order)}
+                                className={`text-xs py-2 px-3 rounded-xl font-bold flex items-center gap-1.5 transition cursor-pointer border ${
+                                  order.status === 'afuera_del_domicilio'
+                                    ? 'bg-amber-500 text-white border-amber-600 animate-pulse'
+                                    : 'bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-500 text-amber-900 dark:text-amber-300 hover:text-white border-amber-300 dark:border-amber-800'
+                                }`}
+                                title="Avisar por WhatsApp al cliente que el repartidor está afuera (10 min tolerancia)"
+                              >
+                                <Bell className="w-3.5 h-3.5" />
+                                <span>{order.status === 'afuera_del_domicilio' ? 'Reenviar 10m' : 'Afuera (10m)'}</span>
+                              </button>
+                            )}
+
+                            {/* Acciones Operativas Principales */}
                             <button
                               type="button"
                               onClick={() => setSelectedRouteOrder(order)}
-                              className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-1.5 px-3 rounded-lg flex items-center gap-1.5 shadow-xs transition cursor-pointer"
-                              title="Calcular ruta más eficiente en Google Maps y compartir a repartidor"
+                              className="bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-600 text-blue-800 dark:text-blue-300 hover:text-white border border-blue-300 dark:border-blue-800 font-bold text-xs py-2 px-3 rounded-xl flex items-center gap-1.5 transition cursor-pointer"
+                              title="Ver ruta en mapa y compartir"
                             >
                               <MapPin className="w-3.5 h-3.5" />
-                              <span>Ruta Maps</span>
+                              <span>Ruta</span>
                             </button>
 
-                            {/* Botón Ver Ticket Digital */}
                             <button
+                              type="button"
                               onClick={() => onOpenTicket(order)}
-                              className="bg-[#101b29] hover:bg-black text-white font-bold text-xs py-1.5 px-3 rounded-lg flex items-center gap-1.5 transition"
+                              className="bg-[#0b1220] dark:bg-white hover:bg-black dark:hover:bg-slate-200 text-white dark:text-slate-900 font-black text-xs py-2 px-3.5 rounded-xl flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
                             >
-                              <Receipt className="w-3.5 h-3.5 text-red-500" />
-                              Ver Ticket
+                              <Receipt className="w-3.5 h-3.5 text-[#ed0718]" />
+                              <span>Ticket</span>
                             </button>
 
-                            {/* Cancelar con OTP antifraude */}
                             {order.status !== 'cancelado' && order.status !== 'cancelado_con_deuda' && (
                               <button
                                 type="button"
                                 onClick={() => handleCancelWithOtp(order)}
-                                className="text-red-500 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-50 transition"
-                                title="Cancelar orden y registrar deuda por incomparecencia (Requiere OTP)"
+                                className="text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50 p-2 rounded-xl border border-transparent hover:border-red-200 transition cursor-pointer"
+                                title="Cancelar orden (Requiere OTP)"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>
@@ -4696,6 +4643,7 @@ _RODO Moto Mandados · San Miguel de Allende_`;
               settings={currentSettings}
             />
           )}
+          </div>
         </div>
       </div>
 
