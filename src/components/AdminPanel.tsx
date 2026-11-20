@@ -79,14 +79,11 @@ import {
   LifeBuoy,
   MessageCircle,
 } from 'lucide-react';
-import { ProjectBackupsModal } from './ProjectBackupsModal';
 import { AdminCoverageMap } from './AdminCoverageMap';
 import { AdminSecurityAndFraud } from './AdminSecurityAndFraud';
 import { RodoOtpDiagnostics } from './RodoOtpDiagnostics';
 import { SecurityOtpModal } from './SecurityOtpModal';
 import { SecurityOtpAction, createOtpChallenge } from '../utils/securityOtp';
-import { PilotSimulationModal } from './PilotSimulationModal';
-import { Simulation200Modal } from './Simulation200Modal';
 import { OrderStatisticsView } from './OrderStatisticsView';
 import { AdminAuditLogView } from './AdminAuditLogView';
 import { AdminExternalIntegrationView } from './AdminExternalIntegrationView';
@@ -126,9 +123,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [filterStatus, setFilterStatus] = useState<string>('todos');
   const [activeChallenge, setActiveChallenge] = useState<SecurityOtpAction | null>(null);
   const [pendingCancelOrder, setPendingCancelOrder] = useState<Order | null>(null);
-  const [showPilotSimulationModal, setShowPilotSimulationModal] = useState(false);
-  const [showSimulation200Modal, setShowSimulation200Modal] = useState(false);
-  const [showBackupsModal, setShowBackupsModal] = useState(false);
   const [themeSavedFeedback, setThemeSavedFeedback] = useState(false);
 
   // Estados para Programar Notificación de Marketing ("Enviar a todos")
@@ -922,15 +916,15 @@ _RODO Moto Mandados · San Miguel de Allende_`;
               <X className="w-5 h-5" />
             </button>
           </div>
-          <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none pb-0.5 sm:pb-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none pb-0.5 sm:pb-0 shrink-0">
             {/* Botón Retroceder */}
             <button
               type="button"
               onClick={handleAdminBack}
               title="Retroceder a la vista anterior"
-              className="flex items-center gap-1 text-xs bg-white/10 hover:bg-white/20 text-white px-2.5 py-1.5 rounded-lg border border-white/20 transition font-bold cursor-pointer"
+              className="flex items-center gap-1.5 text-xs bg-white/10 hover:bg-white/20 text-white px-2.5 h-9 rounded-lg border border-white/20 transition font-bold cursor-pointer shrink-0 whitespace-nowrap"
             >
-              <ArrowLeft className="w-3.5 h-3.5" />
+              <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
               <span className="hidden sm:inline">Atrás</span>
             </button>
 
@@ -939,9 +933,9 @@ _RODO Moto Mandados · San Miguel de Allende_`;
               type="button"
               onClick={handleAdminGoHome}
               title="Volver al Despacho en Vivo"
-              className="flex items-center gap-1 text-xs bg-white/10 hover:bg-white/20 text-white px-2.5 py-1.5 rounded-lg border border-white/20 transition font-bold cursor-pointer"
+              className="flex items-center gap-1.5 text-xs bg-white/10 hover:bg-white/20 text-white px-2.5 h-9 rounded-lg border border-white/20 transition font-bold cursor-pointer shrink-0 whitespace-nowrap"
             >
-              <Home className="w-3.5 h-3.5" />
+              <Home className="w-3.5 h-3.5 shrink-0" />
               <span className="hidden sm:inline">Inicio Admin</span>
             </button>
 
@@ -983,53 +977,24 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                 }
               }}
               title="Pausar o reanudar todos los envíos por lluvia"
-              className={`flex items-center gap-1.5 text-xs px-2.5 sm:px-3 py-1.5 rounded-lg shadow-sm transition font-black border cursor-pointer ${
+              className={`flex items-center gap-1.5 text-xs px-3 h-9 rounded-lg shadow-sm transition font-black border cursor-pointer shrink-0 whitespace-nowrap ${
                 currentSettings.rainPauseEnabled
                   ? 'bg-sky-500 hover:bg-sky-600 text-white border-sky-300 animate-pulse'
                   : 'bg-white/10 hover:bg-white/20 text-sky-200 border-sky-400/40'
               }`}
             >
-              <CloudRain className="w-3.5 h-3.5" />
-              <span>{currentSettings.rainPauseEnabled ? '🌧️ Lluvia: PAUSADO' : '🌧️ Pausa Lluvia'}</span>
+              <CloudRain className="w-3.5 h-3.5 shrink-0" />
+              <span>{currentSettings.rainPauseEnabled ? 'Lluvia: PAUSADO' : 'Pausa Lluvia'}</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setShowSimulation200Modal(true)}
-              title="Abrir Diagnóstico y Simulación Completa de 200 Pedidos"
-              className="flex items-center gap-1.5 text-xs bg-[#ed0718] hover:bg-red-700 text-white px-2.5 sm:px-3 py-1.5 rounded-lg shadow-sm transition font-black border border-red-500 cursor-pointer animate-pulse"
-            >
-              <Zap className="w-3.5 h-3.5 fill-current text-white" />
-              <span>Simulación 200 Pedidos</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setShowPilotSimulationModal(true)}
-              title="Abrir Simulador y Diagnóstico de Prueba Piloto (30 Pedidos en Efectivo)"
-              className="flex items-center gap-1.5 text-xs bg-amber-500 hover:bg-amber-400 text-gray-950 px-2.5 sm:px-3 py-1.5 rounded-lg shadow-sm transition font-black border border-amber-300 cursor-pointer"
-            >
-              <Zap className="w-3.5 h-3.5 fill-current text-gray-950" />
-              <span className="hidden sm:inline">Piloto (30)</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setShowBackupsModal(true)}
-              title="Descargar Respaldos ZIP del Proyecto para Celular"
-              className="flex items-center gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 sm:px-3 py-1.5 rounded-lg shadow-sm transition font-black border border-emerald-400 cursor-pointer shrink-0 whitespace-nowrap"
-            >
-              <FolderArchive className="w-3.5 h-3.5 text-white" />
-              <span className="hidden sm:inline">Respaldos ZIP</span>
-            </button>
             {onToggleDarkMode && (
               <button
                 type="button"
                 onClick={onToggleDarkMode}
                 title={isDarkMode ? 'Cambiar a Modo Claro' : 'Cambiar a Modo Obscuro'}
-                className="flex items-center gap-1.5 text-xs bg-white/10 hover:bg-white/20 text-white px-2.5 py-1.5 rounded-lg border border-white/20 transition cursor-pointer"
+                className="flex items-center gap-1.5 text-xs bg-white/10 hover:bg-white/20 text-white px-2.5 h-9 rounded-lg border border-white/20 transition font-bold cursor-pointer shrink-0 whitespace-nowrap"
               >
-                {isDarkMode ? <Sun className="w-3.5 h-3.5 text-amber-300" /> : <Moon className="w-3.5 h-3.5" />}
+                {isDarkMode ? <Sun className="w-3.5 h-3.5 text-amber-300 shrink-0" /> : <Moon className="w-3.5 h-3.5 shrink-0" />}
                 <span className="hidden sm:inline">{isDarkMode ? 'Claro' : 'Obscuro'}</span>
               </button>
             )}
@@ -1037,16 +1002,16 @@ _RODO Moto Mandados · San Miguel de Allende_`;
               <button
                 onClick={onLogoutAdmin}
                 title="Cerrar Sesión Administrador"
-                className="flex items-center gap-1.5 text-xs bg-red-950/60 hover:bg-red-900 text-red-200 px-3 py-1.5 rounded-lg border border-red-800 transition font-bold"
+                className="flex items-center gap-1.5 text-xs bg-red-950/60 hover:bg-red-900 text-red-200 px-3 h-9 rounded-lg border border-red-800 transition font-bold cursor-pointer shrink-0 whitespace-nowrap"
               >
-                <LogOut className="w-3.5 h-3.5" />
+                <LogOut className="w-3.5 h-3.5 shrink-0" />
                 <span className="hidden sm:inline">Cerrar Sesión</span>
               </button>
             )}
             <button
               onClick={onClose}
               aria-label="Cerrar panel de administración"
-              className="hidden sm:flex text-gray-400 hover:text-white p-2 rounded-lg hover:bg-white/10 transition shrink-0"
+              className="hidden sm:flex items-center justify-center text-gray-400 hover:text-white w-9 h-9 rounded-lg hover:bg-white/10 transition shrink-0 cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -4689,28 +4654,6 @@ _RODO Moto Mandados · San Miguel de Allende_`;
           }}
         />
       )}
-
-      {/* Modal de Simulación y Diagnóstico de Prueba Piloto (30 Pedidos) */}
-      {showPilotSimulationModal && (
-        <PilotSimulationModal
-          onClose={() => setShowPilotSimulationModal(false)}
-          onRefreshOrders={onRefreshData}
-        />
-      )}
-
-      {/* Modal de Simulación Completa de 200 Pedidos Reales */}
-      {showSimulation200Modal && (
-        <Simulation200Modal
-          onClose={() => setShowSimulation200Modal(false)}
-          onRefreshOrders={onRefreshData}
-        />
-      )}
-
-      {/* Modal de Descarga de Respaldos ZIP del Proyecto */}
-      <ProjectBackupsModal
-        isOpen={showBackupsModal}
-        onClose={() => setShowBackupsModal(false)}
-      />
 
       {/* Modal de Rutas de Entrega Google Maps Directions API para Pedidos Activos */}
       {selectedRouteOrder && (
