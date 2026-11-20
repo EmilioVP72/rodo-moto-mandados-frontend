@@ -2,6 +2,13 @@ import React, { useState } from 'react';
 import { Restaurant, OrderItem, Order, BankVerificationData, MenuItem } from '../types';
 import { verifyBankTransferIncome } from '../services/bankVerification';
 import { InteractiveMapPicker } from './InteractiveMapPicker';
+import { SmaColoniaCombobox } from './SmaColoniaCombobox';
+import { SMA_COLONIAS_CATALOG, normalizeSearchText } from '../data/smaColonias';
+import {
+  CustomerSavedAddress,
+  cleanStreetNumber,
+  formatSavedAddressLine,
+} from '../utils/customerAddresses';
 import {
   generateUniqueTicketFolio,
   createOrderInDb,
@@ -68,6 +75,10 @@ interface CheckoutModalProps {
   customerDefaultEmail?: string;
   initialDeliveryAddress?: string;
   initialCoords?: { lat: number; lng: number };
+  savedAddresses?: CustomerSavedAddress[];
+  selectedSavedAddress?: CustomerSavedAddress | null;
+  onSelectSavedAddress?: (addr: CustomerSavedAddress) => void;
+  onOpenManageAddresses?: () => void;
   customerOrdersCount?: number;
   clabeRodoFallback?: string;
   bancoRodoFallback?: string;
@@ -110,6 +121,20 @@ function isPointInsidePolygon(
   return inside;
 }
 
+function resolveOfficialColoniaLabel(raw?: string | null): string {
+  const cleaned = (raw || '').trim();
+  if (!cleaned) return '';
+  const withoutPrefix = cleaned.replace(/^Col\.?\s*/i, '').trim();
+  const norm = normalizeSearchText(withoutPrefix);
+  const exact = SMA_COLONIAS_CATALOG.find(
+    (item) =>
+      item.label === cleaned ||
+      item.searchKey === norm ||
+      normalizeSearchText(item.name) === norm
+  );
+  return exact ? exact.label : withoutPrefix;
+}
+
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   restaurant,
   restaurants,
@@ -121,6 +146,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   customerDefaultEmail = '',
   initialDeliveryAddress = '',
   initialCoords,
+  savedAddresses = [],
+  selectedSavedAddress = null,
+  onSelectSavedAddress,
+  onOpenManageAddresses,
   customerOrdersCount = 0,
   clabeRodoFallback = '012180015678901234',
   bancoRodoFallback = 'BBVA',
@@ -136,26 +165,64 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const liveRestaurant = restaurants?.find((r) => r.id === restaurant.id) || restaurant;
   const isLiveClosed = liveRestaurant.isOpen === false || liveRestaurant.isActive === false;
 
+  const initialChosenAddress = selectedSavedAddress || savedAddresses[0] || null;
+
   const [localCart, setLocalCart] = useState<OrderItem[]>(initialCart);
   const [customerName, setCustomerName] = useState(customerDefaultName);
   const [customerPhone, setCustomerPhone] = useState(customerDefaultPhone);
 
-  // Dirección estructurada de Entrega: Calle, Número, Colonia, Referencias y Mapa
+  // Dirección estructurada de Entrega: sincronizada con las direcciones guardadas del cliente
+  const [activeSavedAddressId, setActiveSavedAddressId] = useState<string | null>(
+    initialChosenAddress?.id || null
+  );
   const [deliveryCalle, setDeliveryCalle] = useState(() => {
+    if (initialChosenAddress) {
+      return initialChosenAddress.calle.replace(/^calle\s+/i, '').trim();
+    }
     if (initialDeliveryAddress.includes(',')) {
-      return initialDeliveryAddress.split(',')[0].replace(/Calle\s*/i, '').trim();
+      return initialDeliveryAddress
+        .split(',')[0]
+        .replace(/^[^·]*·\s*/, '')
+        .replace(/Calle\s*/i, '')
+        .replace(/\s+#.*$/, '')
+        .replace(/\s+S\/N$/i, '')
+        .trim();
     }
     return initialDeliveryAddress.trim();
   });
-  const [deliveryNumero, setDeliveryNumero] = useState('#14');
-  const [deliveryColonia, setDeliveryColonia] = useState('San Antonio');
-  const [deliveryCustomColonia, setDeliveryCustomColonia] = useState('');
-  const [deliveryNotes, setDeliveryNotes] = useState('');
+  const [deliveryNumero, setDeliveryNumero] = useState(() =>
+    initialChosenAddress ? cleanStreetNumber(initialChosenAddress.numero) : ''
+  );
+  const [deliveryNumeroInterior, setDeliveryNumeroInterior] = useState(() =>
+    initialChosenAddress?.numeroInterior ? initialChosenAddress.numeroInterior.trim() : ''
+  );
+  const [deliveryColonia, setDeliveryColonia] = useState(() =>
+    initialChosenAddress ? resolveOfficialColoniaLabel(initialChosenAddress.colonia) : ''
+  );
+  const [deliveryNotes, setDeliveryNotes] = useState(() =>
+    initialChosenAddress?.referencias ? initialChosenAddress.referencias.trim() : ''
+  );
   const [deliveryPinCoords, setDeliveryPinCoords] = useState<{ lat: number; lng: number } | null>(
-    initialCoords || null
+    initialChosenAddress?.lat && initialChosenAddress?.lng
+      ? { lat: initialChosenAddress.lat, lng: initialChosenAddress.lng }
+      : initialCoords || null
   );
   const [showMapPicker, setShowMapPicker] = useState(false);
   const [geoMismatchWarning, setGeoMismatchWarning] = useState('');
+
+  const handleChooseSavedAddress = (addr: CustomerSavedAddress) => {
+    setActiveSavedAddressId(addr.id);
+    setDeliveryCalle(addr.calle.replace(/^calle\s+/i, '').trim());
+    setDeliveryNumero(cleanStreetNumber(addr.numero));
+    setDeliveryNumeroInterior((addr.numeroInterior || '').trim());
+    setDeliveryColonia(resolveOfficialColoniaLabel(addr.colonia));
+    setDeliveryNotes((addr.referencias || '').trim());
+    if (addr.lat && addr.lng) {
+      setDeliveryPinCoords({ lat: addr.lat, lng: addr.lng });
+    }
+    setGeoMismatchWarning('');
+    onSelectSavedAddress?.(addr);
+  };
 
   // Código de Promoción
   const [promoCodeInput, setPromoCodeInput] = useState('');
@@ -414,16 +481,20 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       return;
     }
 
-    const finalColonia = deliveryColonia === 'Otra / Fraccionamiento Privado'
-      ? (deliveryCustomColonia.trim() || 'San Miguel')
-      : deliveryColonia;
+    const finalColonia = deliveryColonia.trim();
 
-    if (!deliveryCalle.trim() || !deliveryNumero.trim() || !finalColonia.trim()) {
-      setErrorMsg('Por favor completa la Calle, Número exterior/interior y Colonia en San Miguel de Allende.');
+    if (!deliveryCalle.trim() || !finalColonia) {
+      setErrorMsg('Por favor completa la Calle y selecciona tu Colonia en San Miguel de Allende.');
       return;
     }
 
-    const fullDeliveryAddress = `Calle ${deliveryCalle.trim()} #${deliveryNumero.trim()}, Col. ${finalColonia}${deliveryNotes.trim() ? ' (' + deliveryNotes.trim() + ')' : ''}`;
+    const baseAddressLine = formatSavedAddressLine({
+      calle: deliveryCalle,
+      numero: deliveryNumero.trim() || null,
+      numeroInterior: deliveryNumeroInterior.trim() || null,
+      colonia: finalColonia,
+    });
+    const fullDeliveryAddress = `${baseAddressLine}${deliveryNotes.trim() ? ' (' + deliveryNotes.trim() + ')' : ''}`;
 
     if (!acceptedPrivacyTerms) {
       setErrorMsg('Debes aceptar los Avisos de Privacidad y Términos de Intermediación para continuar.');
@@ -992,9 +1063,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               />
             </div>
 
-            {/* Dirección Estructurada: Calle, Número, Colonia, Referencias */}
+            {/* Dirección Estructurada: Direcciones Guardadas + Calle, Número, Colonia, Referencias */}
             <div className="bg-gray-50 border border-gray-200 p-3 sm:p-4 rounded-2xl space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-xs font-extrabold text-gray-800 flex items-center gap-1.5 uppercase">
                   <MapPin className="w-4 h-4 text-[#ed0718]" /> Dirección en San Miguel de Allende
                 </span>
@@ -1008,67 +1079,148 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 </button>
               </div>
 
-              <div className="grid grid-cols-3 gap-2">
-                <div className="col-span-2">
-                  <label className="block text-[11px] font-bold text-gray-700 mb-0.5">Calle</label>
+              {/* Selector rápido entre las direcciones guardadas en el perfil del cliente */}
+              {savedAddresses.length > 0 && (
+                <div className="space-y-2 pb-2 border-b border-gray-200">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-black text-gray-700">
+                      Elige a cuál de tus direcciones guardadas enviar ({savedAddresses.length}):
+                    </span>
+                    {onOpenManageAddresses && (
+                      <button
+                        type="button"
+                        onClick={onOpenManageAddresses}
+                        className="text-[11px] font-extrabold text-[#ed0718] hover:underline cursor-pointer"
+                      >
+                        + Administrar
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {savedAddresses.map((addr) => {
+                      const isSelected = activeSavedAddressId === addr.id;
+                      return (
+                        <button
+                          key={addr.id}
+                          type="button"
+                          onClick={() => handleChooseSavedAddress(addr)}
+                          className={`p-2.5 rounded-xl border-2 text-left transition cursor-pointer ${
+                            isSelected
+                              ? 'bg-emerald-50 border-emerald-500 shadow-2xs'
+                              : 'bg-white border-gray-200 hover:border-gray-300'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-1.5">
+                            <span className="text-xs font-black text-gray-900 truncate">
+                              {addr.label}
+                            </span>
+                            {isSelected && (
+                              <span className="text-[10px] font-black text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-full shrink-0">
+                                ✓ Elegida
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-gray-600 font-medium line-clamp-2 mt-0.5">
+                            {formatSavedAddressLine(addr)}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveSavedAddressId(null);
+                      setDeliveryCalle('');
+                      setDeliveryNumero('');
+                      setDeliveryNumeroInterior('');
+                      setDeliveryColonia('');
+                      setDeliveryNotes('');
+                    }}
+                    className={`text-[11px] font-bold px-2.5 py-1 rounded-lg transition cursor-pointer ${
+                      activeSavedAddressId === null
+                        ? 'bg-slate-900 text-white'
+                        : 'text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    ✍️ Usar otra dirección diferente para este pedido
+                  </button>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                <div className="sm:col-span-6">
+                  <label className="block text-[11px] font-bold text-gray-700 mb-0.5">Calle *</label>
                   <input
                     type="text"
                     value={deliveryCalle}
-                    onChange={(e) => setDeliveryCalle(e.target.value)}
+                    onChange={(e) => {
+                      setActiveSavedAddressId(null);
+                      setDeliveryCalle(e.target.value);
+                    }}
                     required
                     placeholder="Ej. Calle Correo, Ancha de San Antonio..."
                     className="w-full border border-gray-300 rounded-xl p-2 text-xs font-semibold bg-white outline-none focus:border-[#ed0718]"
                   />
                 </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-gray-700 mb-0.5">Núm. Ext / Int</label>
+                <div className="sm:col-span-3">
+                  <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
+                    Núm. Ext <span className="text-gray-400 font-normal">(Opcional)</span>
+                  </label>
                   <input
                     type="text"
                     value={deliveryNumero}
-                    onChange={(e) => setDeliveryNumero(e.target.value)}
-                    required
-                    placeholder="Ej. #14 Int 2"
+                    onChange={(e) => {
+                      setActiveSavedAddressId(null);
+                      setDeliveryNumero(e.target.value);
+                    }}
+                    placeholder="Ej. 14 o vacío S/N"
+                    className="w-full border border-gray-300 rounded-xl p-2 text-xs font-semibold bg-white outline-none focus:border-[#ed0718]"
+                  />
+                </div>
+                <div className="sm:col-span-3">
+                  <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
+                    Núm. Int <span className="text-gray-400 font-normal">(Opcional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={deliveryNumeroInterior}
+                    onChange={(e) => {
+                      setActiveSavedAddressId(null);
+                      setDeliveryNumeroInterior(e.target.value);
+                    }}
+                    placeholder="Ej. Depto 4B"
                     className="w-full border border-gray-300 rounded-xl p-2 text-xs font-semibold bg-white outline-none focus:border-[#ed0718]"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-gray-700 mb-0.5">Colonia (San Miguel de Allende)</label>
-                <select
+                <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
+                  Colonia / Fraccionamiento (San Miguel de Allende) *
+                </label>
+                <SmaColoniaCombobox
                   value={deliveryColonia}
-                  onChange={(e) => {
-                    const col = e.target.value;
+                  onChange={(col) => {
+                    setActiveSavedAddressId(null);
                     setDeliveryColonia(col);
-                    // Comprobar posible discordancia geográfica
                     if (deliveryPinCoords) {
-                      if (col.includes('San Antonio') && deliveryPinCoords.lat > 20.919 && deliveryPinCoords.lng < -100.758) {
-                        setGeoMismatchWarning('⚠️ Advertencia: Has seleccionado San Antonio, pero el punto del mapa está en la zona de San Luis Rey.');
+                      if (
+                        col.includes('San Antonio') &&
+                        deliveryPinCoords.lat > 20.919 &&
+                        deliveryPinCoords.lng < -100.758
+                      ) {
+                        setGeoMismatchWarning(
+                          '⚠️ Advertencia: Has seleccionado San Antonio, pero el punto del mapa está en la zona de San Luis Rey.'
+                        );
                       } else {
                         setGeoMismatchWarning('');
                       }
                     }
                   }}
-                  className="w-full border border-gray-300 rounded-xl p-2 text-xs font-bold bg-white outline-none focus:border-[#ed0718]"
-                >
-                  {SMA_COLONIAS.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
+                  placeholder="Busca y selecciona tu colonia en San Miguel *"
+                />
               </div>
-
-              {deliveryColonia === 'Otra / Fraccionamiento Privado' && (
-                <div>
-                  <label className="block text-[11px] font-bold text-gray-700 mb-0.5">Escribe el nombre de tu colonia o fraccionamiento</label>
-                  <input
-                    type="text"
-                    value={deliveryCustomColonia}
-                    onChange={(e) => setDeliveryCustomColonia(e.target.value)}
-                    placeholder="Ej. Balcones, Atascadero, Zirándaro..."
-                    className="w-full border border-gray-300 rounded-xl p-2 text-xs bg-white font-semibold outline-none focus:border-[#ed0718]"
-                  />
-                </div>
-              )}
 
               <div>
                 <label className="block text-[11px] font-bold text-gray-700 mb-0.5">Referencias e Indicaciones (Opcional)</label>
@@ -1091,7 +1243,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       <button
                         type="button"
                         onClick={() => {
-                          setDeliveryColonia('San Luis Rey');
+                          setDeliveryColonia(resolveOfficialColoniaLabel('San Luis Rey'));
                           setGeoMismatchWarning('');
                         }}
                         className="text-[10px] bg-amber-200 text-amber-900 px-2 py-0.5 rounded font-black hover:bg-amber-300"
@@ -1455,13 +1607,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 setDeliveryPinCoords({ lat: loc.lat, lng: loc.lng });
 
                 if (loc.street && loc.street.trim()) {
+                  setActiveSavedAddressId(null);
                   setDeliveryCalle(loc.street.trim());
                 }
                 if (loc.streetNumber && loc.streetNumber.trim()) {
-                  setDeliveryNumero(loc.streetNumber.trim().replace(/^#/, ''));
+                  setDeliveryNumero(cleanStreetNumber(loc.streetNumber));
                 }
                 if (loc.neighborhood && loc.neighborhood.trim()) {
-                  setDeliveryColonia(loc.neighborhood.trim());
+                  setDeliveryColonia(resolveOfficialColoniaLabel(loc.neighborhood));
                 }
 
                 // Detección automática de cuadrante para evitar fraudes/errores entre colonias

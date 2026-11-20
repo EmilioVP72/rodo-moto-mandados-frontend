@@ -295,7 +295,11 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
             <div className="leading-tight min-w-0 flex-1">
               <span className="text-[10px] text-white/80 block">{t('deliverTo')}</span>
               <strong className="text-white font-extrabold text-xs line-clamp-1 underline decoration-dotted underline-offset-2">
-                {currentAddressLabel || 'Centro, San Miguel de Allende (Toca para afinar ±30m)'} ⌄
+                {currentAddressLabel ||
+                  (userName
+                    ? 'Agregar o seleccionar dirección de entrega'
+                    : 'Elige tu dirección en San Miguel de Allende')}{' '}
+                ⌄
               </strong>
             </div>
           </button>

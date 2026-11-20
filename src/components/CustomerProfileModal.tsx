@@ -21,17 +21,9 @@ import {
 import { apiFetch } from '../api/httpClient';
 import { SmaColoniaCombobox } from './SmaColoniaCombobox';
 import { isValidSmaColoniaLabel } from '../data/smaColonias';
+import { CustomerSavedAddress, formatSavedAddressLine } from '../utils/customerAddresses';
 
-interface SavedAddress {
-  id: string;
-  label: string;
-  calle: string;
-  numero?: string | null;
-  numeroInterior?: string | null;
-  colonia: string;
-  referencias?: string | null;
-  isDefault: boolean;
-}
+type SavedAddress = CustomerSavedAddress;
 
 const ADDRESS_LABEL_OPTIONS = ['Casa', 'Departamento', 'Empresa', 'Otro'] as const;
 type AddressLabelOption = (typeof ADDRESS_LABEL_OPTIONS)[number];
@@ -66,6 +58,10 @@ interface CustomerProfileModalProps {
   onOpenMyOrders: () => void;
   onLogout: (allDevices?: boolean) => Promise<void>;
   onShowToast: (msg: string) => void;
+  initialTab?: 'perfil' | 'direcciones' | 'sesiones';
+  selectedAddressId?: string | null;
+  onSelectDeliveryAddress?: (addr: CustomerSavedAddress) => void;
+  onAddressesChanged?: (addresses: CustomerSavedAddress[]) => void;
 }
 
 export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
@@ -76,8 +72,12 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
   onOpenMyOrders,
   onLogout,
   onShowToast,
+  initialTab = 'perfil',
+  selectedAddressId,
+  onSelectDeliveryAddress,
+  onAddressesChanged,
 }) => {
-  const [activeTab, setActiveTab] = useState<'perfil' | 'direcciones' | 'sesiones'>('perfil');
+  const [activeTab, setActiveTab] = useState<'perfil' | 'direcciones' | 'sesiones'>(initialTab);
   const [loading, setLoading] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
 
@@ -104,6 +104,7 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
 
   useEffect(() => {
     if (!isOpen || !currentUser) return;
+    setActiveTab(initialTab);
     setName(currentUser.name || '');
     setPhone(currentUser.phone || '');
     setErrorMsg('');
@@ -120,7 +121,9 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
           setReferralCode(meRes.user.referralCode || '');
           setIne10Digits(meRes.user.ine10Digits || '');
           setCoupons(Array.isArray(meRes.user.coupons) ? meRes.user.coupons : []);
-          setAddresses(Array.isArray(meRes.user.addresses) ? meRes.user.addresses : []);
+          const nextAddrs: SavedAddress[] = Array.isArray(meRes.user.addresses) ? meRes.user.addresses : [];
+          setAddresses(nextAddrs);
+          onAddressesChanged?.(nextAddrs);
         }
         if (meRes?.stats) {
           setTotalOrders(meRes.stats.totalOrders || 0);
@@ -195,7 +198,10 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
           isDefault: addresses.length === 0,
         },
       });
-      setAddresses((prev) => [created, ...prev]);
+      const nextAddrs = [created, ...addresses];
+      setAddresses(nextAddrs);
+      onAddressesChanged?.(nextAddrs);
+      onSelectDeliveryAddress?.(created);
       setNewLabelType('Casa');
       setNewCustomLabel('');
       setNewCalle('');
@@ -203,7 +209,7 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
       setNewNumeroInterior('');
       setNewColonia('');
       setNewRefs('');
-      onShowToast('¡Dirección guardada exitosamente en tu perfil!');
+      onShowToast('¡Dirección guardada y seleccionada para tus entregas!');
     } catch (err: any) {
       setErrorMsg(err?.message || 'No se pudo guardar la dirección.');
     } finally {
@@ -214,7 +220,9 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
   const handleDeleteAddress = async (id: string) => {
     try {
       await apiFetch(`/api/profile/addresses/${encodeURIComponent(id)}`, { method: 'DELETE' });
-      setAddresses((prev) => prev.filter((a) => a.id !== id));
+      const nextAddrs = addresses.filter((a) => a.id !== id);
+      setAddresses(nextAddrs);
+      onAddressesChanged?.(nextAddrs);
       onShowToast('Dirección eliminada de tu perfil.');
     } catch {}
   };
@@ -448,37 +456,65 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {addresses.map((addr) => (
-                    <div
-                      key={addr.id}
-                      className="p-3 rounded-2xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/60 flex items-start justify-between gap-2 text-xs"
-                    >
-                      <div className="flex items-start gap-2">
-                        <MapPin className="w-4 h-4 text-[#ed0718] shrink-0 mt-0.5" />
-                        <div>
-                          <strong className="font-black text-gray-900 dark:text-white">
-                            {addr.label} {addr.isDefault && <span className="text-[10px] text-emerald-600">(Principal)</span>}
-                          </strong>
-                          <p className="text-gray-600 dark:text-gray-300">
-                            Calle {addr.calle} {addr.numero ? `#${addr.numero}` : 'S/N'}
-                            {addr.numeroInterior ? `, Int. ${addr.numeroInterior}` : ''},{' '}
-                            {addr.colonia.includes(' - ') ? addr.colonia : `Col. ${addr.colonia}`}
-                          </p>
-                          {addr.referencias && (
-                            <p className="text-[10px] text-gray-500">{addr.referencias}</p>
-                          )}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteAddress(addr.id)}
-                        className="text-red-500 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-50 cursor-pointer"
-                        title="Eliminar dirección"
+                  {addresses.map((addr) => {
+                    const isSelectedForDelivery = selectedAddressId === addr.id;
+                    return (
+                      <div
+                        key={addr.id}
+                        className={`p-3 rounded-2xl border flex items-start justify-between gap-2 text-xs transition ${
+                          isSelectedForDelivery
+                            ? 'border-emerald-400 bg-emerald-50/70 dark:bg-emerald-950/30'
+                            : 'border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/60'
+                        }`}
                       >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
+                        <div className="flex items-start gap-2 min-w-0 flex-1">
+                          <MapPin
+                            className={`w-4 h-4 shrink-0 mt-0.5 ${
+                              isSelectedForDelivery ? 'text-emerald-600' : 'text-[#ed0718]'
+                            }`}
+                          />
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <strong className="font-black text-gray-900 dark:text-white">
+                                {addr.label}
+                              </strong>
+                              {isSelectedForDelivery && (
+                                <span className="text-[10px] bg-emerald-600 text-white px-2 py-0.5 rounded-full font-black">
+                                  ✓ En uso para envío
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-gray-600 dark:text-gray-300 mt-0.5">
+                              {formatSavedAddressLine(addr)}
+                            </p>
+                            {addr.referencias && (
+                              <p className="text-[10px] text-gray-500 mt-0.5">{addr.referencias}</p>
+                            )}
+                            {onSelectDeliveryAddress && !isSelectedForDelivery && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onSelectDeliveryAddress(addr);
+                                  onShowToast(`📍 Dirección "${addr.label}" seleccionada para tu pedido.`);
+                                }}
+                                className="mt-1.5 text-[11px] font-black text-[#ed0718] hover:underline cursor-pointer"
+                              >
+                                Usar esta dirección para enviar →
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteAddress(addr.id)}
+                          className="text-red-500 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-50 cursor-pointer shrink-0"
+                          title="Eliminar dirección"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 

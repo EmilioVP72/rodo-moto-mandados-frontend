@@ -50,6 +50,12 @@ import { apiFetch, getAuthToken, logoutSession } from './api/httpClient';
 import { identifySocketSession } from './api/socketClient';
 import { useCart } from './hooks/useCart';
 import { resolveCartOwnerKey, resolveCartRestaurant } from './utils/cartStorage';
+import {
+  CustomerSavedAddress,
+  formatSavedAddressHeaderLabel,
+  pickActiveCustomerAddress,
+  getSelectedAddressStorageKey,
+} from './utils/customerAddresses';
 import { useRealtimeSync } from './hooks/useRealtimeSync';
 import {
   Star,
@@ -255,17 +261,69 @@ export default function App() {
 
   const previousOrderStatusesRef = useRef<Record<string, string>>({});
 
-  // Micro-ubicación y pedidos abiertos con persistencia
+  // Direcciones guardadas privadas por cliente + micro-ubicación
   const [showMicroLocationModal, setShowMicroLocationModal] = useState(false);
-  const [customerDeliveryAddress, setCustomerDeliveryAddress] = useState<string>(() => {
-    return localStorage.getItem('rodo_customer_address') || 'Calle Correo #14, Centro, San Miguel de Allende';
-  });
-  const [customerCoords, setCustomerCoords] = useState<{ lat: number; lng: number } | undefined>({
-    lat: 20.9144,
-    lng: -100.7437,
-  });
+  const [profileInitialTab, setProfileInitialTab] = useState<'perfil' | 'direcciones' | 'sesiones'>('perfil');
+  const [customerAddresses, setCustomerAddresses] = useState<CustomerSavedAddress[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
+  const [customerDeliveryAddress, setCustomerDeliveryAddress] = useState<string>('');
+  const [customerCoords, setCustomerCoords] = useState<{ lat: number; lng: number } | undefined>(undefined);
   const [showCustomOrderModal, setShowCustomOrderModal] = useState(false);
   const [customOrderInitialLocal, setCustomOrderInitialLocal] = useState<string | undefined>(undefined);
+
+  const selectedSavedAddress = useMemo(
+    () => pickActiveCustomerAddress(customerAddresses, selectedAddressId),
+    [customerAddresses, selectedAddressId]
+  );
+
+  const applyActiveAddressForUser = (
+    userId: string | null | undefined,
+    addresses: CustomerSavedAddress[],
+    preferredId?: string | null
+  ) => {
+    setCustomerAddresses(addresses);
+    const storageKey = getSelectedAddressStorageKey(userId);
+    const storedPref = storageKey ? localStorage.getItem(storageKey) : null;
+    const active = pickActiveCustomerAddress(addresses, preferredId ?? storedPref);
+
+    if (active) {
+      setSelectedAddressId(active.id);
+      setCustomerDeliveryAddress(formatSavedAddressHeaderLabel(active));
+      setCustomerCoords(
+        active.lat && active.lng ? { lat: active.lat, lng: active.lng } : undefined
+      );
+      if (storageKey) {
+        localStorage.setItem(storageKey, active.id);
+      }
+    } else {
+      setSelectedAddressId(null);
+      setCustomerDeliveryAddress('');
+      setCustomerCoords(undefined);
+      if (storageKey) {
+        localStorage.removeItem(storageKey);
+      }
+    }
+  };
+
+  const handleSelectSavedAddress = (addr: CustomerSavedAddress) => {
+    const storageKey = getSelectedAddressStorageKey(currentUser?.id);
+    setSelectedAddressId(addr.id);
+    setCustomerDeliveryAddress(formatSavedAddressHeaderLabel(addr));
+    setCustomerCoords(addr.lat && addr.lng ? { lat: addr.lat, lng: addr.lng } : undefined);
+    if (storageKey) {
+      localStorage.setItem(storageKey, addr.id);
+    }
+    showSuccessToast(`📍 Dirección activa: ${addr.label}`);
+  };
+
+  const handleAddressesChanged = (nextAddrs: CustomerSavedAddress[]) => {
+    applyActiveAddressForUser(currentUser?.id, nextAddrs, selectedAddressId);
+  };
+
+  const handleOpenProfileAddresses = () => {
+    setProfileInitialTab('direcciones');
+    setShowProfileModal(true);
+  };
 
   const [returnToAdminAfterTicket, setReturnToAdminAfterTicket] = useState<boolean>(false);
 
@@ -333,9 +391,32 @@ export default function App() {
     }
   }, [currentUser]);
 
+  // Cargar direcciones privadas del cliente autenticado y aislar por usuario
   useEffect(() => {
-    localStorage.setItem('rodo_customer_address', customerDeliveryAddress);
-  }, [customerDeliveryAddress]);
+    localStorage.removeItem('rodo_customer_address');
+    if (!currentUser || !currentUser.id || currentUser.id.startsWith('guest')) {
+      setCustomerAddresses([]);
+      setSelectedAddressId(null);
+      setCustomerDeliveryAddress('');
+      setCustomerCoords(undefined);
+      return;
+    }
+
+    let cancelled = false;
+    apiFetch<CustomerSavedAddress[]>('/api/profile/addresses')
+      .then((addrs) => {
+        if (cancelled) return;
+        applyActiveAddressForUser(currentUser.id, Array.isArray(addrs) ? addrs : []);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        applyActiveAddressForUser(currentUser.id, []);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.id]);
 
   useEffect(() => {
     localStorage.setItem('rodo_active_section', activeSection);
@@ -393,6 +474,7 @@ export default function App() {
           role?: string;
           ine10Digits?: string;
           referralCode?: string;
+          addresses?: CustomerSavedAddress[];
         };
       }>('/api/auth/me')
         .then((res) => {
@@ -408,6 +490,9 @@ export default function App() {
                 ine10Digits: res.user.ine10Digits,
                 referralCode: res.user.referralCode,
               });
+              if (Array.isArray(res.user.addresses)) {
+                applyActiveAddressForUser(res.user.id, res.user.addresses);
+              }
             }
           }
         })
@@ -530,6 +615,7 @@ export default function App() {
     if (isAdminLoggedIn) {
       setShowAdminPanel(true);
     } else if (currentUser) {
+      setProfileInitialTab('perfil');
       setShowProfileModal(true);
     } else {
       setShowAuthModal(true);
@@ -547,6 +633,10 @@ export default function App() {
     identifySocketSession(null);
     setIsAdminLoggedIn(false);
     setCurrentUser(null);
+    setCustomerAddresses([]);
+    setSelectedAddressId(null);
+    setCustomerDeliveryAddress('');
+    setCustomerCoords(undefined);
     setOrders([]);
     setShowCheckout(false);
     setShowCartDrawer(false);
@@ -556,6 +646,7 @@ export default function App() {
     setReturnToAdminAfterTicket(false);
     localStorage.removeItem('rodo_admin_session');
     localStorage.removeItem('rodo_user_session');
+    localStorage.removeItem('rodo_customer_address');
 
     setTransactionFeedback({
       variant: 'logout',
@@ -1510,6 +1601,13 @@ export default function App() {
           customerDefaultEmail={currentUser?.email}
           initialDeliveryAddress={customerDeliveryAddress}
           initialCoords={customerCoords}
+          savedAddresses={customerAddresses}
+          selectedSavedAddress={selectedSavedAddress}
+          onSelectSavedAddress={handleSelectSavedAddress}
+          onOpenManageAddresses={() => {
+            setShowCheckout(false);
+            handleOpenProfileAddresses();
+          }}
           clabeRodoFallback={settings.clabeRodo}
           bancoRodoFallback={settings.bancoRodo}
           rainPauseEnabled={settings.rainPauseEnabled}
@@ -1647,6 +1745,13 @@ export default function App() {
         onOpenMyOrders={() => setShowOrdersHistory(true)}
         onLogout={handleFullLogout}
         onShowToast={showSuccessToast}
+        initialTab={profileInitialTab}
+        selectedAddressId={selectedAddressId}
+        onSelectDeliveryAddress={(addr) => {
+          handleSelectSavedAddress(addr);
+          setShowProfileModal(false);
+        }}
+        onAddressesChanged={handleAddressesChanged}
       />
 
       {/* 8. Modal de Historial de Pedidos con Filtros de Estado y Rastreo en Vivo */}
@@ -1813,7 +1918,10 @@ export default function App() {
         currentUser={currentUser}
         isAdminLoggedIn={isAdminLoggedIn}
         onOpenAuth={() => setShowAuthModal(true)}
-        onOpenProfile={() => setShowProfileModal(true)}
+        onOpenProfile={() => {
+          setProfileInitialTab('perfil');
+          setShowProfileModal(true);
+        }}
         onOpenAdmin={() => {
           if (isAdminLoggedIn) {
             setShowAdminPanel(true);
@@ -1841,12 +1949,29 @@ export default function App() {
         onClose={() => setShowPhonePermissionsModal(false)}
       />
 
-      {/* 14. Modal de Micro-Ubicación del Cliente con Ajuste Fino ±30m */}
+      {/* 14. Modal de Micro-Ubicación y Selector de Direcciones Guardadas del Cliente */}
       <CustomerMicroLocationModal
         isOpen={showMicroLocationModal}
         currentAddress={customerDeliveryAddress}
+        initialCoords={customerCoords}
+        savedAddresses={customerAddresses}
+        selectedAddressId={selectedAddressId}
+        isLoggedIn={Boolean(currentUser && !currentUser.id.startsWith('guest'))}
         onClose={() => setShowMicroLocationModal(false)}
+        onSelectSavedAddress={(addr) => {
+          handleSelectSavedAddress(addr);
+          setShowMicroLocationModal(false);
+        }}
+        onManageAddresses={() => {
+          setShowMicroLocationModal(false);
+          handleOpenProfileAddresses();
+        }}
+        onRequireLogin={() => {
+          setShowMicroLocationModal(false);
+          setShowAuthModal(true);
+        }}
         onSelectAddress={(addr, coords) => {
+          setSelectedAddressId(null);
           setCustomerDeliveryAddress(addr);
           setCustomerCoords(coords);
           setShowMicroLocationModal(false);
