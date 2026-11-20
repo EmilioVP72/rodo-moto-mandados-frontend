@@ -21,6 +21,7 @@ import {
   saveNotificationSettings,
   getNotificationHistory,
   markNotificationAsRead,
+  markAllNotificationsAsRead,
   clearNotificationHistory,
   playNotificationChime,
   requestBrowserNotificationPermission,
@@ -29,12 +30,16 @@ import {
 interface NotificationCenterModalProps {
   isOpen: boolean;
   onClose: () => void;
+  scopeKey: string;
+  isAdmin?: boolean;
   onSelectOrderFolio?: (folio: string) => void;
 }
 
 export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = ({
   isOpen,
   onClose,
+  scopeKey,
+  isAdmin = false,
   onSelectOrderFolio,
 }) => {
   const [settings, setSettings] = useState<NotificationSettings>(getNotificationSettings);
@@ -45,12 +50,14 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
   useEffect(() => {
     if (isOpen) {
       setSettings(getNotificationSettings());
-      setHistory(getNotificationHistory());
+      const currentList = getNotificationHistory(scopeKey);
+      setHistory(currentList);
+      markAllNotificationsAsRead(scopeKey);
       if ('Notification' in window) {
         setBrowserPermission(Notification.permission);
       }
     }
-  }, [isOpen]);
+  }, [isOpen, scopeKey]);
 
   if (!isOpen) return null;
 
@@ -92,12 +99,12 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
   };
 
   const handleClearAll = () => {
-    clearNotificationHistory();
+    clearNotificationHistory(scopeKey);
     setHistory([]);
   };
 
   const handleReadNotification = (notif: RodoNotification) => {
-    markNotificationAsRead(notif.id);
+    markNotificationAsRead(notif.id, scopeKey);
     setHistory((prev) => prev.map((n) => (n.id === notif.id ? { ...n, read: true } : n)));
     if (notif.folio && onSelectOrderFolio) {
       onSelectOrderFolio(notif.folio);
@@ -106,18 +113,22 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden my-auto border border-gray-200 dark:border-slate-800 transition-colors">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-200">
+      <div className="bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl w-full max-w-lg max-h-[92dvh] sm:max-h-[86dvh] shadow-2xl overflow-hidden flex flex-col border border-gray-200 dark:border-slate-800 transition-colors">
         {/* Cabecera */}
-        <div className="bg-[#101b29] text-white p-4 sm:p-5 flex items-center justify-between border-b border-gray-800">
+        <div className="bg-[#101b29] text-white p-4 sm:p-5 flex items-center justify-between border-b border-gray-800 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="bg-[#ed0718] p-2 rounded-xl text-white shadow-md">
               <Bell className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-black text-base sm:text-lg">Centro de Notificaciones RODO</h3>
+              <h3 className="font-black text-base sm:text-lg">
+                {isAdmin ? 'Alertas de Despacho (Admin)' : 'Mis Notificaciones RODO'}
+              </h3>
               <p className="text-xs text-gray-300">
-                Alertas en vivo de despacho, avisos y avisos del repartidor
+                {isAdmin
+                  ? 'Pedidos nuevos y actualizaciones de operación exclusivas de administrador'
+                  : 'Estado de tus pedidos, avisos del repartidor y promociones para ti'}
               </p>
             </div>
           </div>
@@ -129,7 +140,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
           </button>
         </div>
 
-        <div className="p-4 sm:p-6 space-y-5 max-h-[80vh] overflow-y-auto text-gray-800 dark:text-gray-200">
+        <div className="flex-1 min-h-0 p-4 sm:p-6 space-y-5 overflow-y-auto overscroll-contain text-gray-800 dark:text-gray-200">
           {/* Panel de Configuración de Notificaciones */}
           <div className="bg-gray-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-gray-200 dark:border-slate-700/80 space-y-3">
             <div className="flex items-center justify-between">

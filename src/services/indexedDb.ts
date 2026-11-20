@@ -70,7 +70,16 @@ export async function syncOrdersToIDB(orders: Order[]): Promise<void> {
     const database = await openOfflineDb();
     const tx = database.transaction(STORE_ORDERS, 'readwrite');
     const store = tx.objectStore(STORE_ORDERS);
+    store.clear();
     orders.forEach((o) => store.put(o));
+  } catch {}
+}
+
+export async function clearOrdersFromIDB(): Promise<void> {
+  try {
+    const database = await openOfflineDb();
+    const tx = database.transaction(STORE_ORDERS, 'readwrite');
+    tx.objectStore(STORE_ORDERS).clear();
   } catch {}
 }
 

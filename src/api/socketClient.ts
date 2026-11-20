@@ -35,6 +35,7 @@ export function identifySocketSession(token: string | null): void {
     if (token && socket.connected) {
       socket.emit('auth:identify', token);
     } else if (!token && socket.connected) {
+      socket.emit('auth:logout');
       socket.disconnect();
       socket.connect();
     }

@@ -15,6 +15,7 @@ import {
   syncRestaurantsToIDB,
   getRestaurantsFromIDB,
   syncOrdersToIDB,
+  clearOrdersFromIDB,
   upsertOrderToIDB,
   getOrdersFromIDB,
   saveBroadcastToIDB,
@@ -422,23 +423,47 @@ export async function getOrders(): Promise<Order[]> {
   return await getOrdersFromIDB();
 }
 
+export function clearLocalOrdersCache(): void {
+  try {
+    localStorage.removeItem(LOCAL_STORAGE_ORDERS);
+  } catch {}
+  void clearOrdersFromIDB();
+}
+
+export interface OrderSubscriptionScope {
+  role: 'admin' | 'customer';
+  userId?: string;
+}
+
+function isOrderVisibleForScope(order: Order, scope?: OrderSubscriptionScope): boolean {
+  if (!order?.id) return false;
+  if (!scope || scope.role === 'admin') return true;
+  if (!scope.userId) return false;
+  return order.customerId === scope.userId;
+}
+
 export function subscribeToOrders(
   callback: (orders: Order[]) => void,
-  isAuthenticated: boolean
+  isAuthenticated: boolean,
+  scope?: OrderSubscriptionScope
 ): () => void {
   if (!isAuthenticated || !getAuthToken()) {
     callback([]);
     return () => {};
   }
 
-  orderSubscribers.add(callback);
+  const scopedCallback = (list: Order[]) => {
+    callback(list.filter((o) => isOrderVisibleForScope(o, scope)));
+  };
+
+  orderSubscribers.add(scopedCallback);
 
   getOrders()
-    .then((scopedOrders) => callback(scopedOrders))
+    .then((scopedOrders) => scopedCallback(scopedOrders))
     .catch(() => {});
 
   const unsubCreated = onSocketEvent<Order>('orders:created', (newOrder) => {
-    if (newOrder?.id) {
+    if (isOrderVisibleForScope(newOrder, scope)) {
       saveLocalStoredOrder(newOrder);
       upsertOrderToIDB(newOrder);
       notifyOrderSubscribers();
@@ -446,7 +471,7 @@ export function subscribeToOrders(
   });
 
   const unsubUpdated = onSocketEvent<Order>('orders:updated', (updatedOrder) => {
-    if (updatedOrder?.id) {
+    if (isOrderVisibleForScope(updatedOrder, scope)) {
       saveLocalStoredOrder(updatedOrder);
       upsertOrderToIDB(updatedOrder);
       notifyOrderSubscribers();
@@ -454,13 +479,14 @@ export function subscribeToOrders(
   });
 
   const unsubBatch = onSocketEvent('orders:batch-updated', () => {
+    if (scope?.role === 'customer') return;
     getOrders()
-      .then((scopedOrders) => callback(scopedOrders))
+      .then((scopedOrders) => scopedCallback(scopedOrders))
       .catch(() => {});
   });
 
   return () => {
-    orderSubscribers.delete(callback);
+    orderSubscribers.delete(scopedCallback);
     unsubCreated();
     unsubUpdated();
     unsubBatch();

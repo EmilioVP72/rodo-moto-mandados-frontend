@@ -5,6 +5,7 @@ import {
   getRestaurants,
   getDispatchSettings,
   getOrders,
+  clearLocalOrdersCache,
   subscribeToOrders,
   subscribeToBroadcastNotifications,
   INITIAL_SETTINGS,
@@ -12,7 +13,7 @@ import {
   DEFAULT_RESTAURANTS,
   getLocalStoredRestaurants,
 } from './services/db';
-import { getRestaurantsFromIDB, getOrdersFromIDB } from './services/indexedDb';
+import { getRestaurantsFromIDB } from './services/indexedDb';
 import { calculateHaversineDistance, SMA_CENTER_COORDS } from './services/routing';
 import { vibrateLight } from './utils/haptics';
 import { useLanguage } from './utils/i18n';
@@ -45,6 +46,10 @@ import {
   dispatchRodoNotification,
   getNotificationHistory,
   requestBrowserNotificationPermission,
+  resolveNotificationScopeKey,
+  buildOrderNotificationForViewer,
+  markAllNotificationsAsRead,
+  clearLegacySharedNotificationHistory,
 } from './services/notifications';
 import { apiFetch, getAuthToken, logoutSession } from './api/httpClient';
 import { identifySocketSession } from './api/socketClient';
@@ -252,14 +257,39 @@ export default function App() {
     setThemeMode((prev) => toggleTheme(prev));
   };
 
-  // Centro de Notificaciones
+  // Centro de Notificaciones (aislado estrictamente por rol y por usuario)
+  const notificationScopeKey = useMemo(
+    () => resolveNotificationScopeKey({ isAdmin: isAdminLoggedIn, userId: currentUser?.id }),
+    [isAdminLoggedIn, currentUser?.id]
+  );
   const [showNotificationCenter, setShowNotificationCenter] = useState(false);
   const [unreadNotifsCount, setUnreadNotifsCount] = useState<number>(() => {
-    const hist = getNotificationHistory();
+    clearLegacySharedNotificationHistory();
+    const initialKey = resolveNotificationScopeKey({
+      isAdmin: localStorage.getItem('rodo_admin_session') === 'true',
+      userId: (() => {
+        try {
+          const saved = localStorage.getItem('rodo_user_session');
+          return saved ? JSON.parse(saved)?.id : null;
+        } catch {
+          return null;
+        }
+      })(),
+    });
+    const hist = getNotificationHistory(initialKey);
     return hist.filter((n) => !n.read).length;
   });
 
   const previousOrderStatusesRef = useRef<Record<string, string>>({});
+  const knownOrderIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    clearLegacySharedNotificationHistory();
+    previousOrderStatusesRef.current = {};
+    knownOrderIdsRef.current = new Set();
+    const hist = getNotificationHistory(notificationScopeKey);
+    setUnreadNotifsCount(hist.filter((n) => !n.read).length);
+  }, [notificationScopeKey]);
 
   // Direcciones guardadas privadas por cliente + micro-ubicación
   const [showMicroLocationModal, setShowMicroLocationModal] = useState(false);
@@ -376,8 +406,15 @@ export default function App() {
       showSuccessToast('🔔 ¡Notificaciones en tiempo real activadas!');
       dispatchRodoNotification(
         '🔔 Notificaciones RODO Activadas',
-        'Recibirás alertas en tiempo real cuando tu pedido esté en camino y cuando el repartidor llegue a tu domicilio.',
-        { type: 'info', playSound: true }
+        isAdminLoggedIn
+          ? 'Recibirás alertas exclusivas de despacho cuando entren nuevos pedidos o cambien de estado.'
+          : 'Recibirás alertas en tiempo real sobre el estado y actualizaciones de tus pedidos.',
+        {
+          scopeKey: notificationScopeKey,
+          audience: isAdminLoggedIn ? 'admin' : 'customer',
+          type: 'info',
+          playSound: true,
+        }
       );
     }
   };
@@ -422,16 +459,12 @@ export default function App() {
     localStorage.setItem('rodo_active_section', activeSection);
   }, [activeSection]);
 
-  // Hidratación inicial rápida desde IndexedDB + Carga de datos remota
+  // Hidratación inicial rápida del catálogo público desde IndexedDB (las órdenes nunca se hidratan sin sesión)
   useEffect(() => {
     (async () => {
       try {
-        const [idbRests, idbOrds] = await Promise.all([
-          getRestaurantsFromIDB(),
-          getOrdersFromIDB(),
-        ]);
+        const idbRests = await getRestaurantsFromIDB();
         if (idbRests.length > 0) setRestaurants(idbRests);
-        if (idbOrds.length > 0) setOrders((prev) => (prev.length === 0 ? idbOrds : prev));
       } catch {}
     })();
   }, []);
@@ -515,69 +548,94 @@ export default function App() {
           dispatchRodoNotification(
             `📣 ${b.title}`,
             `${b.message}${b.promoCode ? ` · Cupón: ${b.promoCode}` : ''}`,
-            { type: 'info', playSound: true }
+            {
+              scopeKey: notificationScopeKey,
+              audience: 'broadcast',
+              type: 'info',
+              playSound: true,
+            }
           );
           setUnreadNotifsCount((prev) => prev + 1);
         }
       });
     });
     return () => unsubBroadcast();
-  }, []);
+  }, [notificationScopeKey]);
 
   useEffect(() => {
     const isAuthed = !!currentUser || isAdminLoggedIn;
+    const viewerRole: 'admin' | 'customer' | 'guest' = isAdminLoggedIn
+      ? 'admin'
+      : currentUser && !currentUser.id.startsWith('guest')
+      ? 'customer'
+      : 'guest';
+    const scope =
+      viewerRole === 'admin'
+        ? ({ role: 'admin' } as const)
+        : viewerRole === 'customer'
+        ? ({ role: 'customer', userId: currentUser!.id } as const)
+        : undefined;
+
+    previousOrderStatusesRef.current = {};
+    knownOrderIdsRef.current = new Set();
+    let hasReceivedInitialSnapshot = false;
+
     const unsubscribe = subscribeToOrders((liveOrders) => {
       setOrders(liveOrders);
 
-      // Detectar cambios de estatus en tiempo real para notificaciones, LiveTrackingModal y OrderRatingModal
-      liveOrders.forEach((order) => {
-        const prevStatus = previousOrderStatusesRef.current[order.id];
-        if (prevStatus && prevStatus !== order.status) {
-          const isMyOrder = currentUser && order.customerId === currentUser.id;
-          if (isMyOrder || isAdminLoggedIn) {
-            if (order.status === 'recolectado' || order.status === 'asignado') {
-              dispatchRodoNotification(
-                '🛵 ¡Pedido Recolectado!',
-                `Tu pedido en ${order.restaurantName || 'el local'} fue recolectado por el repartidor. Boleto #${order.folio}.`,
-                { orderId: order.id, folio: order.folio, type: 'info', playSound: true }
-              );
-            } else if (order.status === 'en_camino') {
-              dispatchRodoNotification(
-                '🚀 ¡Repartidor en Camino!',
-                `Tu pedido #${order.folio} va en ruta a tu domicilio en San Miguel de Allende.`,
-                { orderId: order.id, folio: order.folio, type: 'info', playSound: true }
-              );
-              if (isMyOrder && !isAdminLoggedIn) {
-                setLiveTrackingOrder(order);
-              }
-            } else if (order.status === 'afuera_del_domicilio') {
-              dispatchRodoNotification(
-                '🚨 ¡Repartidor Afuera de tu Domicilio!',
-                `El repartidor está esperando afuera. Cuentas con 10 minutos de tolerancia para salir a recibir tu pedido #${order.folio}.`,
-                { orderId: order.id, folio: order.folio, type: 'urgent', playSound: true }
-              );
-            } else if (order.status === 'entregado') {
-              dispatchRodoNotification(
-                '🎉 ¡Pedido Entregado!',
-                `Tu pedido #${order.folio} ha sido entregado exitosamente. ¡Buen provecho!`,
-                { orderId: order.id, folio: order.folio, type: 'success', playSound: true }
-              );
-              if (
-                isMyOrder &&
-                !isAdminLoggedIn &&
-                !order.rating &&
-                !order.riderRating &&
-                !dismissedRatingIdsRef.current.has(order.id)
-              ) {
-                setLiveTrackingOrder(null);
-                setRatingModalOrder(order);
-              }
-            }
+      // En el primer snapshot de la sesión solo memorizamos estados actuales sin disparar notificaciones retroactivas
+      if (!hasReceivedInitialSnapshot) {
+        liveOrders.forEach((order) => {
+          knownOrderIdsRef.current.add(order.id);
+          previousOrderStatusesRef.current[order.id] = order.status;
+        });
+        hasReceivedInitialSnapshot = true;
+      } else {
+        // Detectar pedidos nuevos (solo Admin) y cambios de estado (Admin global / Cliente solo SUS pedidos)
+        liveOrders.forEach((order) => {
+          const isNewOrder = !knownOrderIdsRef.current.has(order.id);
+          const prevStatus = previousOrderStatusesRef.current[order.id];
+
+          const notifPayload = buildOrderNotificationForViewer({
+            viewerRole,
+            viewerUserId: currentUser?.id,
+            order,
+            prevStatus,
+            isNewOrder,
+          });
+
+          if (notifPayload) {
+            dispatchRodoNotification(notifPayload.title, notifPayload.message, {
+              scopeKey: notificationScopeKey,
+              audience: notifPayload.audience,
+              orderId: notifPayload.orderId,
+              folio: notifPayload.folio,
+              type: notifPayload.type,
+              playSound: true,
+            });
             setUnreadNotifsCount((prev) => prev + 1);
           }
-        }
-        previousOrderStatusesRef.current[order.id] = order.status;
-      });
+
+          // Modales automáticos exclusivos del cliente propietario de la orden
+          const isMyOrder = viewerRole === 'customer' && currentUser && order.customerId === currentUser.id;
+          if (isMyOrder && prevStatus && prevStatus !== order.status) {
+            if (order.status === 'en_camino') {
+              setLiveTrackingOrder(order);
+            } else if (
+              order.status === 'entregado' &&
+              !order.rating &&
+              !order.riderRating &&
+              !dismissedRatingIdsRef.current.has(order.id)
+            ) {
+              setLiveTrackingOrder(null);
+              setRatingModalOrder(order);
+            }
+          }
+
+          knownOrderIdsRef.current.add(order.id);
+          previousOrderStatusesRef.current[order.id] = order.status;
+        });
+      }
 
       const urlParams = new URLSearchParams(window.location.search);
       const ticketParam = urlParams.get('ticket');
@@ -587,10 +645,10 @@ export default function App() {
           setViewingTicketOrder(matchingOrder);
         }
       }
-    }, isAuthed);
+    }, isAuthed, scope);
 
     return () => unsubscribe();
-  }, [currentUser, isAdminLoggedIn]);
+  }, [currentUser, isAdminLoggedIn, notificationScopeKey]);
 
   // Abrir checkout: El cliente puede llenar el carrito libremente como visitante,
   // y antes de pagar se le solicita iniciar sesión con su INE.
@@ -631,6 +689,11 @@ export default function App() {
       console.error(e);
     }
     identifySocketSession(null);
+    clearLocalOrdersCache();
+    clearLegacySharedNotificationHistory();
+    previousOrderStatusesRef.current = {};
+    knownOrderIdsRef.current = new Set();
+    setUnreadNotifsCount(0);
     setIsAdminLoggedIn(false);
     setCurrentUser(null);
     setCustomerAddresses([]);
@@ -674,7 +737,14 @@ export default function App() {
     dispatchRodoNotification(
       '✓ Pedido Confirmado',
       `Tu orden #${newOrder.folio} (${newOrder.restaurantName}) ha sido enviada para asignación de repartidor.`,
-      { orderId: newOrder.id, folio: newOrder.folio, type: 'info', playSound: true }
+      {
+        scopeKey: notificationScopeKey,
+        audience: isAdminLoggedIn ? 'admin' : 'customer',
+        orderId: newOrder.id,
+        folio: newOrder.folio,
+        type: 'info',
+        playSound: true,
+      }
     );
     setUnreadNotifsCount((prev) => prev + 1);
 
@@ -941,8 +1011,8 @@ export default function App() {
         </div>
       )}
 
-      {/* Alerta de Urgencia: Repartidor Afuera del Domicilio (10 min tolerancia) */}
-      {orders.some((o) => o.status === 'afuera_del_domicilio') && (
+      {/* Alerta de Urgencia: Repartidor Afuera del Domicilio (solo para el cliente dueño de esa orden) */}
+      {!isAdminLoggedIn && currentUser && myOrders.some((o) => o.status === 'afuera_del_domicilio') && (
         <div className="bg-[#ed0718] text-white px-4 py-3 text-xs font-black flex flex-wrap items-center justify-between gap-3 shadow-lg border-b-2 border-red-900 animate-pulse">
           <div className="flex items-center gap-2.5">
             <AlertCircle className="w-5 h-5 text-amber-300 shrink-0" />
@@ -955,7 +1025,7 @@ export default function App() {
           </div>
           <button
             onClick={() => {
-              const activeOrder = orders.find((o) => o.status === 'afuera_del_domicilio');
+              const activeOrder = myOrders.find((o) => o.status === 'afuera_del_domicilio');
               if (activeOrder) setViewingTicketOrder(activeOrder);
             }}
             className="bg-white text-[#ed0718] hover:bg-gray-100 px-3.5 py-1.5 rounded-xl font-black text-xs shadow-md transition cursor-pointer"
@@ -982,6 +1052,7 @@ export default function App() {
         currentAddressLabel={customerDeliveryAddress}
         onOpenNotifications={() => {
           setShowNotificationCenter(true);
+          markAllNotificationsAsRead(notificationScopeKey);
           setUnreadNotifsCount(0);
         }}
         unreadNotificationsCount={unreadNotifsCount}
@@ -1674,6 +1745,9 @@ export default function App() {
         onClose={() => setShowAuthModal(false)}
         adminPasscode={settings.adminPasscode}
         onCustomerLogin={(cust, mode: AuthSuccessMode = 'login') => {
+          clearLocalOrdersCache();
+          setIsAdminLoggedIn(false);
+          setOrders([]);
           setCurrentUser(cust);
           const hasPendingCart = cart.length > 0;
           const firstName = (cust.name || 'Cliente').split(' ')[0];
@@ -1730,6 +1804,9 @@ export default function App() {
           }
         }}
         onAdminLoginSuccess={() => {
+          clearLocalOrdersCache();
+          setCurrentUser(null);
+          setOrders([]);
           setIsAdminLoggedIn(true);
           setShowAdminPanel(true);
           showSuccessToast('🛡️ ¡Acceso Administrativo concedido! Bienvenido al Panel RODO.');
@@ -1933,6 +2010,7 @@ export default function App() {
         onOpenPermissions={() => setShowPhonePermissionsModal(true)}
         onOpenNotifications={() => {
           setShowNotificationCenter(true);
+          markAllNotificationsAsRead(notificationScopeKey);
           setUnreadNotifsCount(0);
         }}
         isDarkMode={isDarkMode}
@@ -2030,13 +2108,15 @@ export default function App() {
           onClose={() => setShowTutorial(false)}
         />
 
-        {/* 18. Centro de Notificaciones y Timbre en Vivo */}
+        {/* 18. Centro de Notificaciones y Timbre en Vivo (aislado por rol y usuario) */}
         {showNotificationCenter && (
           <NotificationCenterModal
             isOpen={showNotificationCenter}
             onClose={() => setShowNotificationCenter(false)}
+            scopeKey={notificationScopeKey}
+            isAdmin={isAdminLoggedIn}
             onSelectOrderFolio={(folio) => {
-              const ord = orders.find((o) => o.folio.toUpperCase() === folio.toUpperCase());
+              const ord = myOrders.find((o) => o.folio.toUpperCase() === folio.toUpperCase());
               if (ord) setViewingTicketOrder(ord);
             }}
           />

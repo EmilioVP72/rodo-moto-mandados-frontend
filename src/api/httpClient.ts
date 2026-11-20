@@ -69,6 +69,7 @@ export async function logoutSession(allDevices = false): Promise<void> {
     localStorage.removeItem('rodo_admin_session');
     localStorage.removeItem('rodo_local_orders');
     localStorage.removeItem('rodo_registered_ine_accounts');
+    localStorage.removeItem('rodo_notifications_history');
   } catch {}
 }
 

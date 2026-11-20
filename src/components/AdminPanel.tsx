@@ -27,7 +27,7 @@ import {
   resolveAccountRecoveryRequest,
   saveAdminAuditLogToFirestore,
 } from '../services/db';
-import { dispatchRodoNotification } from '../services/notifications';
+import { dispatchRodoNotification, resolveNotificationScopeKey } from '../services/notifications';
 import { InteractiveMapPicker } from './InteractiveMapPicker';
 import {
   X,
@@ -224,7 +224,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       dispatchRodoNotification(
         `📣 ${notif.title}`,
         `${notif.message}${notif.promoCode ? ` · Cupón: ${notif.promoCode}` : ''}`,
-        { type: 'info', playSound: true }
+        {
+          scopeKey: resolveNotificationScopeKey({ isAdmin: true }),
+          audience: 'admin',
+          type: 'info',
+          playSound: true,
+        }
       );
       logAdminAction(
         'ajuste_configuracion',
