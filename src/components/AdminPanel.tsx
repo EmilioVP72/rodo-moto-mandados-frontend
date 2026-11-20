@@ -78,7 +78,10 @@ import {
   CloudRain,
   LifeBuoy,
   MessageCircle,
+  Archive,
 } from 'lucide-react';
+import { AdminOrderHistoryView } from './AdminOrderHistoryView';
+import { splitLiveAndArchivedOrders } from '../utils/orderHistoryFilter';
 import { AdminCoverageMap } from './AdminCoverageMap';
 import { AdminSecurityAndFraud } from './AdminSecurityAndFraud';
 import { RodoOtpDiagnostics } from './RodoOtpDiagnostics';
@@ -117,8 +120,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onToggleDarkMode,
 }) => {
   const [activeTab, setActiveTab] = useState<
-    'despacho' | 'rendimiento' | 'estadisticas' | 'notificaciones' | 'recuperacion' | 'locales_api' | 'restaurantes' | 'especialidades' | 'cobertura' | 'clientes' | 'seguridad_otp' | 'cortes' | 'ajustes' | 'bitacora' | 'enlaces_web'
+    'despacho' | 'historico' | 'rendimiento' | 'estadisticas' | 'notificaciones' | 'recuperacion' | 'locales_api' | 'restaurantes' | 'especialidades' | 'cobertura' | 'clientes' | 'seguridad_otp' | 'cortes' | 'ajustes' | 'bitacora' | 'enlaces_web'
   >('despacho');
+  const [liveClockMs, setLiveClockMs] = useState<number>(() => Date.now());
+
+  // Ticker cada 60 segundos para limpiar automáticamente pedidos mayores a 24 h en Despacho en Vivo
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setLiveClockMs(Date.now());
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
   const [selectedRouteOrder, setSelectedRouteOrder] = useState<Order | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('todos');
   const [activeChallenge, setActiveChallenge] = useState<SecurityOtpAction | null>(null);
@@ -367,8 +379,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setEditingDishUrlItem({ id: itemId, url: currentUrl || '' });
   };
 
-  // Filtrado de órdenes
-  const filteredOrders = orders.filter((o) => {
+  // Separación operativa 24 horas: Despacho en Vivo solo muestra las últimas 24 h; el resto pasa al Histórico de Pedidos
+  const { liveOrders, archivedOrders } = splitLiveAndArchivedOrders(orders, liveClockMs);
+
+  // Filtrado de órdenes activas en Despacho en Vivo (últimas 24 horas)
+  const filteredOrders = liveOrders.filter((o) => {
     if (filterStatus === 'todos') return true;
     return o.status === filterStatus;
   });
@@ -1029,12 +1044,27 @@ _RODO Moto Mandados · San Miguel de Allende_`;
             }`}
           >
             <Bike className="w-4 h-4" />
-            Despacho en Vivo
-            {orders.filter((o) => o.status === 'nuevo').length > 0 && (
+            Despacho en Vivo (24h)
+            {liveOrders.filter((o) => o.status === 'nuevo').length > 0 && (
               <span className="bg-[#ed0718] text-white text-[10px] px-2 py-0.5 rounded-full font-black animate-pulse">
-                {orders.filter((o) => o.status === 'nuevo').length}
+                {liveOrders.filter((o) => o.status === 'nuevo').length}
               </span>
             )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('historico')}
+            className={`py-3 px-4 font-extrabold text-xs sm:text-sm flex items-center gap-2 border-b-2 transition cursor-pointer ${
+              activeTab === 'historico'
+                ? 'border-[#ed0718] text-[#ed0718] bg-white dark:bg-slate-800 rounded-t-lg'
+                : 'border-transparent text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white'
+            }`}
+          >
+            <Archive className="w-4 h-4 text-[#ed0718]" />
+            Histórico de Pedidos
+            <span className="bg-slate-800 text-white text-[10px] px-2 py-0.5 rounded-full font-mono">
+              {orders.length}
+            </span>
           </button>
 
           <button
@@ -1305,9 +1335,36 @@ _RODO Moto Mandados · San Miguel de Allende_`;
             </div>
           )}
 
-          {/* ================= PESTAÑA 1: DESPACHO EN VIVO ================= */}
+          {/* ================= PESTAÑA: HISTÓRICO PERMANENTE DE PEDIDOS (SOLO ADMIN) ================= */}
+          {activeTab === 'historico' && (
+            <AdminOrderHistoryView fallbackOrders={orders} onOpenTicket={onOpenTicket} />
+          )}
+
+          {/* ================= PESTAÑA 1: DESPACHO EN VIVO (VENTANA OPERATIVA 24 HORAS) ================= */}
           {activeTab === 'despacho' && (
             <div className="space-y-4">
+              {/* Banner informativo de limpieza automática cada 24h */}
+              <div className="bg-slate-900 text-white px-3.5 py-2.5 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>
+                    <b>Limpieza automática 24h:</b> Mostrando <b>{liveOrders.length}</b> pedido(s) de las últimas 24 horas.
+                    {archivedOrders.length > 0 && (
+                      <span className="text-gray-300">
+                        {' '}· {archivedOrders.length} archivado(s) en el registro histórico.
+                      </span>
+                    )}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('historico')}
+                  className="bg-white/15 hover:bg-white/25 text-amber-300 font-black px-3 py-1.5 rounded-lg transition text-xs cursor-pointer shrink-0 self-start sm:self-auto"
+                >
+                  Ver Histórico Completo ({orders.length}) →
+                </button>
+              </div>
+
               <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-gray-200">
                 <div className="flex items-center gap-2 overflow-x-auto">
                   <span className="text-xs font-bold text-gray-500 uppercase">Filtrar:</span>
