@@ -339,7 +339,7 @@ export async function confirmOrderTransfer(orderId: string): Promise<void> {
   );
 }
 
-export async function updateOrderInDb(orderId: string, updates: Partial<Order>): Promise<void> {
+export async function updateOrderInDb(orderId: string, updates: Partial<Order> & { expectedQuoteTotal?: number; expectedQuoteOfferedAt?: string }): Promise<void> {
   await persistOnlyAfterConfirmation(
     () => apiFetch<Order>(`/api/orders/${encodeURIComponent(orderId)}`, { method: 'PATCH', body: updates }),
     order => { saveLocalStoredOrder(order); upsertOrderToIDB(order); notifyOrderSubscribers(); }

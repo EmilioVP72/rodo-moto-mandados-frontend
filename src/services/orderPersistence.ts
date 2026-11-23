@@ -10,3 +10,7 @@ export async function persistOnlyAfterConfirmation<T extends { id?: unknown }>(
   storeOrder(savedOrder);
   return savedOrder;
 }
+
+export function refreshOpenTicket<T extends { id: string }>(open: T | null, orders: T[]): T | null {
+  return open ? orders.find(order => order.id === open.id) ?? open : null;
+}

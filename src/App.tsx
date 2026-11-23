@@ -1,3 +1,4 @@
+import { refreshOpenTicket } from './services/orderPersistence';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Restaurant, Order, DispatchSettings, OrderItem } from './types';
 import {
@@ -632,6 +633,7 @@ export default function App() {
 
     const unsubscribe = subscribeToOrders((liveOrders) => {
       setOrders(liveOrders);
+      setViewingTicketOrder(open => refreshOpenTicket(open, liveOrders));
 
       // En el primer snapshot de la sesión solo memorizamos estados actuales sin disparar notificaciones retroactivas
       if (!hasReceivedInitialSnapshot) {
@@ -1805,6 +1807,7 @@ export default function App() {
 
       {/* 5. Modal de Ticket Digital (Formato Térmico con Enlaces WhatsApp Repartidores) */}
       <TicketModal
+        key={viewingTicketOrder?.id}
         order={viewingTicketOrder}
         settings={settings}
         onClose={() => {

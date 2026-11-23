@@ -411,7 +411,7 @@ _RODO Moto Mandados · Despacho San Miguel_`;
       quoteConfirmedByCustomer: true,
       deliveryNotes: `${order.deliveryNotes || ''} [Cotización aceptada por el cliente: $${order.total?.toFixed(2)} MXN]`.trim(),
     };
-    await updateOrderInDb(order.id, updates);
+    await updateOrderInDb(order.id, { ...updates, expectedQuoteTotal: order.total, expectedQuoteOfferedAt: order.quoteOfferedAt });
   };
 
   // El cliente declina la cotización ("no lo quiero / cancelar")
@@ -482,7 +482,8 @@ _RODO Moto Mandados · Despacho San Miguel_`;
               >
                 {order.status === 'nuevo' && '● 1. Recibido por RODO'}
                 {order.status === 'en_preparacion' && '● 2. En Cocina / Preparando'}
-                {order.status === 'asignado' && '● 3. Pedido Recolectado'}
+                {order.status === 'asignado' && '● Repartidor asignado'}
+                {order.status === 'recolectado' && '● Pedido recolectado'}
                 {order.status === 'en_camino' && '● 4. Pedido en Camino'}
                 {order.status === 'afuera_del_domicilio' && '🚨 4. ¡Repartidor Afuera!'}
                 {order.status === 'entregado' && '✓ 5. Pedido Entregado'}
@@ -515,7 +516,7 @@ _RODO Moto Mandados · Despacho San Miguel_`;
                     key: 'recolectado',
                     stepNum: 3,
                     label: 'Recolectado',
-                    active: ['asignado', 'recolectado', 'en_camino', 'afuera_del_domicilio', 'entregado'].includes(order.status),
+                    active: ['recolectado', 'en_camino', 'afuera_del_domicilio', 'entregado'].includes(order.status),
                     done: ['en_camino', 'afuera_del_domicilio', 'entregado'].includes(order.status),
                   },
                   {

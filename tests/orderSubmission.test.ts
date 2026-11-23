@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { persistOnlyAfterConfirmation } from '../src/services/orderPersistence.ts';
+import { persistOnlyAfterConfirmation, refreshOpenTicket } from '../src/services/orderPersistence.ts';
 
 describe('Order persistence confirmation', () => {
   it('does not store an order when the API request fails', async () => {
@@ -51,4 +51,12 @@ describe('Order persistence confirmation', () => {
     assert.equal(result, confirmedOrder);
     assert.equal(storedOrder, confirmedOrder);
   });
+});
+
+it('muestra la última cotización del ticket abierto sin abrir pedidos distintos', () => {
+  const open = { id: 'gasolina', total: 49 };
+  const quoted = { id: 'gasolina', total: 89 };
+  assert.equal(refreshOpenTicket(open, [{ id: 'comida', total: 75 }, quoted]), quoted);
+  assert.equal(refreshOpenTicket(open, []), open);
+  assert.equal(refreshOpenTicket(null, [quoted]), null);
 });
