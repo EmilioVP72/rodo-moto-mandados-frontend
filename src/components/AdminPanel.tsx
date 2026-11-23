@@ -218,12 +218,37 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const handleCreateRiderAccount = async (event: React.FormEvent) => {
     event.preventDefault();
+    const name = newRiderAccount.name.trim();
+    const email = newRiderAccount.email.trim().toLowerCase();
+    const phone = newRiderAccount.phone.trim();
+    const password = newRiderAccount.password;
+
+    if (name.length < 2) {
+      showFeedback('Ingresa el nombre completo del repartidor (mínimo 2 caracteres).', 'error');
+      return;
+    }
+    if (!email || !email.includes('@')) {
+      showFeedback('Ingresa un correo electrónico válido para el repartidor.', 'error');
+      return;
+    }
+    if (phone.replace(/\D/g, '').length < 8) {
+      showFeedback('Ingresa un número de teléfono válido (mínimo 8 dígitos).', 'error');
+      return;
+    }
+    if (password.length < 8) {
+      showFeedback('La contraseña inicial debe tener al menos 8 caracteres.', 'error');
+      return;
+    }
+
     setIsCreatingRider(true);
     try {
-      const rider = await createRiderAccount(newRiderAccount);
-      setRiderAccounts((current) => [...current, rider]);
+      const rider = await createRiderAccount({ name, email, phone, password });
+      setRiderAccounts((current) => {
+        const exists = current.some((item) => item.id === rider.id);
+        return exists ? current.map((item) => (item.id === rider.id ? rider : item)) : [...current, rider];
+      });
       setNewRiderAccount({ name: '', email: '', phone: '', password: '' });
-      showFeedback(`Cuenta creada para ${rider.name}. Asóciala a un espacio de la flotilla.`);
+      showFeedback(`Cuenta creada para ${rider.name} (${rider.email}). Ya puedes vincularlo en la flotilla.`);
     } catch (error: any) {
       showFeedback(error?.message || 'No se pudo crear la cuenta de repartidor.', 'error');
     } finally {
@@ -419,16 +444,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   // Guardar configuración de Ajustes
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    await saveDispatchSettings(currentSettings);
-    setSettingsSaved(true);
-    setTimeout(() => setSettingsSaved(false), 3000);
-    logAdminAction(
-      'ajuste_tarifa',
-      `Configuración general guardada en Firestore (Tarifa base: $${currentSettings.baseDeliveryTariff || 35}, $/km: $${currentSettings.tariffPerKm || 7}, Margen global: ${currentSettings.globalMarkupPercent || 10}%, Tema: ${currentSettings.holidayThemeId || 'normal'})`,
-      'edsoncruz14999@gmail.com',
-      undefined,
-      'Ajustes de Despacho RODO'
-    );
+    try {
+      await saveDispatchSettings(currentSettings);
+      setSettingsSaved(true);
+      setTimeout(() => setSettingsSaved(false), 3000);
+      showFeedback('¡Configuración de despacho y flotilla guardada correctamente!');
+      logAdminAction(
+        'ajuste_tarifa',
+        `Configuración general guardada en Firestore (Tarifa base: $${currentSettings.baseDeliveryTariff || 35}, $/km: $${currentSettings.tariffPerKm || 7}, Margen global: ${currentSettings.globalMarkupPercent || 10}%, Tema: ${currentSettings.holidayThemeId || 'normal'})`,
+        'edsoncruz14999@gmail.com',
+        undefined,
+        'Ajustes de Despacho RODO'
+      );
+    } catch (error: any) {
+      showFeedback(error?.message || 'No se pudo guardar la configuración de despacho.', 'error');
+    }
   };
 
   // Repartidores (Hasta 10 números configurables con nombre para WhatsApp)
@@ -3615,7 +3645,7 @@ _RODO Moto Mandados · San Miguel de Allende_`;
 
           {/* ================= PESTAÑA 4: REPARTIDORES & WHATSAPP ================= */}
           {activeTab === 'ajustes' && (
-            <form onSubmit={handleSaveSettings} className="bg-white p-5 rounded-xl border border-gray-200 space-y-5">
+            <div className="bg-white p-5 rounded-xl border border-gray-200 space-y-5">
               <div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -3640,20 +3670,70 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                 </div>
               )}
 
+              {/* Formulario independiente (NO anidado) para crear cuentas de repartidor */}
               <form onSubmit={handleCreateRiderAccount} className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
-                <div>
-                  <h4 className="font-bold text-sm text-blue-950">Cuentas de acceso de repartidor</h4>
-                  <p className="text-xs text-blue-800">Crea credenciales para que el repartidor inicie sesión en esta app. Después vincúlalo con un espacio de la flotilla.</p>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h4 className="font-bold text-sm text-blue-950">Cuentas de acceso de repartidor</h4>
+                    <p className="text-xs text-blue-800">Crea credenciales para que el repartidor inicie sesión en esta app. Después vincúlalo con un espacio de la flotilla.</p>
+                  </div>
+                  <span className="bg-blue-100 text-blue-900 text-[11px] font-black px-2.5 py-0.5 rounded-full border border-blue-200">
+                    {riderAccounts.filter((r) => r.status === 'activo').length} cuentas activas
+                  </span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <input required minLength={2} value={newRiderAccount.name} onChange={(e) => setNewRiderAccount((v) => ({ ...v, name: e.target.value }))} placeholder="Nombre completo" className="rounded-lg border border-blue-200 p-2 text-sm" />
-                  <input required type="email" value={newRiderAccount.email} onChange={(e) => setNewRiderAccount((v) => ({ ...v, email: e.target.value }))} placeholder="Correo de acceso" className="rounded-lg border border-blue-200 p-2 text-sm" />
-                  <input required minLength={8} value={newRiderAccount.phone} onChange={(e) => setNewRiderAccount((v) => ({ ...v, phone: e.target.value }))} placeholder="Teléfono" className="rounded-lg border border-blue-200 p-2 text-sm" />
-                  <input required type="password" minLength={8} value={newRiderAccount.password} onChange={(e) => setNewRiderAccount((v) => ({ ...v, password: e.target.value }))} placeholder="Contraseña inicial (mínimo 8)" className="rounded-lg border border-blue-200 p-2 text-sm" />
+                  <input required minLength={2} value={newRiderAccount.name} onChange={(e) => setNewRiderAccount((v) => ({ ...v, name: e.target.value }))} placeholder="Nombre completo" className="rounded-lg border border-blue-200 bg-white p-2 text-sm" />
+                  <input required type="email" value={newRiderAccount.email} onChange={(e) => setNewRiderAccount((v) => ({ ...v, email: e.target.value }))} placeholder="Correo de acceso" className="rounded-lg border border-blue-200 bg-white p-2 text-sm" />
+                  <input required minLength={8} value={newRiderAccount.phone} onChange={(e) => setNewRiderAccount((v) => ({ ...v, phone: e.target.value }))} placeholder="Teléfono (mínimo 8 dígitos)" className="rounded-lg border border-blue-200 bg-white p-2 text-sm" />
+                  <input required type="password" minLength={8} value={newRiderAccount.password} onChange={(e) => setNewRiderAccount((v) => ({ ...v, password: e.target.value }))} placeholder="Contraseña inicial (mínimo 8)" className="rounded-lg border border-blue-200 bg-white p-2 text-sm" />
                 </div>
-                <button disabled={isCreatingRider} className="rounded-lg bg-blue-700 px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{isCreatingRider ? 'Creando...' : 'Crear cuenta de repartidor'}</button>
-                {riderAccounts.length > 0 && <p className="text-xs text-blue-800">Cuentas registradas: {riderAccounts.filter((r) => r.status === 'activo').length}</p>}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <button
+                    type="submit"
+                    disabled={isCreatingRider}
+                    className="rounded-lg bg-blue-700 hover:bg-blue-800 px-4 py-2 text-xs font-bold text-white disabled:opacity-50 cursor-pointer transition"
+                  >
+                    {isCreatingRider ? 'Creando cuenta...' : 'Crear cuenta de repartidor'}
+                  </button>
+                  <span className="text-[11px] text-blue-700">
+                    El repartidor podrá iniciar sesión de inmediato con este correo y contraseña.
+                  </span>
+                </div>
+
+                {riderAccounts.length > 0 && (
+                  <div className="pt-2 border-t border-blue-200/80 space-y-1.5">
+                    <p className="text-[11px] font-black uppercase tracking-wider text-blue-900">
+                      Cuentas de repartidores registradas ({riderAccounts.length})
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {riderAccounts.map((account) => (
+                        <div
+                          key={account.id}
+                          className="flex items-center justify-between gap-2 bg-white border border-blue-200 rounded-lg px-3 py-2 text-xs"
+                        >
+                          <div className="min-w-0">
+                            <p className="font-bold text-gray-900 truncate">{account.name}</p>
+                            <p className="text-[11px] text-gray-500 truncate">
+                              {account.email} · {account.phone}
+                            </p>
+                          </div>
+                          <span
+                            className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full shrink-0 ${
+                              account.status === 'activo'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-red-100 text-red-700'
+                            }`}
+                          >
+                            {account.status}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </form>
+
+              <form onSubmit={handleSaveSettings} className="space-y-5">
 
               {/* Grid de 10 Repartidores */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
@@ -4193,12 +4273,13 @@ _RODO Moto Mandados · San Miguel de Allende_`;
               <div className="flex justify-end pt-2">
                 <button
                   type="submit"
-                  className="bg-[#101b29] hover:bg-black text-white text-xs font-black py-2.5 px-6 rounded-xl shadow-xs transition"
+                  className="bg-[#101b29] hover:bg-black text-white text-xs font-black py-2.5 px-6 rounded-xl shadow-xs transition cursor-pointer"
                 >
                   Guardar Cambios de Despacho
                 </button>
               </div>
-            </form>
+              </form>
+            </div>
           )}
 
           {/* PESTAÑA: BITÁCORA DE AUDITORÍA INMUTABLE (SOLO EDSON) */}
