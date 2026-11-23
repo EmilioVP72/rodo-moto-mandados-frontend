@@ -1,3 +1,4 @@
+import { ProtectedImage } from './ProtectedImage';
 import React, { useState, useEffect } from 'react';
 import {
   Restaurant,
@@ -4656,7 +4657,7 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                             <span className="text-[10px] font-bold uppercase text-gray-500 block">
                               Documentación Adjunta
                             </span>
-                            <img
+                            <ProtectedImage
                               src={req.documentPhotoUrl}
                               alt={`Documento de ${req.customerName}`}
                               className="w-40 h-28 object-cover rounded-xl border border-gray-300 shadow-xs bg-white"

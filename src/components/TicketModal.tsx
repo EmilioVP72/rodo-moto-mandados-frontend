@@ -1,3 +1,4 @@
+import { ProtectedImage } from './ProtectedImage';
 import React, { useState, useEffect } from 'react';
 import { Order, DispatchSettings, Restaurant, DispatchRider } from '../types';
 import {
@@ -250,7 +251,7 @@ export const TicketModal: React.FC<TicketModalProps> = ({
       vibrateSuccess();
       onShowToast?.('¡Comprobante de entrega guardado exitosamente!');
     } catch (err) {
-      console.error('Error guardando evidencia de firma/foto:', err);
+      onShowToast?.(err instanceof Error ? err.message : 'No se pudo guardar la evidencia.');
     } finally {
       setSavingProof(false);
     }
@@ -1026,14 +1027,14 @@ _RODO Moto Mandados · Despacho San Miguel_`;
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {order.deliverySignatureDataUrl && (
-                        <img
+                        <ProtectedImage
                           src={order.deliverySignatureDataUrl}
                           alt="Firma de entrega"
                           className="h-16 bg-white rounded-lg border border-emerald-200 p-1 object-contain"
                         />
                       )}
                       {(order.deliveryProofPhotoUrl || proofPhotoPreview) && (
-                        <img
+                        <ProtectedImage
                           src={order.deliveryProofPhotoUrl || proofPhotoPreview}
                           alt="Foto de evidencia"
                           className="h-16 w-24 rounded-lg border border-emerald-200 object-cover"
@@ -1119,7 +1120,7 @@ _RODO Moto Mandados · Despacho San Miguel_`;
                         </label>
                         {proofPhotoPreview && (
                           <div className="flex items-center justify-between gap-2">
-                            <img
+                            <ProtectedImage
                               src={proofPhotoPreview}
                               alt="Vista previa evidencia"
                               className="h-16 w-24 rounded-lg object-cover border"

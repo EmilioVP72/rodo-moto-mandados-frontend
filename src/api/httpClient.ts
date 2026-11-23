@@ -75,6 +75,7 @@ export async function logoutSession(allDevices = false): Promise<void> {
 
 export interface ApiRequestOptions extends Omit<RequestInit, 'body'> {
   body?: unknown;
+  blob?: boolean;
   timeoutMs?: number;
   _retriedRefresh?: boolean;
 }
@@ -116,7 +117,7 @@ async function tryRotateRefreshToken(): Promise<boolean> {
 }
 
 export async function apiFetch<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
-  const { body, timeoutMs = 10000, headers: customHeaders, _retriedRefresh, ...rest } = options;
+  const { body, blob, timeoutMs = 10000, headers: customHeaders, _retriedRefresh, ...rest } = options;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -150,6 +151,7 @@ export async function apiFetch<T>(path: string, options: ApiRequestOptions = {})
       }
     }
 
+    if (response.ok && blob) return await response.blob() as T;
     const contentType = response.headers.get('content-type') || '';
     const payload = contentType.includes('application/json')
       ? await response.json().catch(() => null)
@@ -177,20 +179,9 @@ export async function uploadImageToBackend(
     return dataUrl;
   }
 
-  try {
-    const res = await apiFetch<{ url: string }>('/api/uploads', {
-      method: 'POST',
-      body: {
-        dataUrl,
-        folder,
-        referenceId,
-      },
-    });
-    return res.url || dataUrl;
-  } catch (err) {
-    console.warn('[Upload] Fallback to inline DataURL:', err);
-    return dataUrl;
-  }
+  const res = await apiFetch<{ url: string }>('/api/uploads', { method: 'POST', body: { dataUrl, folder, referenceId } });
+  if (!res?.url) throw new Error('El servidor no confirmó la carga.');
+  return res.url;
 }
 
 export async function uploadOrderProofToStorage(
@@ -217,25 +208,4 @@ export async function uploadOrderProofToStorage(
     kind === 'signature' ? 'signatures' : 'proofs',
     `${orderId}_${kind}`
   );
-}
-
-export async function uploadRecoveryDocToStorage(
-  requestId: string,
-  dataUrl: string
-): Promise<string> {
-  if (!dataUrl.startsWith('data:image/')) {
-    return dataUrl;
-  }
-
-  const mimeMatch = dataUrl.match(/^data:(image\/(jpeg|jpg|png|webp));base64,/);
-  if (!mimeMatch) {
-    throw new Error('Formato de documento no permitido. Usa JPG, PNG o WEBP.');
-  }
-
-  const approxBytes = Math.ceil((dataUrl.length * 3) / 4);
-  if (approxBytes > 4 * 1024 * 1024) {
-    throw new Error('La fotografía de documento excede 4 MB.');
-  }
-
-  return await uploadImageToBackend(dataUrl, 'recovery', requestId);
 }

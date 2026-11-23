@@ -10,7 +10,6 @@ import {
   BroadcastNotification,
   AccountRecoveryRequest,
 } from '../types';
-import { getStoredIneAccounts, saveIneAccount } from '../utils/ineScanner';
 import { persistOnlyAfterConfirmation } from './orderPersistence';
 import {
   syncRestaurantsToIDB,
@@ -709,158 +708,20 @@ export function generateRecoveryFolio(): string {
   return `REC-${yy}${mm}${dd}-${rand}`;
 }
 
-export function getLocalRecoveryRequests(): AccountRecoveryRequest[] {
-  try {
-    return JSON.parse(localStorage.getItem(LOCAL_STORAGE_RECOVERY) || '[]');
-  } catch {
-    return [];
-  }
+// Elimina copias de identificaciones guardadas por versiones anteriores.
+try { localStorage.removeItem(LOCAL_STORAGE_RECOVERY); } catch {}
+
+export function submitAccountRecoveryRequest(req: AccountRecoveryRequest) {
+  return apiFetch<Pick<AccountRecoveryRequest, 'id' | 'folio' | 'status'>>('/api/auth/recovery', { method: 'POST', body: req });
 }
 
-function saveLocalRecoveryRequests(list: AccountRecoveryRequest[]): void {
-  try {
-    localStorage.setItem(LOCAL_STORAGE_RECOVERY, JSON.stringify(list));
-  } catch {}
+export function getAccountRecoveryRequests(): Promise<AccountRecoveryRequest[]> {
+  return apiFetch<AccountRecoveryRequest[]>('/api/auth/recovery');
 }
 
-export async function submitAccountRecoveryRequest(
-  req: AccountRecoveryRequest
-): Promise<AccountRecoveryRequest> {
-  const local = getLocalRecoveryRequests();
-  const updated = [req, ...local.filter((r) => r.id !== req.id)];
-  saveLocalRecoveryRequests(updated);
-
-  try {
-    const saved = await apiFetch<AccountRecoveryRequest>('/api/auth/recovery', {
-      method: 'POST',
-      body: req,
-    });
-    if (saved) return saved;
-  } catch (err) {
-    console.warn('[API] Recovery request saved locally:', err);
-  }
-  return req;
-}
-
-export async function getAccountRecoveryRequests(): Promise<AccountRecoveryRequest[]> {
-  const local = getLocalRecoveryRequests();
-  try {
-    const remote = await apiFetch<AccountRecoveryRequest[]>('/api/auth/recovery');
-    if (Array.isArray(remote) && remote.length > 0) {
-      const map = new Map<string, AccountRecoveryRequest>();
-      remote.forEach((r) => map.set(r.id, r));
-      local.forEach((r) => {
-        if (!map.has(r.id)) map.set(r.id, r);
-      });
-      const merged = Array.from(map.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-      saveLocalRecoveryRequests(merged);
-      return merged;
-    }
-  } catch {}
-  return local;
-}
-
-export async function resolveAccountRecoveryRequest(
-  requestId: string,
-  decision: 'aprobada' | 'rechazada',
-  adminNotes?: string
-): Promise<AccountRecoveryRequest | null> {
-  const list = await getAccountRecoveryRequests();
-  const target = list.find((r) => r.id === requestId);
-  if (!target) return null;
-
-  const now = new Date().toISOString();
-  const updatedReq: AccountRecoveryRequest = {
-    ...target,
-    status: decision,
-    adminNotes: adminNotes || '',
-    reviewedBy: 'edsoncruz14999@gmail.com',
-    reviewedAt: now,
-  };
-
-  const nextList = list.map((r) => (r.id === requestId ? updatedReq : r));
-  saveLocalRecoveryRequests(nextList);
-
-  if (decision === 'aprobada') {
-    const accounts = getStoredIneAccounts();
-    const cleanOld = target.oldEmail.trim().toLowerCase();
-    const cleanNew = target.newEmail.trim().toLowerCase();
-    const cleanPhone = target.phone.replace(/[^0-9]/g, '');
-
-    const matchedOld = accounts.find(
-      (a) =>
-        a.email.toLowerCase() === cleanOld ||
-        (cleanPhone && a.phone.replace(/[^0-9]/g, '') === cleanPhone)
-    );
-
-    const newDigits =
-      (target.ine10Digits && target.ine10Digits.replace(/[^0-9]/g, '').length === 10
-        ? target.ine10Digits.replace(/[^0-9]/g, '')
-        : matchedOld?.ine10Digits) || '0000000000';
-
-    saveIneAccount({
-      id: matchedOld?.id || `cust-${cleanPhone || Date.now()}`,
-      name: target.customerName || matchedOld?.name || 'Cliente RODO',
-      phone: target.phone || matchedOld?.phone || '',
-      email: cleanNew,
-      ineVerified: true,
-      ineDigits: newDigits,
-      ine10Digits: newDigits,
-      inePhotoUploaded: true,
-      ineVerifiedAt: now,
-      pendingDebt: matchedOld?.pendingDebt || 0,
-      status: 'activo',
-      completedOrdersCount: matchedOld?.completedOrdersCount || 0,
-      referralCode: matchedOld?.referralCode,
-      referralRewardsCount: matchedOld?.referralRewardsCount || 0,
-      coupons: matchedOld?.coupons || [],
-      createdAt: matchedOld?.createdAt || now,
-    });
-  }
-
-  try {
-    await apiFetch(`/api/auth/recovery/${encodeURIComponent(requestId)}`, {
-      method: 'PATCH',
-      body: {
-        status: decision,
-        adminNotes: adminNotes || '',
-        reviewedBy: 'edsoncruz14999@gmail.com',
-      },
-    });
-  } catch (err) {
-    console.warn('[API] Fallback local en resolución de recuperación:', err);
-  }
-
-  return updatedReq;
-}
-
-export function findApprovedRecoveryForEmail(email: string): AccountRecoveryRequest | null {
-  const clean = email.trim().toLowerCase();
-  if (!clean) return null;
-  const local = getLocalRecoveryRequests();
-  return (
-    local.find(
-      (r) => r.status === 'aprobada' && r.newEmail.trim().toLowerCase() === clean
-    ) || null
-  );
-}
-
-export async function findApprovedRecoveryForEmailAsync(
-  email: string
-): Promise<AccountRecoveryRequest | null> {
-  const localMatch = findApprovedRecoveryForEmail(email);
-  if (localMatch) return localMatch;
-
-  const clean = email.trim().toLowerCase();
-  if (!clean) return null;
-  try {
-    const list = await apiFetch<AccountRecoveryRequest[]>(
-      `/api/auth/recovery?newEmail=${encodeURIComponent(clean)}&status=aprobada`
-    );
-    if (Array.isArray(list) && list.length > 0) {
-      return list[0];
-    }
-  } catch {}
-  return null;
+export function resolveAccountRecoveryRequest(requestId: string, decision: 'aprobada' | 'rechazada', adminNotes?: string) {
+  return apiFetch<AccountRecoveryRequest>(`/api/auth/recovery/${encodeURIComponent(requestId)}`, {
+    method: 'PATCH', body: { status: decision, adminNotes },
+  });
 }
 

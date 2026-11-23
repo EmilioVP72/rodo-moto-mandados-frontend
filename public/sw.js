@@ -1,5 +1,5 @@
 // RODO Moto Mandados · Production PWA Service Worker (Offline Shell + Push Notifications)
-const CACHE_NAME = 'rodo-pwa-cache-v1';
+const CACHE_NAME = 'rodo-pwa-cache-v2';
 const APP_SHELL_URLS = ['/', '/index.html', '/manifest.json'];
 
 self.addEventListener('install', (event) => {
@@ -28,6 +28,7 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;
+  if (new URL(request.url).pathname.startsWith('/uploads/') || request.headers.has('Authorization')) return;
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);

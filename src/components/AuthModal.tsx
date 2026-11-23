@@ -3,7 +3,6 @@ import {
   apiFetch,
   setAuthSessionTokens,
   ApiHttpError,
-  uploadRecoveryDocToStorage,
 } from '../api/httpClient';
 import { identifySocketSession } from '../api/socketClient';
 import {
@@ -35,8 +34,6 @@ import { CustomerAccount, AccountRecoveryRequest } from '../types';
 import {
   generateRecoveryFolio,
   submitAccountRecoveryRequest,
-  findApprovedRecoveryForEmail,
-  findApprovedRecoveryForEmailAsync,
 } from '../services/db';
 
 export type AuthSuccessMode = 'login' | 'register' | 'password_reset';
@@ -233,7 +230,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       const reqId = `rec-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
       const folio = generateRecoveryFolio();
-      const uploadedUrl = await uploadRecoveryDocToStorage(reqId, recDocDataUrl);
+
 
       const cleanRecIne = ine10Digits.replace(/[^0-9]/g, '');
       const payload: AccountRecoveryRequest = {
@@ -244,14 +241,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         oldEmail: (recOldEmail || email || 'No recordado').trim().toLowerCase(),
         newEmail: recNewEmail.trim().toLowerCase(),
         reason: recReason.trim() || 'Recuperación de acceso / contraseña olvidada',
-        documentPhotoUrl: uploadedUrl,
+        documentPhotoUrl: recDocDataUrl,
         ...(cleanRecIne ? { ine10Digits: cleanRecIne } : {}),
         status: 'pendiente',
         createdAt: new Date().toISOString(),
       };
 
       await submitAccountRecoveryRequest(payload);
-      setSubmittedRecovery(payload);
+      setSubmittedRecovery({ ...payload, documentPhotoUrl: undefined, ine10Digits: undefined });
+      setRecDocDataUrl('');
     } catch (err: any) {
       setErrorMsg(err?.message || 'No se pudo enviar la solicitud de recuperación. Intenta nuevamente.');
     } finally {
