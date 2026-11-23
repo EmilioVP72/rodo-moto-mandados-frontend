@@ -16,25 +16,6 @@
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
     <script>
-      // 1. Limpieza de cualquier Service Worker previo para evitar pantallas blancas por caché o peticiones interceptadas
-      try {
-        if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.getRegistrations().then(function(regs) {
-            for (var r of regs) {
-              r.unregister();
-            }
-          }).catch(function() {});
-        }
-        if ('caches' in window) {
-          caches.keys().then(function(keys) {
-            for (var k of keys) {
-              caches.delete(k);
-            }
-          }).catch(function() {});
-        }
-      } catch (e) {}
-
-      // 2. Detección responsiva de dispositivo
       (function() {
         try {
           var w = window.innerWidth || document.documentElement.clientWidth || 360;

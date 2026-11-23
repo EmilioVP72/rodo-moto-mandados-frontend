@@ -1,3 +1,5 @@
+import { readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
@@ -5,7 +7,20 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), {
+      name: 'rodo-offline-shell',
+      apply: 'build',
+      writeBundle(options, bundle) {
+        const dir = options.dir!;
+        const assets = Object.keys(bundle).filter(name => /\.(js|css)$/.test(name)).sort();
+        const worker = readFileSync(path.join(import.meta.dirname, 'public/sw.js'), 'utf8');
+        const version = createHash('sha256').update(worker).update(assets.join(','))
+          .update(readFileSync(path.join(dir, 'index.html'))).digest('hex').slice(0, 16);
+        const compiled = worker.replace('rodo-pwa-cache-dev', 'rodo-pwa-cache-' + version)
+          .replace('/* build-assets */', assets.map(name => JSON.stringify('/' + name)).join(','));
+        writeFileSync(path.join(dir, 'sw.js'), compiled);
+      },
+    }],
     resolve: {
       alias: {
         '@': path.resolve(import.meta.dirname, '.'),

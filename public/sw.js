@@ -1,81 +1,45 @@
-// RODO Moto Mandados · Production PWA Service Worker (Offline Shell + Push Notifications)
-const CACHE_NAME = 'rodo-pwa-cache-v2';
-const APP_SHELL_URLS = ['/', '/index.html', '/manifest.json'];
+const CACHE_NAME = 'rodo-pwa-cache-dev';
+const APP_SHELL_URLS = ['/', '/index.html', '/manifest.json', /* build-assets */];
 
-self.addEventListener('install', (event) => {
-  self.skipWaiting();
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL_URLS)).catch(() => {})
-  );
+self.addEventListener('install', event => {
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    await cache.addAll(APP_SHELL_URLS.map(url => new Request(url, { cache: 'reload' })));
+    await self.skipWaiting();
+  })());
 });
 
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(
-          keys.map((key) => {
-            if (key !== CACHE_NAME) {
-              return caches.delete(key);
-            }
-          })
-        )
-      )
-      .then(() => self.clients.claim())
-  );
+self.addEventListener('activate', event => {
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter(key => key.startsWith('rodo-pwa-cache-') && key !== CACHE_NAME)
+      .map(key => caches.delete(key)));
+    await self.clients.claim();
+  })());
 });
 
-self.addEventListener('fetch', (event) => {
-  const { request } = event;
-  if (new URL(request.url).pathname.startsWith('/uploads/') || request.headers.has('Authorization')) return;
-  if (request.method !== 'GET') return;
-
+self.addEventListener('fetch', event => {
+  const request = event.request;
   const url = new URL(request.url);
-
-  // Nunca interceptar tráfico de API en tiempo real, WebSockets ni subidas
-  if (
-    url.pathname.startsWith('/api/') ||
-    url.pathname.startsWith('/socket.io/') ||
-    url.pathname.startsWith('/uploads/')
-  ) {
-    return;
-  }
-
-  // Navegación HTML: Network-First con fallback a caché offline
+  if (request.method !== 'GET' || url.origin !== self.location.origin ||
+      /^\/(api|uploads|socket\.io)(\/|$)/.test(url.pathname) || request.headers.has('Authorization')) return;
   if (request.mode === 'navigate') {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)).catch(() => {});
-          return response;
-        })
-        .catch(() => caches.match('/index.html'))
-    );
-    return;
-  }
-
-  // Activos estáticos del mismo origen (/assets/*): Stale-While-Revalidate
-  if (url.origin === self.location.origin && url.pathname.startsWith('/assets/')) {
-    event.respondWith(
-      caches.match(request).then((cachedResponse) => {
-        const fetchPromise = fetch(request)
-          .then((networkResponse) => {
-            if (networkResponse && networkResponse.status === 200) {
-              const copy = networkResponse.clone();
-              caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)).catch(() => {});
-            }
-            return networkResponse;
-          })
-          .catch(() => cachedResponse);
-        return cachedResponse || fetchPromise;
-      })
-    );
+    event.respondWith(fetch(request).catch(async () => {
+      const cache = await caches.open(CACHE_NAME);
+      return await cache.match('/index.html') || Response.error();
+    }));
+  } else if (url.pathname.startsWith('/assets/')) {
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE_NAME);
+      const cached = await cache.match(request);
+      if (cached) return cached;
+      const response = await fetch(request);
+      if (response.ok) await cache.put(request, response.clone()).catch(() => {});
+      return response;
+    })());
   }
 });
 
-// Soporte para clic en notificaciones Push del sistema operativo / Android
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const targetUrl = (event.notification.data && event.notification.data.url) || '/';
