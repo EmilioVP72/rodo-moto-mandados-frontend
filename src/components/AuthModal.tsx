@@ -711,7 +711,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     <b>Comunícate con soporte:</b> Envía tu folio de recuperación y documentos por WhatsApp oficial (<b>415-101-9920</b>).
                   </li>
                   <li>
-                    <b>Ingreso a tu nueva cuenta:</b> En cuanto el administrador apruebe tu caso, podrás entrar de inmediato con tu nuevo correo o Google.
+                    <b>Ingreso a tu nueva cuenta:</b> Cuando despacho apruebe el cambio, usa tu nuevo correo para iniciar sesión o solicitar el código de recuperación.
                   </li>
                 </ol>
               </div>
