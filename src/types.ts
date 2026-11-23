@@ -108,8 +108,10 @@ export interface Restaurant {
     enabled: boolean;
   };
 
-  // Código PIN único de 3 dígitos (ej: "101", "104") asignado por Edson para despacho interno
+  // Código PIN único aleatorio de 3 dígitos (ej: "482") y contacto del local para despacho interno
   localCode?: string;
+  phone?: string;
+  contactPerson?: string;
 
   menu: MenuItem[];
 }

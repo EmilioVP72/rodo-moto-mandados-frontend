@@ -21,8 +21,6 @@ import {
   buildWhatsAppDispatchMessage,
   generateWhatsAppLink,
   getPartnerLocals,
-  savePartnerLocal,
-  deletePartnerLocal,
   INITIAL_SPECIALTIES,
   sendBroadcastNotification,
   getBroadcastNotifications,
@@ -32,6 +30,11 @@ import {
 } from '../services/db';
 import { dispatchRodoNotification, resolveNotificationScopeKey } from '../services/notifications';
 import { showSystemConfirm, showSystemToast } from './SystemDialogHost';
+import {
+  collectUsedLocalCodes,
+  generateUniqueRandomLocalCode,
+  isUniqueValidLocalCode,
+} from '../utils/localCodeGenerator';
 import { createRiderAccount, getRiderAccounts } from '../services/riders';
 import { InteractiveMapPicker } from './InteractiveMapPicker';
 import {
@@ -85,6 +88,8 @@ import {
   MessageCircle,
   Archive,
   Menu,
+  Copy,
+  Search,
 } from 'lucide-react';
 import { AdminOrderHistoryView } from './AdminOrderHistoryView';
 import {
@@ -174,13 +179,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [newSpecialtyIcon, setNewSpecialtyIcon] = useState<SpecialtyCategory['iconType']>('super');
   const [newSpecialtyDesc, setNewSpecialtyDesc] = useState('');
 
-  // Estados para Locales Asociados (Códigos de 3 dígitos)
+  // Estados para Locales Asociados (sincronizados automáticamente con Restaurantes & Tarifas)
   const [partnerLocals, setPartnerLocals] = useState<PartnerLocal[]>([]);
+  const [restaurantSearchQuery, setRestaurantSearchQuery] = useState('');
   const [riderAccounts, setRiderAccounts] = useState<RiderAccount[]>([]);
   const [newRiderAccount, setNewRiderAccount] = useState({ name: '', email: '', phone: '', password: '' });
   const [isCreatingRider, setIsCreatingRider] = useState(false);
-  const [editingPartnerLocal, setEditingPartnerLocal] = useState<PartnerLocal | null>(null);
-  const [isCreatingPartnerLocal, setIsCreatingPartnerLocal] = useState(false);
   const [feedbackNotice, setFeedbackNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [editingDishUrlItem, setEditingDishUrlItem] = useState<{ id: string; url: string } | null>(null);
 
@@ -274,44 +278,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
-  const handleSavePartnerLocal = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingPartnerLocal || !editingPartnerLocal.code.trim() || !editingPartnerLocal.name.trim()) {
-      showFeedback('Ingresa el código de 3 dígitos y el nombre del local.', 'error');
-      return;
-    }
-    if (editingPartnerLocal.code.trim().length !== 3) {
-      showFeedback('El código debe ser exactamente de 3 dígitos (ej: 101, 102, 205).', 'error');
-      return;
-    }
-    await savePartnerLocal(editingPartnerLocal);
-    await loadLocals();
-    logAdminAction(
-      'ajuste_tarifa',
-      `Asignado código PIN #${editingPartnerLocal.code} al local "${editingPartnerLocal.name}"`,
-      'edsoncruz14999@gmail.com',
-      undefined,
-      editingPartnerLocal.name
-    );
-    setEditingPartnerLocal(null);
-    setIsCreatingPartnerLocal(false);
-    showFeedback(`Local "${editingPartnerLocal.name}" guardado exitosamente.`);
-  };
-
-  const handleDeletePartnerLocal = async (id: string, name: string) => {
-    await deletePartnerLocal(id);
-    await loadLocals();
-    logAdminAction(
-      'ajuste_tarifa',
-      `Eliminado local "${name}" (${id}) y su código PIN del sistema`,
-      'edsoncruz14999@gmail.com',
-      undefined,
-      name
-    );
-    showFeedback(`Código y acceso de ${name} eliminados.`);
-  };
-
-  // Estados para edición de restaurantes
+  // Estados para edición de restaurantes (incluye tarifa, menú, dirección GPS y código PIN único automático)
   const [editingRestaurant, setEditingRestaurant] = useState<Restaurant | null>(null);
   const [isCreatingRestaurant, setIsCreatingRestaurant] = useState(false);
 
@@ -609,8 +576,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     showFeedback(`Especialidad "${name}" eliminada del catálogo.`);
   };
 
-  // Abrir formulario para nuevo restaurante
+  // Resolver código PIN vinculado de un restaurante (desde el propio objeto o partner_locals)
+  const resolveRestaurantLocalCode = (rest: Restaurant): string => {
+    if (rest.localCode && /^\d{3}$/.test(rest.localCode.trim())) {
+      return rest.localCode.trim();
+    }
+    const linkedId = `loc-${rest.id.replace(/[^a-zA-Z0-9_-]/g, '')}`;
+    const linked = partnerLocals.find(
+      (l) => l.id === linkedId || l.name.trim().toLowerCase() === rest.name.trim().toLowerCase()
+    );
+    return linked?.code && /^\d{3}$/.test(linked.code.trim()) ? linked.code.trim() : '';
+  };
+
+  // Abrir formulario para nuevo restaurante (con código PIN aleatorio único autogenerado)
   const handleInitNewRestaurant = () => {
+    const usedCodes = collectUsedLocalCodes(restaurants, partnerLocals);
+    const randomUniqueCode = generateUniqueRandomLocalCode(usedCodes);
     setEditingRestaurant({
       id: 'rest-' + Math.random().toString(36).substring(2, 8),
       name: '',
@@ -632,12 +613,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       isOpen: true,
       schedule: '12:00 PM – 10:00 PM',
       closureReason: '',
+      localCode: randomUniqueCode,
+      phone: '',
+      contactPerson: '',
       menu: [],
     });
     setIsCreatingRestaurant(true);
   };
 
-  // Guardar restaurante
+  // Regenerar código PIN aleatorio único dentro del editor
+  const handleRegenerateEditingLocalCode = () => {
+    if (!editingRestaurant) return;
+    const usedCodes = collectUsedLocalCodes(restaurants, partnerLocals, editingRestaurant.id);
+    if (editingRestaurant.localCode) {
+      usedCodes.add(editingRestaurant.localCode);
+    }
+    const freshCode = generateUniqueRandomLocalCode(usedCodes);
+    setEditingRestaurant({ ...editingRestaurant, localCode: freshCode });
+    showFeedback(`Nuevo código único generado: #${freshCode}`);
+  };
+
+  // Guardar restaurante (garantiza código aleatorio único y sincroniza partner_locals en servidor)
   const handleSaveRestaurant = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingRestaurant || !editingRestaurant.name.trim()) {
@@ -649,48 +645,36 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       .replace(/PIN\s*#?\d+/gi, '')
       .trim();
 
+    const usedCodes = collectUsedLocalCodes(restaurants, partnerLocals, editingRestaurant.id);
+    let finalLocalCode = (editingRestaurant.localCode || '').replace(/[^0-9]/g, '').slice(0, 3);
+    if (!isUniqueValidLocalCode(finalLocalCode, usedCodes)) {
+      finalLocalCode = generateUniqueRandomLocalCode(usedCodes);
+    }
+
     const cleanRestaurant: Restaurant = {
       ...editingRestaurant,
       name: editingRestaurant.name.trim(),
       badge: cleanBadge,
+      localCode: finalLocalCode,
+      phone: (editingRestaurant.phone || '').trim(),
+      contactPerson: (editingRestaurant.contactPerson || '').trim(),
       menu: Array.isArray(editingRestaurant.menu) ? editingRestaurant.menu : [],
       tags: Array.isArray(editingRestaurant.tags) ? editingRestaurant.tags : [],
     };
 
     try {
       await saveRestaurant(cleanRestaurant);
-
-      // Sincronizar PIN asignado con la base de datos de locales internos
-      if (cleanRestaurant.localCode && cleanRestaurant.localCode.trim().length === 3) {
-        await savePartnerLocal({
-          id: 'loc-' + cleanRestaurant.id.replace(/[^a-zA-Z0-9_-]/g, ''),
-          code: cleanRestaurant.localCode.trim(),
-          name: cleanRestaurant.name,
-          phone: '4151019920',
-          serviceFee: cleanRestaurant.deliveryFee || 35,
-          address: cleanRestaurant.address || {
-            calle: 'Centro',
-            numero: 'S/N',
-            colonia: 'Centro',
-            lat: cleanRestaurant.coordinates?.lat || 20.9144,
-            lng: cleanRestaurant.coordinates?.lng || -100.7437,
-          },
-          isActive: cleanRestaurant.isActive !== false,
-        });
-        await loadLocals();
-      }
-
-      await onRefreshData();
+      await Promise.all([onRefreshData(), loadLocals()]);
       logAdminAction(
         'edicion_menu',
-        `Restaurante "${cleanRestaurant.name}" guardado (Menú con ${cleanRestaurant.menu.length} platillos, tarifa envío $${cleanRestaurant.deliveryFee}, sobreprecio +${cleanRestaurant.markupPercent || 0}% / +$${cleanRestaurant.markupFixed || 0} MXN)`,
+        `Restaurante "${cleanRestaurant.name}" guardado (PIN #${finalLocalCode}, menú con ${cleanRestaurant.menu.length} platillos, tarifa envío $${cleanRestaurant.deliveryFee}, sobreprecio +${cleanRestaurant.markupPercent || 0}% / +$${cleanRestaurant.markupFixed || 0} MXN)`,
         'edsoncruz14999@gmail.com',
         undefined,
         cleanRestaurant.name
       );
       setEditingRestaurant(null);
       setIsCreatingRestaurant(false);
-      showFeedback(`Restaurante "${cleanRestaurant.name}" guardado exitosamente.`);
+      showFeedback(`"${cleanRestaurant.name}" guardado con código único #${finalLocalCode}.`);
     } catch (err: any) {
       showFeedback(
         err?.message || 'No se pudo guardar el restaurante. Verifica tu sesión de administrador.',
@@ -699,12 +683,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
-  // Eliminar restaurante definitivamente de PostgreSQL y caché local (con diálogo personalizado RODO)
+  // Eliminar restaurante definitivamente de PostgreSQL y caché local (y libera su código PIN)
   const handleDeleteRestaurant = async (id: string, name: string) => {
     const confirmed = await showSystemConfirm({
       title: '¿Eliminar establecimiento?',
       message: `Vas a eliminar definitivamente "${name}" del catálogo de RODO.`,
-      details: 'Esta acción lo retirará inmediatamente para todos los clientes y del panel de administración.',
+      details: 'Esta acción lo retirará para todos los clientes y liberará su código PIN interno.',
       confirmLabel: 'Sí, Eliminar',
       cancelLabel: 'Cancelar',
       tone: 'danger',
@@ -717,7 +701,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         setEditingRestaurant(null);
         setIsCreatingRestaurant(false);
       }
-      await onRefreshData();
+      await Promise.all([onRefreshData(), loadLocals()]);
       logAdminAction(
         'edicion_menu',
         `Restaurante "${name}" (${id}) eliminado del catálogo`,
@@ -1008,7 +992,7 @@ _RODO Moto Mandados · San Miguel de Allende_`;
   const navGroups = buildAdminNavGroups({
     newLiveOrders: liveOrders.filter((o) => o.status === 'nuevo').length,
     totalHistoryOrders: orders.length,
-    partnerLocalsCount: partnerLocals.length,
+    restaurantsCount: restaurants.length,
     activeSpecialtiesCount: currentSpecialties.filter((s) => s.active).length,
     pendingRecoveriesCount: recoveryRequests.filter((r) => r.status === 'pendiente').length,
   });
@@ -1687,452 +1671,45 @@ _RODO Moto Mandados · San Miguel de Allende_`;
             </div>
           )}
 
-          {/* ================= PESTAÑA: CÓDIGOS DE LOCALES (3 DÍGITOS TIPO API) ================= */}
-          {activeTab === 'locales_api' && (
-            <div className="space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-gray-200">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-extrabold text-gray-900 text-base">
-                      🏪 Códigos de Locales Asociados (API 3 Dígitos)
-                    </h3>
-                    <span className="bg-[#ed0718] text-white text-[10px] font-black px-2 py-0.5 rounded-full">
-                      {partnerLocals.length} Locales
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    Tú asignas el código de 3 dígitos (ej: 101, 102, 205), el nombre del local, su dirección exacta (calle, número, colonia) y su ubicación en el mapa. Al poner su código en el sitio web, se auto-completa todo para solicitar repartidores.
-                  </p>
-                </div>
-                <button
-                  onClick={() => {
-                    setEditingPartnerLocal({
-                      id: 'loc-' + Math.random().toString(36).substring(2, 7),
-                      code: '',
-                      name: '',
-                      phone: '',
-                      address: {
-                        calle: '',
-                        numero: '',
-                        colonia: '',
-                        referencias: '',
-                        lat: 20.9144,
-                        lng: -100.7437,
-                        mapsUrl: 'https://maps.google.com/?q=20.9144,-100.7437',
-                      },
-                      contactPerson: '',
-                      notes: '',
-                      serviceFee: 35,
-                      isActive: true,
-                    });
-                    setIsCreatingPartnerLocal(true);
-                  }}
-                  className="bg-[#ed0718] hover:bg-[#c90012] text-white text-xs font-bold py-2 px-4 rounded-xl flex items-center gap-1.5 shadow-xs transition shrink-0"
-                >
-                  <Plus className="w-4 h-4" />
-                  Asignar Nuevo Código a Local
-                </button>
-              </div>
-
-              {/* Formulario de Alta o Edición de Código de Local */}
-              {editingPartnerLocal && (
-                <form
-                  onSubmit={handleSavePartnerLocal}
-                  className="bg-white p-5 rounded-2xl border-2 border-[#ed0718] shadow-lg space-y-4 animate-in fade-in duration-200"
-                >
-                  <div className="flex justify-between items-center border-b border-gray-200 pb-3">
-                    <div>
-                      <h4 className="font-black text-gray-900 text-base">
-                        {isCreatingPartnerLocal ? 'Asignar Nuevo Código de 3 Dígitos a Local' : `Editar Local ${editingPartnerLocal.name} (#${editingPartnerLocal.code})`}
-                      </h4>
-                      <p className="text-xs text-gray-500">
-                        Configura el código privado, tarifa fija y la ubicación para auto-identificación del local.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingPartnerLocal(null);
-                        setIsCreatingPartnerLocal(false);
-                      }}
-                      className="text-gray-400 hover:text-black p-1 rounded-full"
-                    >
-                      <X className="w-5 h-5" />
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div>
-                      <label className="block text-xs font-black text-gray-800 mb-1">
-                        Código de 3 Dígitos (API PIN): <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        inputMode="numeric"
-                        maxLength={3}
-                        value={editingPartnerLocal.code}
-                        onChange={(e) =>
-                          setEditingPartnerLocal({
-                            ...editingPartnerLocal,
-                            code: e.target.value.replace(/[^0-9]/g, '').slice(0, 3),
-                          })
-                        }
-                        placeholder="Ej. 101"
-                        className="w-full bg-red-50/50 border-2 border-red-300 focus:border-[#ed0718] rounded-xl px-3 py-2 text-center font-mono font-black text-xl tracking-widest text-[#101b29] outline-none"
-                      />
-                    </div>
-
-                    <div className="sm:col-span-2">
-                      <label className="block text-xs font-bold text-gray-700 mb-1">
-                        Nombre del Local o Negocio: <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={editingPartnerLocal.name}
-                        onChange={(e) =>
-                          setEditingPartnerLocal({ ...editingPartnerLocal, name: e.target.value })
-                        }
-                        placeholder="Ej. Tacos Sebastián / Pizzería Napoli"
-                        className="w-full border border-gray-300 rounded-xl p-2.5 text-xs font-semibold outline-none focus:border-[#ed0718]"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div>
-                      <label className="block text-xs font-bold text-gray-700 mb-1">
-                        Teléfono / WhatsApp:
-                      </label>
-                      <input
-                        type="tel"
-                        value={editingPartnerLocal.phone}
-                        onChange={(e) =>
-                          setEditingPartnerLocal({ ...editingPartnerLocal, phone: e.target.value })
-                        }
-                        placeholder="Ej. 4151234567"
-                        className="w-full border border-gray-300 rounded-xl p-2 text-xs font-mono font-bold outline-none focus:border-[#ed0718]"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-gray-700 mb-1">
-                        Persona Encargada:
-                      </label>
-                      <input
-                        type="text"
-                        value={editingPartnerLocal.contactPerson || ''}
-                        onChange={(e) =>
-                          setEditingPartnerLocal({
-                            ...editingPartnerLocal,
-                            contactPerson: e.target.value,
-                          })
-                        }
-                        placeholder="Ej. Don Sebastián / Gerente"
-                        className="w-full border border-gray-300 rounded-xl p-2 text-xs outline-none focus:border-[#ed0718]"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-gray-700 mb-1">
-                        Tarifa de Cobro ($ MXN): <span className="text-red-500">*</span>
-                      </label>
-                      <div className="relative">
-                        <DollarSign className="w-4 h-4 text-gray-400 absolute left-2.5 top-2.5" />
-                        <input
-                          type="number"
-                          min={0}
-                          step={1}
-                          required
-                          value={editingPartnerLocal.serviceFee ?? 35}
-                          onChange={(e) =>
-                            setEditingPartnerLocal({
-                              ...editingPartnerLocal,
-                              serviceFee: Number(e.target.value) || 0,
-                            })
-                          }
-                          placeholder="35"
-                          className="w-full border border-gray-300 rounded-xl pl-8 pr-3 py-2 text-xs font-mono font-black outline-none focus:border-[#ed0718] text-[#ed0718]"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Dirección del Local (Calle, Número, Colonia) */}
-                  <div className="bg-gray-50 p-3.5 rounded-xl border border-gray-200 space-y-3">
-                    <span className="text-xs font-black uppercase text-gray-700 tracking-wider flex items-center gap-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-[#ed0718]" />
-                      Dirección Base del Local (Se auto-completará en el sitio web)
-                    </span>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div className="sm:col-span-2">
-                        <label className="block text-xs font-bold text-gray-700 mb-1">Calle:</label>
-                        <input
-                          type="text"
-                          required
-                          value={editingPartnerLocal.address.calle}
-                          onChange={(e) =>
-                            setEditingPartnerLocal({
-                              ...editingPartnerLocal,
-                              address: { ...editingPartnerLocal.address, calle: e.target.value },
-                            })
-                          }
-                          placeholder="Ej. Calle Hidalgo"
-                          className="w-full bg-white border border-gray-300 rounded-lg p-2 text-xs font-semibold outline-none focus:border-[#ed0718]"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-gray-700 mb-1">Número:</label>
-                        <input
-                          type="text"
-                          required
-                          value={editingPartnerLocal.address.numero}
-                          onChange={(e) =>
-                            setEditingPartnerLocal({
-                              ...editingPartnerLocal,
-                              address: { ...editingPartnerLocal.address, numero: e.target.value },
-                            })
-                          }
-                          placeholder="Ej. 45-B"
-                          className="w-full bg-white border border-gray-300 rounded-lg p-2 text-xs font-semibold outline-none focus:border-[#ed0718]"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-bold text-gray-700 mb-1">Colonia:</label>
-                        <input
-                          type="text"
-                          required
-                          value={editingPartnerLocal.address.colonia}
-                          onChange={(e) =>
-                            setEditingPartnerLocal({
-                              ...editingPartnerLocal,
-                              address: { ...editingPartnerLocal.address, colonia: e.target.value },
-                            })
-                          }
-                          placeholder="Ej. Centro / San Antonio"
-                          className="w-full bg-white border border-gray-300 rounded-lg p-2 text-xs font-semibold outline-none focus:border-[#ed0718]"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-gray-700 mb-1">Referencias:</label>
-                        <input
-                          type="text"
-                          value={editingPartnerLocal.address.referencias || ''}
-                          onChange={(e) =>
-                            setEditingPartnerLocal({
-                              ...editingPartnerLocal,
-                              address: {
-                                ...editingPartnerLocal.address,
-                                referencias: e.target.value,
-                              },
-                            })
-                          }
-                          placeholder="Frente a la plazuela, letrero rojo..."
-                          className="w-full bg-white border border-gray-300 rounded-lg p-2 text-xs outline-none focus:border-[#ed0718]"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Selector de Mapa para el Administrador */}
-                    <div className="pt-2 border-t border-gray-200">
-                      <span className="block text-xs font-bold text-gray-700 mb-2">
-                        Fijar Ubicación en el Mapa de San Miguel para el repartidor:
-                      </span>
-                      <InteractiveMapPicker
-                        initialLat={editingPartnerLocal.address.lat || 20.9144}
-                        initialLng={editingPartnerLocal.address.lng || -100.7437}
-                        localName={editingPartnerLocal.name || 'Local'}
-                        onLocationSelect={(loc) => {
-                          setEditingPartnerLocal({
-                            ...editingPartnerLocal,
-                            address: {
-                              ...editingPartnerLocal.address,
-                              lat: loc.lat,
-                              lng: loc.lng,
-                              mapsUrl: loc.mapsUrl,
-                            },
-                          });
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
-                      Notas Internas / Instrucciones para Repartidores:
-                    </label>
-                    <textarea
-                      rows={2}
-                      value={editingPartnerLocal.notes || ''}
-                      onChange={(e) =>
-                        setEditingPartnerLocal({ ...editingPartnerLocal, notes: e.target.value })
-                      }
-                      placeholder="Ej. Salida rápida por mostrador lateral. Llevar cambio de $200."
-                      className="w-full border border-gray-300 rounded-xl p-2.5 text-xs outline-none focus:border-[#ed0718]"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="partnerActive"
-                      checked={editingPartnerLocal.isActive}
-                      onChange={(e) =>
-                        setEditingPartnerLocal({
-                          ...editingPartnerLocal,
-                          isActive: e.target.checked,
-                        })
-                      }
-                      className="rounded text-[#ed0718] focus:ring-red-500"
-                    />
-                    <label htmlFor="partnerActive" className="text-xs font-bold text-gray-800">
-                      Código activo para solicitudes inmediatas
-                    </label>
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-2 border-t border-gray-200">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingPartnerLocal(null);
-                        setIsCreatingPartnerLocal(false);
-                      }}
-                      className="px-4 py-2 border border-gray-300 rounded-xl text-xs font-bold hover:bg-gray-50"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-5 py-2 bg-[#ed0718] hover:bg-[#c90012] text-white rounded-xl text-xs font-black shadow-xs"
-                    >
-                      Guardar Código y Local
-                    </button>
-                  </div>
-                </form>
-              )}
-
-              {/* Lista de Códigos de Locales Registrados */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {partnerLocals.map((loc, idx) => (
-                  <div
-                    key={`${loc.id}-${loc.code}-${idx}`}
-                    className="bg-white rounded-2xl border border-gray-200 p-4 shadow-xs flex flex-col justify-between hover:border-red-300 transition"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-black text-sm bg-red-100 text-[#ed0718] px-2.5 py-1 rounded-lg border border-red-200">
-                            PIN #{loc.code}
-                          </span>
-                          <span
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                              loc.isActive
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : 'bg-gray-100 text-gray-600'
-                            }`}
-                          >
-                            {loc.isActive ? 'Activo' : 'Inactivo'}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => {
-                              setEditingPartnerLocal(loc);
-                              setIsCreatingPartnerLocal(false);
-                            }}
-                            className="p-1.5 text-gray-500 hover:text-black hover:bg-gray-100 rounded-lg transition"
-                            title="Editar local"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDeletePartnerLocal(loc.id, loc.name)}
-                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
-                            title="Eliminar local"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-
-                      <h4 className="font-extrabold text-base text-gray-900 leading-snug">
-                        {loc.name}
-                      </h4>
-
-                      <div className="text-xs text-gray-600 space-y-1 mt-2 bg-gray-50 p-2.5 rounded-xl border border-gray-100">
-                        <div>
-                          📍 <b>Dirección:</b> {loc.address.calle} #{loc.address.numero}, Col. {loc.address.colonia}
-                        </div>
-                        {loc.address.referencias && (
-                          <div className="text-gray-500 italic">
-                            Ref: {loc.address.referencias}
-                          </div>
-                        )}
-                        {loc.phone && (
-                          <div>
-                            📞 <b>Teléfono:</b> {loc.phone} {loc.contactPerson ? `(${loc.contactPerson})` : ''}
-                          </div>
-                        )}
-                        {loc.address.mapsUrl && (
-                          <div>
-                            <a
-                              href={loc.address.mapsUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-[#ed0718] hover:underline font-bold inline-flex items-center gap-1"
-                            >
-                              <span>🗺️ Ver GPS fijado</span>
-                            </a>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="mt-2.5 flex items-center justify-between bg-red-50/80 px-3 py-1.5 rounded-xl border border-red-200 text-xs">
-                        <span className="text-gray-700 font-bold">Tarifa acordada de reparto:</span>
-                        <span className="font-mono font-black text-[#ed0718] text-sm">
-                          ${loc.serviceFee ?? 35} MXN
-                        </span>
-                      </div>
-                    </div>
-
-                    {loc.notes && (
-                      <p className="text-[11px] text-gray-500 italic mt-2 border-t pt-2">
-                        Notas: {loc.notes}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ================= PESTAÑA 2: RESTAURANTES & TARIFAS ================= */}
+          {/* ================= PESTAÑA UNIFICADA: RESTAURANTES, TARIFAS & CÓDIGOS LOCALES ================= */}
           {activeTab === 'restaurantes' && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between bg-white p-4 rounded-xl border border-gray-200">
-                <div>
-                  <h3 className="font-extrabold text-gray-900 text-base">
-                    Catálogo de Restaurantes ({restaurants.length})
-                  </h3>
-                  <p className="text-xs text-gray-500">
-                    Solo tú como administrador agregas locales y defines tarifas de envío y comisiones individuales.
-                  </p>
+              <div className="bg-white p-4 rounded-2xl border border-gray-200 space-y-3 shadow-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-extrabold text-gray-900 text-base">
+                        Restaurantes, Tarifas & Códigos Locales ({restaurants.length})
+                      </h3>
+                      <span className="text-[10px] font-black uppercase bg-slate-900 text-white px-2 py-0.5 rounded-full">
+                        PIN Aleatorio Único
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Administra desde un solo lugar comercios, tarifas, menús, horarios, ubicación GPS y el código PIN único de 3 dígitos generado automáticamente.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleInitNewRestaurant}
+                    className="bg-[#ed0718] hover:bg-[#c90012] text-white text-xs font-black py-2.5 px-4 rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition cursor-pointer shrink-0"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Agregar Nuevo Local
+                  </button>
                 </div>
-                <button
-                  onClick={handleInitNewRestaurant}
-                  className="bg-[#ed0718] hover:bg-[#c90012] text-white text-xs font-bold py-2 px-4 rounded-xl flex items-center gap-1.5 shadow-xs transition"
-                >
-                  <Plus className="w-4 h-4" />
-                  Agregar Nuevo Restaurante
-                </button>
+
+                {/* Buscador rápido por nombre, categoría o código PIN */}
+                <div className="relative">
+                  <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={restaurantSearchQuery}
+                    onChange={(e) => setRestaurantSearchQuery(e.target.value)}
+                    placeholder="Buscar por nombre del local, categoría o código PIN (ej. 482)..."
+                    className="w-full pl-9 pr-3 py-2 text-xs font-semibold border border-gray-300 rounded-xl bg-gray-50 focus:bg-white focus:border-[#ed0718] outline-none"
+                  />
+                </div>
               </div>
 
               {/* Modal Flotante de Alta o Edición de Restaurante (siempre visible sin importar el scroll) */}
@@ -2825,59 +2402,100 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                     </div>
                   </div>
 
-                  {/* Código PIN Interno, Insignia y Descripción */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div>
-                      <label className="block text-xs font-black text-gray-800 mb-1 flex items-center justify-between">
-                        <span>Código PIN (3 Dígitos)</span>
-                        <span className="text-[10px] text-red-600 font-bold bg-red-50 px-1.5 py-0.2 rounded border border-red-200">
-                          Solo Admin
+                  {/* Código PIN Aleatorio Único, Contacto del Local, Insignia y Descripción */}
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                        <KeyRound className="w-4 h-4 text-[#ed0718]" />
+                        Código Local Único & Contacto del Establecimiento
+                      </span>
+                      <span className="text-[10px] font-black text-red-700 bg-red-50 px-2 py-0.5 rounded-full border border-red-200">
+                        Solo Admin · Autogenerado
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-xs font-black text-gray-800 mb-1">
+                          Código PIN Único (3 Dígitos)
+                        </label>
+                        <div className="flex items-center gap-1.5">
+                          <div className="flex-1 bg-[#101b29] text-amber-400 border-2 border-slate-800 rounded-xl px-3 py-2 text-center font-mono font-black text-base tracking-widest select-all">
+                            #{editingRestaurant.localCode || '---'}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleRegenerateEditingLocalCode}
+                            title="Generar nuevo código aleatorio único"
+                            className="bg-white hover:bg-slate-900 hover:text-white text-slate-800 border border-slate-300 px-3 py-2.5 rounded-xl text-xs font-black inline-flex items-center gap-1 transition cursor-pointer shrink-0"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            <span>Nuevo</span>
+                          </button>
+                        </div>
+                        <span className="text-[10px] text-gray-500 block mt-0.5">
+                          Generado aleatoriamente y garantizado como único en el sistema
                         </span>
-                      </label>
-                      <input
-                        type="text"
-                        maxLength={3}
-                        inputMode="numeric"
-                        value={editingRestaurant.localCode || ''}
-                        onChange={(e) =>
-                          setEditingRestaurant({
-                            ...editingRestaurant,
-                            localCode: e.target.value.replace(/[^0-9]/g, '').slice(0, 3),
-                          })
-                        }
-                        className="w-full border-2 border-red-200 focus:border-[#ed0718] rounded-xl p-2 text-center font-mono font-black text-base text-[#101b29] outline-none"
-                        placeholder="Ej. 104"
-                      />
-                      <span className="text-[10px] text-gray-400 block mt-0.5">
-                        Contraseña/Identificador de 3 dígitos (privado)
-                      </span>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">
+                          Teléfono del Local (WhatsApp / Mostrador)
+                        </label>
+                        <input
+                          type="tel"
+                          value={editingRestaurant.phone || ''}
+                          onChange={(e) =>
+                            setEditingRestaurant({ ...editingRestaurant, phone: e.target.value })
+                          }
+                          className="w-full border border-gray-300 bg-white rounded-xl p-2 text-xs font-mono font-semibold"
+                          placeholder="Ej. 4151234567"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">
+                          Persona de Contacto / Encargado
+                        </label>
+                        <input
+                          type="text"
+                          value={editingRestaurant.contactPerson || ''}
+                          onChange={(e) =>
+                            setEditingRestaurant({ ...editingRestaurant, contactPerson: e.target.value })
+                          }
+                          className="w-full border border-gray-300 bg-white rounded-xl p-2 text-xs font-semibold"
+                          placeholder="Ej. Don Sebastián / Gerente"
+                        />
+                      </div>
                     </div>
 
-                    <div>
-                      <label className="block text-xs font-bold text-gray-700 mb-1">Insignia / Badge Comercial</label>
-                      <input
-                        type="text"
-                        value={editingRestaurant.badge || ''}
-                        onChange={(e) => setEditingRestaurant({ ...editingRestaurant, badge: e.target.value })}
-                        className="w-full border border-gray-300 rounded-xl p-2 text-xs font-semibold"
-                        placeholder="Ej. 30% OFF, Más Vendido, Recomendado SMA"
-                      />
-                      <span className="text-[10px] text-gray-400 block mt-0.5">
-                        Visible para el cliente (sin códigos ni contraseñas)
-                      </span>
-                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">Insignia / Badge Comercial</label>
+                        <input
+                          type="text"
+                          value={editingRestaurant.badge || ''}
+                          onChange={(e) => setEditingRestaurant({ ...editingRestaurant, badge: e.target.value })}
+                          className="w-full border border-gray-300 bg-white rounded-xl p-2 text-xs font-semibold"
+                          placeholder="Ej. 30% OFF, Más Vendido, Recomendado SMA"
+                        />
+                        <span className="text-[10px] text-gray-400 block mt-0.5">
+                          Visible para el cliente (nunca muestra el código PIN)
+                        </span>
+                      </div>
 
-                    <div>
-                      <label className="block text-xs font-bold text-gray-700 mb-1">Descripción</label>
-                      <input
-                        type="text"
-                        value={editingRestaurant.description}
-                        onChange={(e) =>
-                          setEditingRestaurant({ ...editingRestaurant, description: e.target.value })
-                        }
-                        className="w-full border border-gray-300 rounded-xl p-2 text-xs"
-                        placeholder="Breve reseña del local"
-                      />
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">Descripción / Notas del Local</label>
+                        <input
+                          type="text"
+                          value={editingRestaurant.description}
+                          onChange={(e) =>
+                            setEditingRestaurant({ ...editingRestaurant, description: e.target.value })
+                          }
+                          className="w-full border border-gray-300 bg-white rounded-xl p-2 text-xs"
+                          placeholder="Breve reseña o indicaciones de recolección"
+                        />
+                      </div>
                     </div>
                   </div>
 
@@ -3384,10 +3002,22 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                 </div>
               )}
 
-              {/* Lista de Restaurantes con Control Rápido de Apertura y Platillos Agotados */}
+              {/* Lista Unificada de Restaurantes, Tarifas y Códigos PIN */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {restaurants.map((rest) => {
+                {restaurants
+                  .filter((rest) => {
+                    const q = restaurantSearchQuery.trim().toLowerCase();
+                    if (!q) return true;
+                    const pin = resolveRestaurantLocalCode(rest);
+                    return (
+                      rest.name.toLowerCase().includes(q) ||
+                      (rest.category || '').toLowerCase().includes(q) ||
+                      pin.includes(q)
+                    );
+                  })
+                  .map((rest) => {
                   const isClosed = rest.isOpen === false;
+                  const resolvedPin = resolveRestaurantLocalCode(rest);
 
                   return (
                     <div
@@ -3397,10 +3027,10 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                       }`}
                     >
                       <div className="p-4 space-y-3">
-                        {/* Cabecera de la tarjeta con estado de apertura */}
+                        {/* Cabecera de la tarjeta con estado de apertura y PIN único */}
                         <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <div className="flex items-center gap-2">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-1.5">
                               <h4 className="font-extrabold text-base text-gray-900">{rest.name}</h4>
                               <span
                                 className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider ${
@@ -3417,9 +3047,30 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                             </span>
                           </div>
 
-                          <span className="bg-red-50 text-red-700 font-extrabold text-xs px-2.5 py-1 rounded-full shrink-0">
-                            Envío: ${rest.deliveryFee}
-                          </span>
+                          <div className="flex flex-col items-end gap-1 shrink-0">
+                            <span className="bg-red-50 text-red-700 font-extrabold text-xs px-2.5 py-1 rounded-full">
+                              Envío: ${rest.deliveryFee}
+                            </span>
+                            {resolvedPin ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard?.writeText(resolvedPin).catch(() => {});
+                                  showFeedback(`Código PIN #${resolvedPin} de "${rest.name}" copiado.`);
+                                }}
+                                title="Clic para copiar código PIN"
+                                className="inline-flex items-center gap-1 bg-[#101b29] hover:bg-black text-amber-400 font-mono font-black text-[11px] px-2.5 py-0.5 rounded-lg transition cursor-pointer"
+                              >
+                                <KeyRound className="w-3 h-3" />
+                                <span>PIN #{resolvedPin}</span>
+                                <Copy className="w-2.5 h-2.5 opacity-80" />
+                              </button>
+                            ) : (
+                              <span className="text-[10px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-lg">
+                                Sin PIN (edita para asignar)
+                              </span>
+                            )}
+                          </div>
                         </div>
 
                         {/* Aviso si está cerrado por desfile o evento */}
@@ -3502,8 +3153,22 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                         <button
                           type="button"
                           onClick={() => {
+                            const existingPin = resolveRestaurantLocalCode(rest);
+                            const usedCodes = collectUsedLocalCodes(restaurants, partnerLocals, rest.id);
+                            const ensuredPin =
+                              existingPin && isUniqueValidLocalCode(existingPin, usedCodes)
+                                ? existingPin
+                                : generateUniqueRandomLocalCode(usedCodes);
+                            const linkedPartner = partnerLocals.find(
+                              (l) =>
+                                l.id === `loc-${rest.id.replace(/[^a-zA-Z0-9_-]/g, '')}` ||
+                                (existingPin && l.code === existingPin)
+                            );
                             setEditingRestaurant({
                               ...rest,
+                              localCode: ensuredPin,
+                              phone: rest.phone || linkedPartner?.phone || '',
+                              contactPerson: rest.contactPerson || linkedPartner?.contactPerson || '',
                               description: rest.description || '',
                               category: rest.category || 'Tacos',
                               time: rest.time || '25–35 min',
@@ -3516,7 +3181,7 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                           }}
                           className="text-xs font-extrabold text-slate-900 bg-white hover:bg-slate-900 hover:text-white border border-gray-300 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition cursor-pointer"
                         >
-                          <Edit className="w-3.5 h-3.5" /> Editar Tarifas y Menú
+                          <Edit className="w-3.5 h-3.5" /> Editar Local, Tarifa y PIN
                         </button>
                         <button
                           type="button"

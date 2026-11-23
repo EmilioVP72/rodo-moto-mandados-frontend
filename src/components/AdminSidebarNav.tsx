@@ -6,7 +6,6 @@ import {
   Bell,
   Store,
   Sparkles,
-  KeyRound,
   Map,
   TrendingUp,
   BarChart3,
@@ -26,7 +25,6 @@ export type AdminTabId =
   | 'estadisticas'
   | 'notificaciones'
   | 'recuperacion'
-  | 'locales_api'
   | 'restaurantes'
   | 'especialidades'
   | 'cobertura'
@@ -54,7 +52,7 @@ export interface AdminNavGroup {
 export interface AdminNavCounts {
   newLiveOrders: number;
   totalHistoryOrders: number;
-  partnerLocalsCount: number;
+  restaurantsCount: number;
   activeSpecialtiesCount: number;
   pendingRecoveriesCount: number;
 }
@@ -99,9 +97,11 @@ export function buildAdminNavGroups(counts: AdminNavCounts): AdminNavGroup[] {
       items: [
         {
           id: 'restaurantes',
-          label: 'Restaurantes & Tarifas',
-          subtitle: 'Administra comercios, menús, horarios, cierres y comisiones',
+          label: 'Restaurantes, Tarifas & Códigos',
+          subtitle: 'Comercios, menús, tarifas, horarios y código PIN único automático',
           icon: Store,
+          badge: counts.restaurantsCount,
+          badgeTone: 'neutral',
         },
         {
           id: 'especialidades',
@@ -110,14 +110,6 @@ export function buildAdminNavGroups(counts: AdminNavCounts): AdminNavGroup[] {
           icon: Sparkles,
           badge: counts.activeSpecialtiesCount,
           badgeTone: 'amber',
-        },
-        {
-          id: 'locales_api',
-          label: 'Códigos Locales',
-          subtitle: 'Claves PIN de 3 dígitos para locales asociados',
-          icon: KeyRound,
-          badge: counts.partnerLocalsCount,
-          badgeTone: 'neutral',
         },
         {
           id: 'cobertura',
