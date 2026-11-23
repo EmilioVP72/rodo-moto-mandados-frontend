@@ -199,14 +199,7 @@ export async function getDispatchSettings(): Promise<DispatchSettings> {
 }
 
 export async function saveDispatchSettings(settings: DispatchSettings): Promise<void> {
-  try {
-    await apiFetch('/api/settings', {
-      method: 'PUT',
-      body: settings,
-    });
-  } catch (err) {
-    console.warn('[API] Fallback local al guardar configuración:', err);
-  }
+  await apiFetch('/api/settings', { method: 'PUT', body: settings });
 }
 
 function deduplicatePartnerLocals(locals: PartnerLocal[]): PartnerLocal[] {

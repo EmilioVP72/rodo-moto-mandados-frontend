@@ -438,6 +438,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     return () => { active = false; clearInterval(timer); };
   }, [activeTab, orders]);
 
+  const commitSettings = async (updated: DispatchSettings) => {
+    try {
+      await saveDispatchSettings(updated);
+      setCurrentSettings(updated);
+      return true;
+    } catch (error) {
+      showFeedback(error instanceof Error ? error.message : 'No se guardó la configuración. Inténtalo nuevamente.', 'error');
+      return false;
+    }
+  };
+
   // Guardar configuración de Ajustes
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -448,7 +459,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       showFeedback('¡Configuración de despacho y flotilla guardada correctamente!');
       logAdminAction(
         'ajuste_tarifa',
-        `Configuración general guardada en Firestore (Tarifa base: $${currentSettings.baseDeliveryTariff || 35}, $/km: $${currentSettings.tariffPerKm || 7}, Margen global: ${currentSettings.globalMarkupPercent || 10}%, Tema: ${currentSettings.holidayThemeId || 'normal'})`,
+        `Configuración general guardada (Tarifa base: $${currentSettings.baseDeliveryTariff || 35}, $/km: $${currentSettings.tariffPerKm || 7}, Margen global: ${currentSettings.globalMarkupPercent || 10}%, Tema: ${currentSettings.holidayThemeId || 'normal'})`,
         'edsoncruz14999@gmail.com',
         undefined,
         'Ajustes de Despacho RODO'
@@ -512,8 +523,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       ...currentSettings,
       adminPasscode: newAdminPassInput.trim(),
     };
-    setCurrentSettings(updatedSettings);
-    await saveDispatchSettings(updatedSettings);
+    if (!await commitSettings(updatedSettings)) return;
     logAdminAction(
       'ajuste_tarifa',
       'Contraseña maestra de Administrador actualizada exitosamente con código de autorización 1999',
@@ -530,8 +540,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   // Selector y Guardado de Temática Festiva (Navidad, Año Nuevo, 14 Feb, Día de las Madres, Día del Padre, Día del Grito, RODO)
   const handleSelectHolidayTheme = async (themeId: HolidayThemeId) => {
     const updated = { ...currentSettings, activeHolidayTheme: themeId };
-    setCurrentSettings(updated);
-    await saveDispatchSettings(updated);
+    if (!await commitSettings(updated)) return;
     setThemeSavedFeedback(true);
     setTimeout(() => setThemeSavedFeedback(false), 3000);
   };
@@ -545,8 +554,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     const target = currentSpecialties.find((s) => s.id === id);
     const updated = currentSpecialties.map((s) => (s.id === id ? { ...s, active: !s.active } : s));
     const newSettings = { ...currentSettings, specialtiesCatalog: updated };
-    setCurrentSettings(newSettings);
-    await saveDispatchSettings(newSettings);
+    if (!await commitSettings(newSettings)) return;
     if (target) {
       showFeedback(
         `Especialidad "${target.name}" ${target.active ? 'pausada (oculta)' : 'activada (visible)'}.`
@@ -578,8 +586,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     };
     const updated = [...currentSpecialties, newCat];
     const newSettings = { ...currentSettings, specialtiesCatalog: updated };
-    setCurrentSettings(newSettings);
-    await saveDispatchSettings(newSettings);
+    if (!await commitSettings(newSettings)) return;
     setNewSpecialtyName('');
     setNewSpecialtyDesc('');
     showFeedback(`Especialidad "${newCat.name}" agregada al catálogo exitosamente.`);
@@ -598,8 +605,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
     const updated = currentSpecialties.filter((s) => s.id !== id);
     const newSettings = { ...currentSettings, specialtiesCatalog: updated };
-    setCurrentSettings(newSettings);
-    await saveDispatchSettings(newSettings);
+    if (!await commitSettings(newSettings)) return;
     showFeedback(`Especialidad "${name}" eliminada del catálogo.`);
   };
 
@@ -1089,9 +1095,8 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                       currentSettings.rainPauseMessage ||
                       '🌧️ Envíos pausados temporalmente por lluvia intensa en San Miguel de Allende. Reanudaremos en cuanto mejore el clima.',
                   };
-                  setCurrentSettings(nextSettings);
                   try {
-                    await saveDispatchSettings(nextSettings);
+                    if (!await commitSettings(nextSettings)) return;
                     await onRefreshData();
                     showFeedback(
                       nextRainState
@@ -3302,8 +3307,7 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                           };
                           const updated = [...currentSpecialties, newCat];
                           const newSettings = { ...currentSettings, specialtiesCatalog: updated };
-                          setCurrentSettings(newSettings);
-                          await saveDispatchSettings(newSettings);
+                          if (!await commitSettings(newSettings)) return;
                           showSystemToast({
                             message: `Especialidad "${preset.name}" agregada con éxito.`,
                             tone: 'success',
@@ -3496,8 +3500,8 @@ _RODO Moto Mandados · San Miguel de Allende_`;
             <AdminCoverageMap
               settings={currentSettings}
               onSaveSettings={async (updated) => {
-                setCurrentSettings(updated);
                 await saveDispatchSettings(updated);
+                setCurrentSettings(updated);
               }}
             />
           )}
