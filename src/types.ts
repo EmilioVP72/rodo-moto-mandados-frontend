@@ -461,6 +461,7 @@ export interface BroadcastNotification {
   message: string;
   promoCode?: string;
   scheduledFor?: string;
+  publishedAt?: string | null;
   sendImmediately?: boolean;
   sentBy: string;
   createdAt: string;

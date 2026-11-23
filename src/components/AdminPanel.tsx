@@ -29,7 +29,6 @@ import {
   resolveAccountRecoveryRequest,
   saveAdminAuditLogToFirestore,
 } from '../services/db';
-import { dispatchRodoNotification, resolveNotificationScopeKey } from '../services/notifications';
 import { showSystemConfirm, showSystemToast } from './SystemDialogHost';
 import {
   collectUsedLocalCodes,
@@ -212,10 +211,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   useEffect(() => {
     loadLocals();
-    loadBroadcasts();
     loadRecoveryRequests();
     getRiderAccounts().then(setRiderAccounts).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'notificaciones') return;
+    void loadBroadcasts();
+    const timer = setInterval(loadBroadcasts, 15000);
+    return () => clearInterval(timer);
+  }, [activeTab]);
 
   const handleCreateRiderAccount = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -275,23 +280,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         sentBy: 'edsoncruz14999@gmail.com',
         createdAt: new Date().toISOString(),
       };
-      await sendBroadcastNotification(notif);
-      if (notif.sendImmediately) dispatchRodoNotification(
-        `📣 ${notif.title}`,
-        `${notif.message}${notif.promoCode ? ` · Cupón: ${notif.promoCode}` : ''}`,
-        {
-          scopeKey: resolveNotificationScopeKey({ isAdmin: true }),
-          audience: 'admin',
-          type: 'info',
-          playSound: true,
-        }
-      );
+      const saved = await sendBroadcastNotification(notif);
       logAdminAction(
         'ajuste_configuracion',
         `${notif.scheduledFor ? 'Programada' : 'Enviada'} notificación masiva "${notif.title}" a todos los clientes`,
         'edsoncruz14999@gmail.com'
       );
-      setBroadcastHistory((prev) => [notif, ...prev]);
+      setBroadcastHistory((prev) => [saved, ...prev.filter(item => item.id !== saved.id)]);
       setBroadcastTitle('');
       setBroadcastMessage('');
       setBroadcastPromoCode('');
@@ -4397,9 +4392,9 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                           )}
                         </div>
                         <div className="text-[11px] text-gray-500 font-mono shrink-0">
-                          {item.scheduledFor
+                          {item.scheduledFor && !item.publishedAt
                             ? `Programada: ${new Date(item.scheduledFor).toLocaleString('es-MX')}`
-                            : `Enviada: ${new Date(item.createdAt).toLocaleString('es-MX')}`}
+                            : `Enviada: ${new Date(item.publishedAt || item.createdAt).toLocaleString('es-MX')}`}
                         </div>
                       </div>
                     ))}

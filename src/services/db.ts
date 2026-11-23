@@ -635,21 +635,26 @@ export async function logAdminMiddlewareAction(params: {
 // -------------------------------------------------------------
 // NOTIFICACIONES DE MARKETING PROGRAMADAS / ENVIAR A TODOS
 // -------------------------------------------------------------
-export async function sendBroadcastNotification(notif: BroadcastNotification): Promise<void> {
-  await apiFetch('/api/broadcasts', { method: 'POST', body: notif });
+export async function sendBroadcastNotification(notif: BroadcastNotification): Promise<BroadcastNotification> {
+  return apiFetch<BroadcastNotification>('/api/broadcasts', { method: 'POST', body: notif });
 }
 
 export function getBroadcastNotifications(): Promise<BroadcastNotification[]> {
   return apiFetch('/api/admin/broadcasts');
 }
 
-export function subscribeToBroadcastNotifications(callback: (items: BroadcastNotification[]) => void) {
+export function subscribeToBroadcastNotifications(callback: (items: BroadcastNotification[], initial: boolean) => void) {
   let active = true;
+  let initial = true;
   const refresh = () => apiFetch<BroadcastNotification[]>('/api/broadcasts')
-    .then(rows => { if (active) callback(rows); }).catch(() => {});
+    .then(rows => {
+      if (!active) return;
+      callback(rows, initial);
+      initial = false;
+    }).catch(() => {});
   void refresh();
   const timer = setInterval(refresh, 30000);
-  const unsub = onSocketEvent<BroadcastNotification>('broadcasts:created', item => callback([item]));
+  const unsub = onSocketEvent<BroadcastNotification>('broadcasts:created', item => callback([item], false));
   return () => { active = false; clearInterval(timer); unsub(); };
 }
 

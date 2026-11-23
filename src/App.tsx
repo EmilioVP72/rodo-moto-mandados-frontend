@@ -585,11 +585,9 @@ export default function App() {
 
   // Escucha de notificaciones promocionales masivas enviadas por el administrador
   useEffect(() => {
-    let initialLoad = true;
-    const unsubBroadcast = subscribeToBroadcastNotifications((items) => {
+    const unsubBroadcast = subscribeToBroadcastNotifications((items, initialLoad) => {
       if (initialLoad) {
         items.forEach((b) => seenBroadcastIdsRef.current.add(b.id));
-        initialLoad = false;
         return;
       }
       items.forEach((b) => {
