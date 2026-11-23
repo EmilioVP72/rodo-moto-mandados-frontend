@@ -1,3 +1,4 @@
+import { apiFetch } from '../api/httpClient';
 import React, { useState, useEffect } from 'react';
 import {
   getRollingBankToken,
@@ -38,6 +39,29 @@ export const AdminSecurityAndFraud: React.FC<AdminSecurityAndFraudProps> = ({
   const [auditLog, setAuditLog] = useState<SecurityOtpAction[]>(getOtpAuditLog());
   const [copiedToken, setCopiedToken] = useState(false);
 
+  const [pendingReviews, setPendingReviews] = useState<CustomerAccount[]>([]);
+  const [reviewAccount, setReviewAccount] = useState('');
+  const [reviewDigits, setReviewDigits] = useState('');
+  const [reviewMessage, setReviewMessage] = useState('');
+  useEffect(() => {
+    apiFetch<CustomerAccount[]>('/api/auth/accounts')
+      .then(rows => setPendingReviews(rows.filter(row => row.ine10Digits && !row.ineVerified)))
+      .catch(() => setReviewMessage('No se pudo cargar la lista de identidades pendientes.'));
+  }, []);
+  const submitReview = async (event: React.FormEvent) => {
+    event.preventDefault();
+    try {
+      await apiFetch('/api/auth/accounts/' + encodeURIComponent(reviewAccount) + '/identity-review', {
+        method: 'POST', body: { digits: reviewDigits, checkedOriginal: true },
+      });
+      setPendingReviews(rows => rows.filter(row => row.id !== reviewAccount));
+      setReviewAccount('');
+      setReviewDigits('');
+      setReviewMessage('Revisión registrada.');
+    } catch (error) {
+      setReviewMessage(error instanceof Error ? error.message : 'No se pudo registrar la revisión.');
+    }
+  };
   // Clientes simulados con registros de riesgo o fraude
   const [flaggedCustomers, setFlaggedCustomers] = useState<CustomerAccount[]>([
     {
@@ -303,6 +327,16 @@ export const AdminSecurityAndFraud: React.FC<AdminSecurityAndFraudProps> = ({
         </div>
       </div>
 
+      <form onSubmit={submitReview} className="bg-white rounded-xl p-4 space-y-3">
+        <h4 className="font-bold">Revisión de identidad con documento original</h4>
+        <select required aria-label="Cuenta pendiente de revisión" value={reviewAccount} onChange={e => setReviewAccount(e.target.value)}>
+          <option value="">Selecciona una cuenta pendiente</option>
+          {pendingReviews.map(row => <option key={row.id} value={row.id}>{row.name} · {row.email}</option>)}
+        </select>
+        <input required pattern="[0-9]{10}" maxLength={10} inputMode="numeric" placeholder="10 dígitos del original" value={reviewDigits} onChange={e => setReviewDigits(e.target.value)} />
+        <button type="submit" className="font-bold">Confirmar que cotejé al titular y el documento</button>
+        <p role="status">{reviewMessage}</p>
+      </form>
       {/* 4. Resumen Técnico de Criptografía & Medidas de Protección para Edson Cruz */}
       <div className="bg-gray-50 border border-gray-200 rounded-2xl p-5 space-y-3 text-xs text-gray-700">
         <h4 className="font-black text-gray-900 text-sm flex items-center gap-2">

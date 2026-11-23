@@ -1876,13 +1876,13 @@ export default function App() {
             setTransactionFeedback({
               variant: 'register',
               title: '¡Registro Completado!',
-              subtitle: `¡Bienvenido a RODO Moto Mandados, ${firstName}! Tu cuenta verificada ya está lista para pedir comida, mandados y envíos.`,
+              subtitle: `¡Bienvenido a RODO Moto Mandados, ${firstName}! Tu cuenta ya está lista para pedir comida, mandados y envíos.`,
               details: [
                 { label: 'Titular', value: cust.name },
                 { label: 'Correo', value: cust.email },
                 {
                   label: 'Identidad INE',
-                  value: cust.ine10Digits ? `Verificada (****${cust.ine10Digits.slice(-4)})` : 'Verificada',
+                  value: 'Capturada · pendiente de revisión',
                   highlight: true,
                 },
                 { label: 'Privacidad', value: 'Historial y perfil 100% privados' },

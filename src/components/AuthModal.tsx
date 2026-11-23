@@ -14,19 +14,14 @@ import {
   ShieldCheck,
   AlertCircle,
   Loader2,
-  Camera,
   CheckCircle2,
-  CreditCard,
   LifeBuoy,
   MessageCircle,
   KeyRound,
   FileUp,
 } from 'lucide-react';
 import {
-  extractIne10DigitsFromImage,
-  validateIneAgainstDebtsAndDuplicates,
   saveIneAccount,
-  getStoredIneAccounts,
   verifyIneCicChecksum,
 } from '../utils/ineScanner';
 import { CustomerAccount, AccountRecoveryRequest } from '../types';
@@ -71,11 +66,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [phone, setPhone] = useState('');
 
   // Estados de escaneo de INE reverso (10 dígitos)
-  const [ineFile, setIneFile] = useState<File | null>(null);
-  const [inePreview, setInePreview] = useState<string | null>(null);
   const [ine10Digits, setIne10Digits] = useState('');
-  const [isScanningIne, setIsScanningIne] = useState(false);
-  const [ineScanSuccess, setIneScanSuccess] = useState(false);
 
   // Estados de Recuperación de Cuenta & Soporte
   const [recoveryMode, setRecoveryMode] = useState<'password_reset' | 'support_email_change'>('password_reset');
@@ -108,15 +99,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setPassword('');
     setName('');
     setPhone('');
-    setIneFile(null);
-    if (inePreview) {
-      try {
-        URL.revokeObjectURL(inePreview);
-      } catch {}
-    }
-    setInePreview(null);
     setIne10Digits('');
-    setIneScanSuccess(false);
     setReferralCodeInput('');
     setRecoveryMode('password_reset');
     setResetEmail('');
@@ -144,41 +127,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   }, [isOpen]);
 
   if (!isOpen) return null;
-
-  // Manejo de carga de foto del INE reverso
-  const handleIneFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setErrorMsg('');
-    setBlockedAccountInfo(null);
-    setIneFile(file);
-    setInePreview(URL.createObjectURL(file));
-    setIsScanningIne(true);
-
-    try {
-      const scanResult = await extractIne10DigitsFromImage(file);
-      if (scanResult.success && scanResult.detectedDigits) {
-        setIne10Digits(scanResult.detectedDigits);
-        setIneScanSuccess(true);
-
-        // Pre-validar inmediatamente contra lista negra de deudas
-        const check = validateIneAgainstDebtsAndDuplicates(scanResult.detectedDigits, email);
-        if (!check.allowed) {
-          setErrorMsg(check.message);
-          if (check.account) {
-            setBlockedAccountInfo(check.account);
-          }
-        }
-      } else {
-        setErrorMsg('No se detectaron los 10 dígitos con claridad. Por favor ingrésalos manualmente abajo.');
-      }
-    } catch (err) {
-      setErrorMsg('Error al analizar la imagen del INE.');
-    } finally {
-      setIsScanningIne(false);
-    }
-  };
 
   // Manejo de carga y compresión de documentación oficial para soporte de recuperación
   const handleRecoveryDocChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -275,7 +223,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       }
 
       if (!ine10Digits.trim()) {
-        setErrorMsg('⚠️ Para evitar fraudes y cancelaciones falsas, es obligatorio subir la foto del reverso de tu INE o ingresar los 10 dígitos.');
+        setErrorMsg('⚠️ Para evitar fraudes y cancelaciones falsas, es obligatorio ingresar los 10 dígitos.');
         return;
       }
 
@@ -519,7 +467,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 {isRecovery
                   ? 'Recuperación de Cuenta y Soporte'
                   : isRegister
-                  ? 'Registro con Validación INE'
+                  ? 'Registro con captura de INE'
                   : 'Acceso a Cuenta RODO'}
               </h3>
               <p className="text-[11px] text-gray-400">
@@ -994,62 +942,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             {/* SECCIÓN OBLIGATORIA DE REGISTRO: FOTO TRASERA DEL INE + EXTRACCIÓN DE 10 DÍGITOS */}
             {isRegister && (
               <div className="bg-slate-50 border-2 border-dashed border-red-200 rounded-2xl p-4 space-y-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="space-y-0.5">
-                    <span className="text-xs font-black text-gray-900 flex items-center gap-1.5 uppercase">
-                      <CreditCard className="w-4 h-4 text-[#ed0718]" />
-                      Foto de tu INE (Parte Trasera / Reverso)
-                    </span>
-                    <p className="text-[11px] text-gray-500 leading-tight">
-                      El algoritmo extraerá automáticamente los 10 dígitos numéricos para proteger tu cuenta y evitar fraudes.
-                    </p>
-                  </div>
-                  <span className="bg-[#ed0718] text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-full shrink-0">
-                    Obligatorio
-                  </span>
-                </div>
-
-                {/* Botón de Selección / Cámara */}
-                <div className="flex items-center gap-3">
-                  <label className="flex-1 bg-white hover:bg-gray-100 border border-gray-300 text-gray-800 font-bold text-xs py-2.5 px-3 rounded-xl cursor-pointer flex items-center justify-center gap-2 shadow-2xs transition">
-                    <Camera className="w-4 h-4 text-[#ed0718]" />
-                    <span>{ineFile ? 'Cambiar Foto del INE' : 'Subir Foto Trasera del INE'}</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      onChange={handleIneFileChange}
-                      className="hidden"
-                    />
-                  </label>
-
-                  {isScanningIne && (
-                    <div className="flex items-center gap-1.5 text-xs text-amber-700 font-bold">
-                      <Loader2 className="w-4 h-4 animate-spin text-[#ed0718]" />
-                      <span>Leyendo 10 dígitos...</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Previsualización y Dígitos Detectados */}
-                {inePreview && (
-                  <div className="flex items-center gap-3 bg-white p-2.5 rounded-xl border border-gray-200">
-                    <img
-                      src={inePreview}
-                      alt="Reverso INE"
-                      className="w-16 h-11 object-cover rounded-lg border border-gray-300 shrink-0"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <span className="text-[10px] text-gray-500 font-bold block uppercase">
-                        {ineScanSuccess ? '✓ Reverso analizado con éxito' : 'Procesando reverso...'}
-                      </span>
-                      <span className="text-xs text-emerald-700 font-extrabold truncate block">
-                        Archivo: {ineFile?.name}
-                      </span>
-                    </div>
-                  </div>
-                )}
-
                 {/* Campo de 10 Dígitos Leídos */}
                 <div>
                   <label className="block text-[11px] font-black text-gray-700 mb-1">
@@ -1084,7 +976,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     Blindaje de Privacidad RODO:
                   </div>
                   <p className="leading-tight text-emerald-800">
-                    Tu fotografía se procesa en el dispositivo; <b>únicamente se guardan los 10 dígitos numéricos</b> para evitar pedidos falsos y deudas sin liquidar.
+                    Captura los diez dígitos de tu credencial. La identidad quedará pendiente hasta que despacho revise el documento original.
                   </p>
                 </div>
 

@@ -84,6 +84,7 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
   const [name, setName] = useState(currentUser?.name || '');
   const [phone, setPhone] = useState(currentUser?.phone || '');
   const [referralCode, setReferralCode] = useState(currentUser?.referralCode || '');
+  const [identityVerified, setIdentityVerified] = useState(false);
   const [ine10Digits, setIne10Digits] = useState(currentUser?.ine10Digits || '');
   const [coupons, setCoupons] = useState<any[]>([]);
   const [addresses, setAddresses] = useState<SavedAddress[]>([]);
@@ -119,6 +120,7 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
           setName(meRes.user.name || currentUser.name);
           setPhone(meRes.user.phone || currentUser.phone);
           setReferralCode(meRes.user.referralCode || '');
+          setIdentityVerified(meRes.user.ineVerified === true);
           setIne10Digits(meRes.user.ine10Digits || '');
           setCoupons(Array.isArray(meRes.user.coupons) ? meRes.user.coupons : []);
           const nextAddrs: SavedAddress[] = Array.isArray(meRes.user.addresses) ? meRes.user.addresses : [];
@@ -345,7 +347,7 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
                     </span>
                   </div>
                   <span className="text-xs font-black text-gray-900 dark:text-white block mt-1">
-                    Cuenta Verificada
+                    {identityVerified ? 'Identidad revisada' : 'Identidad pendiente de revisión'}
                   </span>
                   <span className="text-[10px] text-emerald-700 dark:text-emerald-400">
                     Sin adeudos activos
