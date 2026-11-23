@@ -4,6 +4,7 @@ import App from './App.tsx';
 import './index.css';
 import 'leaflet/dist/leaflet.css';
 import { LanguageProvider } from './utils/i18n';
+import { SystemDialogHost } from './components/SystemDialogHost';
 
 interface Props {
   children: ReactNode;
@@ -96,6 +97,7 @@ createRoot(document.getElementById('root')!).render(
   <ErrorBoundary>
     <LanguageProvider>
       <App />
+      <SystemDialogHost />
     </LanguageProvider>
   </ErrorBoundary>
 );

@@ -31,6 +31,7 @@ import {
   saveAdminAuditLogToFirestore,
 } from '../services/db';
 import { dispatchRodoNotification, resolveNotificationScopeKey } from '../services/notifications';
+import { showSystemConfirm, showSystemToast } from './SystemDialogHost';
 import { createRiderAccount, getRiderAccounts } from '../services/riders';
 import { InteractiveMapPicker } from './InteractiveMapPicker';
 import {
@@ -673,11 +674,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
-  // Eliminar restaurante definitivamente de PostgreSQL y caché local
+  // Eliminar restaurante definitivamente de PostgreSQL y caché local (con diálogo personalizado RODO)
   const handleDeleteRestaurant = async (id: string, name: string) => {
-    const confirmed = window.confirm(
-      `¿Eliminar definitivamente "${name}" del catálogo?\n\nEsta acción lo quitará para todos los clientes.`
-    );
+    const confirmed = await showSystemConfirm({
+      title: '¿Eliminar establecimiento?',
+      message: `Vas a eliminar definitivamente "${name}" del catálogo de RODO.`,
+      details: 'Esta acción lo retirará inmediatamente para todos los clientes y del panel de administración.',
+      confirmLabel: 'Sí, Eliminar',
+      cancelLabel: 'Cancelar',
+      tone: 'danger',
+    });
     if (!confirmed) return;
 
     try {
@@ -3563,7 +3569,10 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                         type="button"
                         onClick={async () => {
                           if (alreadyExists) {
-                            alert(`"${preset.name}" ya se encuentra en tu catálogo. Puedes activarla o editarla en la lista abajo.`);
+                            showSystemToast({
+                              message: `"${preset.name}" ya se encuentra en tu catálogo. Puedes activarla o editarla abajo.`,
+                              tone: 'warning',
+                            });
                             return;
                           }
                           const newCat: SpecialtyCategory = {
@@ -3578,7 +3587,10 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                           const newSettings = { ...currentSettings, specialtiesCatalog: updated };
                           setCurrentSettings(newSettings);
                           await saveDispatchSettings(newSettings);
-                          alert(`¡"${preset.name}" agregada con éxito!`);
+                          showSystemToast({
+                            message: `Especialidad "${preset.name}" agregada con éxito.`,
+                            tone: 'success',
+                          });
                         }}
                         className={`p-2.5 rounded-xl border text-left transition flex flex-col justify-between ${
                           alreadyExists

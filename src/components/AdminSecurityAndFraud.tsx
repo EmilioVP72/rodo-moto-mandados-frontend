@@ -8,6 +8,7 @@ import {
   SecurityOtpAction,
 } from '../utils/securityOtp';
 import { SecurityOtpModal } from './SecurityOtpModal';
+import { showSystemToast } from './SystemDialogHost';
 import {
   ShieldCheck,
   Key,
@@ -96,9 +97,15 @@ export const AdminSecurityAndFraud: React.FC<AdminSecurityAndFraudProps> = ({
 
   const handleOtpSuccess = () => {
     if (activeChallenge?.actionType === 'block_customer') {
-      alert('✅ Cuenta de cliente bloqueada y añadida a la Lista Negra Antifraude con validación criptográfica.');
+      showSystemToast({
+        message: 'Cuenta de cliente bloqueada y añadida a la Lista Negra Antifraude con validación criptográfica.',
+        tone: 'success',
+      });
     } else {
-      alert('✅ Acción crítica autorizada exitosamente.');
+      showSystemToast({
+        message: 'Acción crítica autorizada exitosamente.',
+        tone: 'success',
+      });
     }
     setActiveChallenge(null);
     setAuditLog(getOtpAuditLog());
@@ -271,7 +278,10 @@ export const AdminSecurityAndFraud: React.FC<AdminSecurityAndFraudProps> = ({
                       setFlaggedCustomers((prev) =>
                         prev.map((c) => (c.id === cust.id ? { ...c, status: 'activo', pendingDebt: 0 } : c))
                       );
-                      alert('Cuenta reactivada y saldo liquidado.');
+                      showSystemToast({
+                        message: 'Cuenta reactivada y saldo liquidado correctamente.',
+                        tone: 'success',
+                      });
                     }}
                     className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-1.5 px-3 rounded-xl transition"
                   >

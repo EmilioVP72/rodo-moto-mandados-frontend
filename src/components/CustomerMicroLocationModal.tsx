@@ -15,6 +15,7 @@ import {
   Home,
 } from 'lucide-react';
 import { InteractiveMapPicker } from './InteractiveMapPicker';
+import { showSystemAlert } from './SystemDialogHost';
 import { reverseGeocodeCoords } from '../services/routing';
 import {
   CustomerSavedAddress,
@@ -107,7 +108,12 @@ export const CustomerMicroLocationModal: React.FC<CustomerMicroLocationModalProp
 
   const handleUseGps = () => {
     if (!navigator.geolocation) {
-      alert('Tu navegador no soporta geolocalización.');
+      void showSystemAlert({
+        title: 'Geolocalización no disponible',
+        message: 'Tu navegador no soporta detección automática por GPS.',
+        details: 'Puedes elegir una dirección guardada o fijar tu ubicación directamente en el mapa.',
+        tone: 'warning',
+      });
       return;
     }
     setIsDetectingGps(true);
@@ -121,7 +127,11 @@ export const CustomerMicroLocationModal: React.FC<CustomerMicroLocationModalProp
       },
       () => {
         setIsDetectingGps(false);
-        alert('No pudimos acceder a tu GPS. Por favor selecciona tu zona o ingresa tu calle.');
+        void showSystemAlert({
+          title: 'No pudimos acceder a tu GPS',
+          message: 'Activa el permiso de ubicación en tu navegador o selecciona tu punto manualmente en el mapa.',
+          tone: 'warning',
+        });
       },
       { timeout: 10000, enableHighAccuracy: true }
     );

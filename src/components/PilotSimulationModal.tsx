@@ -6,6 +6,7 @@ import {
 } from '../utils/pilotSimulation';
 import { Order } from '../types';
 import { createOrderInDb, generateUniqueTicketFolio } from '../services/db';
+import { showSystemAlert } from './SystemDialogHost';
 import {
   X,
   Play,
@@ -100,7 +101,11 @@ export const PilotSimulationModal: React.FC<PilotSimulationModalProps> = ({
       }
     } catch (err) {
       console.error(err);
-      alert('Error inyectando órdenes');
+      void showSystemAlert({
+        title: 'Error en la simulación',
+        message: 'No se pudieron inyectar las órdenes de prueba. Intenta nuevamente.',
+        tone: 'error',
+      });
     } finally {
       setIsInjecting(false);
     }
