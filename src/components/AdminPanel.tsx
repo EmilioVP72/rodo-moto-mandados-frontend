@@ -184,8 +184,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [feedbackNotice, setFeedbackNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [editingDishUrlItem, setEditingDishUrlItem] = useState<{ id: string; url: string } | null>(null);
 
-  const showFeedback = (text: string, type: 'success' | 'error' = 'success') => {
-    setFeedbackNotice({ type, text });
+  const showFeedback = (text: string, type: 'success' | 'error' | 'warning' = 'success') => {
+    setFeedbackNotice({ type: type === 'error' ? 'error' : 'success', text });
+    showSystemToast({ message: text, tone: type });
     setTimeout(() => setFeedbackNotice(null), 4000);
   };
 
@@ -547,21 +548,35 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     : INITIAL_SPECIALTIES;
 
   const handleToggleSpecialty = async (id: string) => {
+    const target = currentSpecialties.find((s) => s.id === id);
     const updated = currentSpecialties.map((s) => (s.id === id ? { ...s, active: !s.active } : s));
     const newSettings = { ...currentSettings, specialtiesCatalog: updated };
     setCurrentSettings(newSettings);
     await saveDispatchSettings(newSettings);
+    if (target) {
+      showFeedback(
+        `Especialidad "${target.name}" ${target.active ? 'pausada (oculta)' : 'activada (visible)'}.`
+      );
+    }
   };
 
   const handleAddSpecialty = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newSpecialtyName.trim()) {
-      showFeedback('Ingresa el nombre de la especialidad', 'error');
+    const cleanName = newSpecialtyName.trim();
+    if (!cleanName) {
+      showFeedback('Ingresa el nombre de la especialidad.', 'error');
+      return;
+    }
+    const alreadyExists = currentSpecialties.some(
+      (s) => s.name.trim().toLowerCase() === cleanName.toLowerCase()
+    );
+    if (alreadyExists) {
+      showFeedback(`La especialidad "${cleanName}" ya existe en tu catálogo.`, 'warning');
       return;
     }
     const newCat: SpecialtyCategory = {
       id: 'sp-' + Date.now().toString(36),
-      name: newSpecialtyName.trim(),
+      name: cleanName,
       iconType: newSpecialtyIcon,
       description: newSpecialtyDesc.trim() || undefined,
       active: true,
@@ -573,15 +588,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     await saveDispatchSettings(newSettings);
     setNewSpecialtyName('');
     setNewSpecialtyDesc('');
-    showFeedback(`Especialidad "${newCat.name}" agregada exitosamente.`);
+    showFeedback(`Especialidad "${newCat.name}" agregada al catálogo exitosamente.`);
   };
 
   const handleDeleteSpecialty = async (id: string, name: string) => {
+    const confirmed = await showSystemConfirm({
+      title: '¿Eliminar especialidad?',
+      message: `Vas a eliminar "${name}" del catálogo de especialidades.`,
+      details: 'Dejará de aparecer en las opciones del carrusel principal.',
+      confirmLabel: 'Sí, Eliminar',
+      cancelLabel: 'Cancelar',
+      tone: 'danger',
+    });
+    if (!confirmed) return;
+
     const updated = currentSpecialties.filter((s) => s.id !== id);
     const newSettings = { ...currentSettings, specialtiesCatalog: updated };
     setCurrentSettings(newSettings);
     await saveDispatchSettings(newSettings);
-    showFeedback(`Categoría "${name}" eliminada.`);
+    showFeedback(`Especialidad "${name}" eliminada del catálogo.`);
   };
 
   // Abrir formulario para nuevo restaurante
