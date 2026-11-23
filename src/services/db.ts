@@ -11,6 +11,7 @@ import {
   AccountRecoveryRequest,
 } from '../types';
 import { getStoredIneAccounts, saveIneAccount } from '../utils/ineScanner';
+import { persistOnlyAfterConfirmation } from './orderPersistence';
 import {
   syncRestaurantsToIDB,
   getRestaurantsFromIDB,
@@ -321,35 +322,15 @@ export function notifyOrderSubscribers(): void {
 }
 
 export async function createOrderInDb(order: Order): Promise<string> {
-  saveLocalStoredOrder(order);
-  upsertOrderToIDB(order);
-  notifyOrderSubscribers();
-
-  try {
-    const saved = await apiFetch<Order>('/api/orders', {
-      method: 'POST',
-      body: order,
-    });
-    if (saved && saved.id) {
-      saveLocalStoredOrder(saved);
-      upsertOrderToIDB(saved);
+  const saved = await persistOnlyAfterConfirmation(
+    () => apiFetch<Order>('/api/orders', { method: 'POST', body: order }),
+    (confirmedOrder) => {
+      saveLocalStoredOrder(confirmedOrder);
+      upsertOrderToIDB(confirmedOrder);
       notifyOrderSubscribers();
-      return saved.id;
     }
-  } catch (err) {
-    // Si el servidor rechaza la orden por una regla de negocio (pausa por lluvia, restaurante cerrado, límite de efectivo, cuenta con adeudo o SPEI duplicado), revertir el alta local y propagar el error al cliente:
-    if (err instanceof ApiHttpError && [400, 403, 409, 422, 503].includes(err.status)) {
-      try {
-        const filtered = getLocalStoredOrders().filter((o) => o.id !== order.id);
-        localStorage.setItem(LOCAL_STORAGE_ORDERS, JSON.stringify(filtered));
-        syncOrdersToIDB(filtered);
-        notifyOrderSubscribers();
-      } catch {}
-      throw err;
-    }
-    console.warn('[API] Orden guardada localmente (fallback offline):', err);
-  }
-  return order.id;
+  );
+  return saved.id;
 }
 
 export async function updateOrderInDb(orderId: string, updates: Partial<Order>): Promise<void> {

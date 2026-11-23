@@ -1,27 +1,11 @@
 /**
- * Motor de Cola Transaccional de Pedidos para RODO Moto Mandados
- * Garantiza cero pérdidas de pedidos, ordenamiento secuencial y resistencia
- * a más de 50 pedidos simultáneos en horas pico sin colisiones ni caídas.
+ * Submission and audit helpers for RODO Moto Mandados orders.
  */
 
 import { Order, OrderItem, AdminAuditLogEntry } from '../types';
-import { createOrderInDb, getOrders, saveAdminAuditLogToFirestore, logAdminMiddlewareAction } from './db';
-import { ApiHttpError } from '../api/httpClient';
+import { createOrderInDb, saveAdminAuditLogToFirestore, logAdminMiddlewareAction } from './db';
 
-const PENDING_QUEUE_KEY = 'rodo_transactional_order_queue';
 const AUDIT_LOGS_KEY = 'rodo_admin_audit_logs';
-
-// Auto-sincronización cuando se restablece la conexión a internet
-if (typeof window !== 'undefined') {
-  window.addEventListener('online', () => {
-    console.log('📶 Conexión restablecida. Sincronizando cola de pedidos locales...');
-    flushPendingOrderQueue().catch((e) => console.warn('Error sincronizando cola offline:', e));
-  });
-}
-
-// Mutex / Semáforo en memoria para evitar condiciones de carrera en el cliente
-let isProcessingQueue = false;
-
 /**
  * Genera un folio único y ordenado criptográficamente tipo RD-261110-XXXX
  */
@@ -146,20 +130,8 @@ export async function submitOrderWithQueue(orderData: Omit<Order, 'id' | 'folio'
     updatedAt: now,
   };
 
-  // 3. Respaldo local instantáneo en la cola
-  saveOrderToPendingQueue(completeOrder);
-
-  // 4. Intentar persistencia en PostgreSQL Backend
-  try {
-    await createOrderInDb(completeOrder);
-    removeOrderFromPendingQueue(completeOrder.id);
-  } catch (error) {
-    if (error instanceof ApiHttpError && [400, 403, 409, 422, 503].includes(error.status)) {
-      removeOrderFromPendingQueue(completeOrder.id);
-      throw error;
-    }
-    console.warn('Persistencia encolada para sincronización en segundo plano:', error);
-  }
+  // The order is accepted only after the server confirms persistence.
+  await createOrderInDb(completeOrder);
 
   // 5. Registrar en bitácora de auditoría
   logAdminAction(
@@ -171,58 +143,4 @@ export async function submitOrderWithQueue(orderData: Omit<Order, 'id' | 'folio'
   );
 
   return completeOrder;
-}
-
-function saveOrderToPendingQueue(order: Order) {
-  try {
-    const raw = localStorage.getItem(PENDING_QUEUE_KEY);
-    const queue: Order[] = raw ? JSON.parse(raw) : [];
-    if (!queue.find((o) => o.id === order.id)) {
-      queue.push(order);
-      localStorage.setItem(PENDING_QUEUE_KEY, JSON.stringify(queue));
-    }
-  } catch (e) {
-    console.error('Error guardando en cola pendiente:', e);
-  }
-}
-
-function removeOrderFromPendingQueue(orderId: string) {
-  try {
-    const raw = localStorage.getItem(PENDING_QUEUE_KEY);
-    if (!raw) return;
-    const queue: Order[] = JSON.parse(raw);
-    const filtered = queue.filter((o) => o.id !== orderId);
-    localStorage.setItem(PENDING_QUEUE_KEY, JSON.stringify(filtered));
-  } catch (e) {
-    console.error('Error removiendo de cola pendiente:', e);
-  }
-}
-
-/**
- * Sincroniza pedidos pendientes en la cola local con la base de datos
- */
-export async function flushPendingOrderQueue(): Promise<number> {
-  if (isProcessingQueue) return 0;
-  isProcessingQueue = true;
-
-  let processedCount = 0;
-  try {
-    const raw = localStorage.getItem(PENDING_QUEUE_KEY);
-    if (!raw) return 0;
-
-    const queue: Order[] = JSON.parse(raw);
-    for (const order of queue) {
-      try {
-        await createOrderInDb(order);
-        removeOrderFromPendingQueue(order.id);
-        processedCount++;
-      } catch (err) {
-        console.warn(`No se pudo sincronizar orden ${order.folio}, se reintentará en el siguiente ciclo:`, err);
-      }
-    }
-  } finally {
-    isProcessingQueue = false;
-  }
-
-  return processedCount;
 }

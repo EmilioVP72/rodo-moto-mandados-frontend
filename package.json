@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test tests/routingAndLocations.test.ts tests/catalogAndDispatch.test.ts tests/cartIsolation.test.ts tests/orderHistory.test.ts tests/customerAddresses.test.ts tests/notificationIsolation.test.ts"
+    "test": "node --experimental-strip-types --test tests/routingAndLocations.test.ts tests/catalogAndDispatch.test.ts tests/cartIsolation.test.ts tests/orderHistory.test.ts tests/customerAddresses.test.ts tests/notificationIsolation.test.ts tests/orderSubmission.test.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
