@@ -1,3 +1,4 @@
+import { onSocketEvent } from '../api/socketClient';
 import { apiFetch } from '../api/httpClient';
 import type { CustomerCoupon } from '../types';
 import React, { useState, useEffect } from 'react';
@@ -13,7 +14,6 @@ import {
 import {
   generateUniqueTicketFolio,
   createOrderInDb,
-  getCustomerCashLimit,
   isCustomerBlocked,
   getRestaurants,
   getDispatchSettings,
@@ -80,7 +80,6 @@ interface CheckoutModalProps {
   selectedSavedAddress?: CustomerSavedAddress | null;
   onSelectSavedAddress?: (addr: CustomerSavedAddress) => void;
   onOpenManageAddresses?: () => void;
-  customerOrdersCount?: number;
   clabeRodoFallback?: string;
   bancoRodoFallback?: string;
   expressSurcharge?: number;
@@ -151,7 +150,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   selectedSavedAddress = null,
   onSelectSavedAddress,
   onOpenManageAddresses,
-  customerOrdersCount = 0,
   clabeRodoFallback = '012180015678901234',
   bancoRodoFallback = 'BBVA',
   expressSurcharge = 25,
@@ -163,7 +161,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   rainPauseMessage,
 }) => {
   const { t } = useLanguage();
-  const [account, setAccount] = useState<{ id: string; coupons: CustomerCoupon[]; completedOrdersCount: number } | null>(null);
+  const [account, setAccount] = useState<{ id: string; coupons: CustomerCoupon[]; completedOrdersCount: number; cashLimit: number } | null>(null);
   useEffect(() => {
     let active = true;
     const refresh = () => apiFetch<{ user: NonNullable<typeof account> }>('/api/auth/me')
@@ -171,7 +169,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       .catch(() => {});
     void refresh();
     window.addEventListener('focus', refresh);
-    return () => { active = false; window.removeEventListener('focus', refresh); };
+    const unsubscribe = onSocketEvent<Order>('orders:updated', order => {
+      if (order.customerId === customerId && order.status === 'entregado') void refresh();
+    });
+    return () => { active = false; unsubscribe(); window.removeEventListener('focus', refresh); };
   }, [customerId]);
 
   function findCoupon(code: string) {
@@ -361,8 +362,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   // Pedido 2 (1 previo): $400 en producto
   // Pedido 3 (2 previos): $500 en producto
   // Pedido 4+ (3 o más previos): $1,000 en producto
-  const cashLimit = getCustomerCashLimit(customerOrdersCount);
-  const isCashLimitExceeded = paymentMethod === 'efectivo' && subtotal > cashLimit;
+  const cashLimit = account?.id === customerId ? account?.cashLimit : undefined;
+  const customerOrdersCount = account?.completedOrdersCount ?? 0;
+  const isCashLimitExceeded = paymentMethod === 'efectivo' && cashLimit !== undefined && subtotal > cashLimit;
 
   // Extras sugeridos del restaurante
   const extrasList: MenuItem[] = restaurant.suggestedExtras || [
@@ -1271,11 +1273,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />
                 Límites Antifraude de Crédito en Efectivo:
               </div>
-              <p>
+              {cashLimit === undefined ? <p>El servidor comprobará tu límite de efectivo al confirmar.</p> : <p>
                 Tu límite en efectivo para este pedido (#{customerOrdersCount + 1}) es de{' '}
                 <strong className="text-amber-950 font-black">${cashLimit} MXN</strong> en productos.
                 (1er pedido: $300 · 2do: $400 · 3ro: $500 · 4to+: $1,000).
-              </p>
+              </p>}
               <p className="text-emerald-800 font-semibold">
                 ✓ En Pago por Transferencia SPEI no hay límite de monto.
               </p>
@@ -1298,7 +1300,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 <Banknote className="w-5 h-5 shrink-0 mt-0.5" />
                 <div>
                   <div className="font-bold text-xs">Efectivo al Entregar</div>
-                  <div className="text-[11px] text-gray-500">Límite: ${cashLimit} MXN en productos</div>
+                  <div className="text-[11px] text-gray-500">{cashLimit === undefined ? 'Sujeto al límite de la cuenta' : `Límite: ${'$'}${cashLimit} MXN en productos`}</div>
                 </div>
               </button>
 
