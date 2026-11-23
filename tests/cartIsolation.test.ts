@@ -11,6 +11,7 @@ import {
   resolveCartRestaurant,
   LEGACY_CART_STORAGE_KEY,
   type StorageLike,
+  type StoredUserCart,
 } from '../src/utils/cartStorage.ts';
 import { DEFAULT_RESTAURANTS } from '../src/data/seeds.ts';
 
@@ -81,7 +82,7 @@ describe('Per-User Cart Isolation & Checkout Restaurant Resolution Unit Tests', 
   });
 
   it('respeta la regla de restaurante único y limpia restaurantId cuando se vacía el carrito', () => {
-    let state = { items: [], restaurantId: null as string | null };
+    let state: StoredUserCart = { items: [], restaurantId: null };
 
     state = addItemToCartState(
       state,
