@@ -36,7 +36,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { FreeOsmMap } from './FreeOsmMap';
 import { uploadOrderProofToStorage } from '../api/httpClient';
-import { emitSocketEvent, onSocketEvent } from '../api/socketClient';
+import { onSocketEvent } from '../api/socketClient';
 import { vibrateSuccess } from '../utils/haptics';
 import { useLanguage } from '../utils/i18n';
 import { assignRiderToOrder } from '../services/riders';
@@ -104,10 +104,6 @@ export const TicketModal: React.FC<TicketModalProps> = ({
   const [liveRiderCoords, setLiveRiderCoords] = useState<{ lat: number; lng: number } | undefined>(
     order?.riderLiveCoordinates
   );
-  const [isBroadcastingGps, setIsBroadcastingGps] = useState(false);
-  const [gpsStatusMsg, setGpsStatusMsg] = useState('');
-  const gpsWatchIdRef = React.useRef<number | null>(null);
-
   useEffect(() => {
     setLiveRiderCoords(order?.riderLiveCoordinates);
   }, [order?.id, order?.riderLiveCoordinates]);
@@ -125,61 +121,7 @@ export const TicketModal: React.FC<TicketModalProps> = ({
     return () => unsub();
   }, [order?.id]);
 
-  useEffect(() => {
-    return () => {
-      if (gpsWatchIdRef.current !== null && typeof navigator !== 'undefined' && navigator.geolocation) {
-        navigator.geolocation.clearWatch(gpsWatchIdRef.current);
-      }
-    };
-  }, []);
 
-  const handleToggleGpsBroadcast = () => {
-    if (!order) return;
-
-    if (isBroadcastingGps) {
-      if (gpsWatchIdRef.current !== null && navigator.geolocation) {
-        navigator.geolocation.clearWatch(gpsWatchIdRef.current);
-        gpsWatchIdRef.current = null;
-      }
-      setIsBroadcastingGps(false);
-      setGpsStatusMsg('Transmisión GPS pausada.');
-      return;
-    }
-
-    if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      setGpsStatusMsg('Este dispositivo no soporta geolocalización GPS.');
-      return;
-    }
-
-    setIsBroadcastingGps(true);
-    setGpsStatusMsg('Conectando satélite GPS...');
-
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        const lat = Number(pos.coords.latitude.toFixed(6));
-        const lng = Number(pos.coords.longitude.toFixed(6));
-        setLiveRiderCoords({ lat, lng });
-        setGpsStatusMsg(`Transmitiendo GPS en vivo (${lat.toFixed(4)}, ${lng.toFixed(4)})`);
-        emitSocketEvent('rider:location', {
-          orderId: order.id,
-          lat,
-          lng,
-          riderName: order.assignedRiderName || selectedRider,
-        });
-      },
-      (err) => {
-        setIsBroadcastingGps(false);
-        setGpsStatusMsg(`No se pudo obtener GPS (${err.message || 'verifica permisos de ubicación'})`);
-      },
-      {
-        enableHighAccuracy: true,
-        maximumAge: 3000,
-        timeout: 10000,
-      }
-    );
-
-    gpsWatchIdRef.current = watchId;
-  };
 
   const handleConfirmReceivedByCustomer = async () => {
     if (!order) return;
@@ -1044,30 +986,7 @@ _RODO Moto Mandados · Despacho San Miguel_`;
                   </div>
                 </div>
 
-                {/* Botón para que el repartidor transmita su ubicación GPS en vivo desde su celular */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={handleToggleGpsBroadcast}
-                    className={`text-xs font-black px-3 py-2 rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                      isBroadcastingGps
-                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white animate-pulse'
-                        : 'bg-slate-800 hover:bg-slate-700 text-gray-200 border border-slate-600'
-                    }`}
-                  >
-                    <Navigation className="w-3.5 h-3.5" />
-                    <span>
-                      {isBroadcastingGps
-                        ? '● Transmitiendo GPS en Vivo (Detener)'
-                        : '📡 Transmitir Mi Ubicación GPS (Repartidor)'}
-                    </span>
-                  </button>
-                  {gpsStatusMsg && (
-                    <span className="text-[10px] text-emerald-300 font-mono truncate">
-                      {gpsStatusMsg}
-                    </span>
-                  )}
-                </div>
+
               </div>
             )}
 

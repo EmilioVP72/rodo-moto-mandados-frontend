@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Bike, MapPin, RefreshCw, LogOut, Phone, PackageCheck } from 'lucide-react';
 import { Order } from '../types';
 import { getAssignedRiderOrders, updateAssignedRiderOrder } from '../services/riders';
-import { emitSocketEvent } from '../api/socketClient';
+import { getAuthToken } from '../api/httpClient';
+import { identifySocketSession, emitSocketEvent } from '../api/socketClient';
 import { getNextRiderStatus, RIDER_STATUS_ACTION } from '../utils/riderWorkflow';
 
 interface RiderPortalProps {
@@ -38,9 +39,15 @@ export const RiderPortal: React.FC<RiderPortalProps> = ({ riderName, onLogout })
   }, [refreshOrders]);
 
   useEffect(() => {
-    if (!trackingOrderId || !navigator.geolocation) return;
+    if (!trackingOrderId) return;
+    if (!navigator.geolocation) {
+      setError('Este dispositivo no tiene acceso al GPS.');
+      setTrackingOrderId(null);
+      return;
+    }
     const watchId = navigator.geolocation.watchPosition(
       ({ coords }) => {
+        identifySocketSession(getAuthToken());
         emitSocketEvent('rider:location', {
           orderId: trackingOrderId,
           lat: coords.latitude,
@@ -60,6 +67,12 @@ export const RiderPortal: React.FC<RiderPortalProps> = ({ riderName, onLogout })
     () => orders.filter((order) => !['entregado', 'cancelado', 'cancelado_con_deuda'].includes(order.status)),
     [orders]
   );
+
+  useEffect(() => {
+    if (trackingOrderId && !activeOrders.some((order) => order.id === trackingOrderId)) {
+      setTrackingOrderId(null);
+    }
+  }, [activeOrders, trackingOrderId]);
 
   const handleAdvance = async (order: Order) => {
     const next = getNextRiderStatus(order.status);
