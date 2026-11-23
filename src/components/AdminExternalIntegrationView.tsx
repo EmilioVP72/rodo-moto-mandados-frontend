@@ -25,7 +25,7 @@ export const AdminExternalIntegrationView: React.FC<AdminExternalIntegrationView
   const [copiedItem, setCopiedItem] = useState<string | null>(null);
   const [testPayloadResult, setTestPayloadResult] = useState<string | null>(null);
 
-  const publicOrigin = 'https://ais-pre-eooztaby6uofrzjmraerfo-60690626410.us-west2.run.app';
+  const publicOrigin = window.location.origin;
   const apiEndpointUrl = `${publicOrigin}/api/dispatch-order`;
 
   const copyText = (text: string, id: string) => {
@@ -74,19 +74,26 @@ export const AdminExternalIntegrationView: React.FC<AdminExternalIntegrationView
     URL.revokeObjectURL(url);
   };
 
-  const embedScriptSnippet = `<!-- Widget de RODO Moto Mandados para tus otros sitios web -->
-<script>
-  window.RODO_CONFIG = {
-    dispatchEndpoint: "${apiEndpointUrl}",
-    adminWhatsApp: "524151019920",
-    theme: "${settings.activeHolidayTheme || 'clasico_rodo'}"
-  };
+  const embedScriptSnippet = `// Ejecuta en el servidor del comercio con la sesión del cliente.
+async function despachar(tokenDelCliente, pedido) {
+  const response = await fetch(${JSON.stringify(apiEndpointUrl)}, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + tokenDelCliente, 'Content-Type': 'application/json' },
+    body: JSON.stringify(pedido)
+  });
+  const orden = await response.json();
+  if (!response.ok) throw new Error(orden.error || 'Pedido rechazado');
+  return orden.folio;
+}
 
-  function sendOrderToRodo(orderData) {
-    const rodoUrl = "${publicOrigin}?origen=sitio_externo&cliente=" + encodeURIComponent(orderData.cliente);
-    window.open(rodoUrl, '_blank');
-  }
-</script>`;
+const folio = await despachar(tokenDelCliente, {
+  orderType: 'comida',
+  restaurantId: ${JSON.stringify(restaurants[0]?.id || 'ID_DEL_RESTAURANTE')},
+  restaurantName: ${JSON.stringify(restaurants[0]?.name || 'Nombre del restaurante')},
+  items: [{ id: ${JSON.stringify(restaurants[0]?.menu?.[0]?.id || 'ID_DEL_PRODUCTO')}, quantity: 1 }],
+  paymentMethod: 'efectivo',
+  deliveryAddress: 'Calle y número, colonia'
+});`;
 
   return (
     <div className="space-y-4 text-xs">
@@ -129,7 +136,7 @@ export const AdminExternalIntegrationView: React.FC<AdminExternalIntegrationView
             </span>
           </div>
           <p className="text-gray-600 text-[11px] leading-relaxed">
-            Envía pedidos desde tus otras páginas web a este punto de enlace para generar tickets digitales de RODO al instante:
+            Usa el token de sesión del cliente obtenido en POST /api/auth/login. Envía los identificadores del catálogo y una dirección de entrega. La respuesta 201 contiene el folio y el importe calculado por RODO.
           </p>
 
           <div className="bg-gray-900 text-gray-200 p-3 rounded-xl font-mono text-[11px] flex items-center justify-between">
@@ -149,7 +156,7 @@ export const AdminExternalIntegrationView: React.FC<AdminExternalIntegrationView
           <div className="flex items-center justify-between">
             <strong className="text-sm font-black text-gray-900 flex items-center gap-1.5">
               <Code2 className="w-4 h-4 text-indigo-600" />
-              2. Script de Conexión (Pégalo en tus otras webs)
+              2. Ejemplo para el servidor del comercio
             </strong>
             <button
               type="button"
