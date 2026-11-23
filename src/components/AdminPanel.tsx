@@ -615,6 +615,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleSaveRestaurant = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingRestaurant || !editingRestaurant.name.trim()) {
+      showFeedback('Ingresa el nombre del establecimiento antes de guardar.', 'error');
       return;
     }
     const cleanBadge = (editingRestaurant.badge || '')
@@ -624,55 +625,82 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
     const cleanRestaurant: Restaurant = {
       ...editingRestaurant,
+      name: editingRestaurant.name.trim(),
       badge: cleanBadge,
+      menu: Array.isArray(editingRestaurant.menu) ? editingRestaurant.menu : [],
+      tags: Array.isArray(editingRestaurant.tags) ? editingRestaurant.tags : [],
     };
 
-    await saveRestaurant(cleanRestaurant);
+    try {
+      await saveRestaurant(cleanRestaurant);
 
-    // Sincronizar PIN asignado con la base de datos de locales internos
-    if (cleanRestaurant.localCode && cleanRestaurant.localCode.trim().length === 3) {
-      await savePartnerLocal({
-        id: 'loc-' + cleanRestaurant.id.replace(/[^a-zA-Z0-9_-]/g, ''),
-        code: cleanRestaurant.localCode.trim(),
-        name: cleanRestaurant.name,
-        phone: '4151019920',
-        serviceFee: cleanRestaurant.deliveryFee || 35,
-        address: cleanRestaurant.address || {
-          calle: 'Centro',
-          numero: 'S/N',
-          colonia: 'Centro',
-          lat: cleanRestaurant.coordinates?.lat || 20.9144,
-          lng: cleanRestaurant.coordinates?.lng || -100.7437,
-        },
-        isActive: cleanRestaurant.isActive !== false,
-      });
-      await loadLocals();
+      // Sincronizar PIN asignado con la base de datos de locales internos
+      if (cleanRestaurant.localCode && cleanRestaurant.localCode.trim().length === 3) {
+        await savePartnerLocal({
+          id: 'loc-' + cleanRestaurant.id.replace(/[^a-zA-Z0-9_-]/g, ''),
+          code: cleanRestaurant.localCode.trim(),
+          name: cleanRestaurant.name,
+          phone: '4151019920',
+          serviceFee: cleanRestaurant.deliveryFee || 35,
+          address: cleanRestaurant.address || {
+            calle: 'Centro',
+            numero: 'S/N',
+            colonia: 'Centro',
+            lat: cleanRestaurant.coordinates?.lat || 20.9144,
+            lng: cleanRestaurant.coordinates?.lng || -100.7437,
+          },
+          isActive: cleanRestaurant.isActive !== false,
+        });
+        await loadLocals();
+      }
+
+      await onRefreshData();
+      logAdminAction(
+        'edicion_menu',
+        `Restaurante "${cleanRestaurant.name}" guardado (Menú con ${cleanRestaurant.menu.length} platillos, tarifa envío $${cleanRestaurant.deliveryFee}, sobreprecio +${cleanRestaurant.markupPercent || 0}% / +$${cleanRestaurant.markupFixed || 0} MXN)`,
+        'edsoncruz14999@gmail.com',
+        undefined,
+        cleanRestaurant.name
+      );
+      setEditingRestaurant(null);
+      setIsCreatingRestaurant(false);
+      showFeedback(`Restaurante "${cleanRestaurant.name}" guardado exitosamente.`);
+    } catch (err: any) {
+      showFeedback(
+        err?.message || 'No se pudo guardar el restaurante. Verifica tu sesión de administrador.',
+        'error'
+      );
     }
-
-    await onRefreshData();
-    logAdminAction(
-      'edicion_menu',
-      `Restaurante "${cleanRestaurant.name}" guardado (Menú con ${cleanRestaurant.menu.length} platillos, tarifa envío $${cleanRestaurant.deliveryFee}, sobreprecio +${cleanRestaurant.markupPercent || 0}% / +$${cleanRestaurant.markupFixed || 0} MXN)`,
-      'edsoncruz14999@gmail.com',
-      undefined,
-      cleanRestaurant.name
-    );
-    setEditingRestaurant(null);
-    setIsCreatingRestaurant(false);
-    showFeedback(`Restaurante "${cleanRestaurant.name}" guardado exitosamente.`);
   };
 
-  // Eliminar restaurante
+  // Eliminar restaurante definitivamente de PostgreSQL y caché local
   const handleDeleteRestaurant = async (id: string, name: string) => {
-    await deleteRestaurant(id);
-    await onRefreshData();
-    logAdminAction(
-      'edicion_menu',
-      `Restaurante "${name}" (${id}) eliminado del catálogo`,
-      'edsoncruz14999@gmail.com',
-      undefined,
-      name
+    const confirmed = window.confirm(
+      `¿Eliminar definitivamente "${name}" del catálogo?\n\nEsta acción lo quitará para todos los clientes.`
     );
+    if (!confirmed) return;
+
+    try {
+      await deleteRestaurant(id);
+      if (editingRestaurant?.id === id) {
+        setEditingRestaurant(null);
+        setIsCreatingRestaurant(false);
+      }
+      await onRefreshData();
+      logAdminAction(
+        'edicion_menu',
+        `Restaurante "${name}" (${id}) eliminado del catálogo`,
+        'edsoncruz14999@gmail.com',
+        undefined,
+        name
+      );
+      showFeedback(`Restaurante "${name}" eliminado permanentemente del catálogo.`);
+    } catch (err: any) {
+      showFeedback(
+        err?.message || 'No se pudo eliminar el restaurante. Verifica tu sesión de administrador.',
+        'error'
+      );
+    }
   };
 
   // Cambiar disponibilidad del restaurante de forma directa (1 clic para desfiles/eventos)
@@ -2076,24 +2104,36 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                 </button>
               </div>
 
-              {/* Formulario de Alta o Edición de Restaurante */}
+              {/* Modal Flotante de Alta o Edición de Restaurante (siempre visible sin importar el scroll) */}
               {editingRestaurant && (
-                <form
-                  onSubmit={handleSaveRestaurant}
-                  className="bg-white p-5 rounded-xl border-2 border-[#ed0718] shadow-md space-y-4"
-                >
-                  <div className="flex justify-between items-center border-b border-gray-200 pb-3">
-                    <h4 className="font-black text-gray-900 text-base">
-                      {isCreatingRestaurant ? 'Nuevo Restaurante' : `Editar ${editingRestaurant.name}`}
-                    </h4>
-                    <button
-                      type="button"
-                      onClick={() => setEditingRestaurant(null)}
-                      className="text-gray-400 hover:text-black"
-                    >
-                      <X className="w-5 h-5" />
-                    </button>
-                  </div>
+                <div className="fixed inset-0 z-60 bg-black/75 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150">
+                  <form
+                    onSubmit={handleSaveRestaurant}
+                    className="bg-white text-gray-900 rounded-t-3xl sm:rounded-3xl w-full max-w-4xl max-h-[92dvh] sm:max-h-[90dvh] border-2 border-[#ed0718] shadow-2xl flex flex-col overflow-hidden"
+                  >
+                    <div className="bg-[#101b29] text-white px-5 py-4 flex justify-between items-center shrink-0">
+                      <div>
+                        <span className="text-[10px] font-black uppercase tracking-wider text-red-400">
+                          {isCreatingRestaurant ? 'Alta en Catálogo' : 'Editor de Establecimiento'}
+                        </span>
+                        <h4 className="font-black text-base sm:text-lg text-white">
+                          {isCreatingRestaurant ? 'Nuevo Restaurante / Comercio' : `Editar: ${editingRestaurant.name}`}
+                        </h4>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingRestaurant(null);
+                          setIsCreatingRestaurant(false);
+                        }}
+                        className="text-gray-400 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition cursor-pointer"
+                        aria-label="Cerrar editor de restaurante"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-6 space-y-4">
 
                   <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                     <div>
@@ -2132,16 +2172,63 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                       <select
                         value={editingRestaurant.category}
                         onChange={(e) => setEditingRestaurant({ ...editingRestaurant, category: e.target.value })}
-                        className="w-full border border-gray-300 rounded-lg p-2 text-xs font-bold"
+                        className="w-full border border-gray-300 rounded-lg p-2 text-xs font-bold bg-white text-gray-900"
                       >
-                        <option value="Tacos">Tacos</option>
-                        <option value="Pizzas">Pizzas</option>
-                        <option value="Hamburguesas">Hamburguesas</option>
-                        <option value="Mariscos">Mariscos</option>
-                        <option value="Sushi">Sushi</option>
-                        <option value="Panadería">Panadería</option>
-                        <option value="Tiendas">Tiendas</option>
-                        <option value="Farmacia">Farmacia</option>
+                        {[
+                          'Tacos',
+                          'Tacos al Carbón',
+                          'Pizzas',
+                          'Hamburguesas',
+                          'Especialidades',
+                          'Pollo & Rostizados',
+                          'Comida China',
+                          'Alitas',
+                          'Mariscos',
+                          'Sushi',
+                          'Barbacoa',
+                          'Desayunos',
+                          'Cenaduría',
+                          'Tortas',
+                          'Postres',
+                          'Panadería',
+                          'Supermercado',
+                          'Tienda',
+                          'Farmacia',
+                          'Verdulería',
+                          'Carnicería',
+                          'Complementos',
+                          ...(editingRestaurant.category &&
+                          ![
+                            'Tacos',
+                            'Tacos al Carbón',
+                            'Pizzas',
+                            'Hamburguesas',
+                            'Especialidades',
+                            'Pollo & Rostizados',
+                            'Comida China',
+                            'Alitas',
+                            'Mariscos',
+                            'Sushi',
+                            'Barbacoa',
+                            'Desayunos',
+                            'Cenaduría',
+                            'Tortas',
+                            'Postres',
+                            'Panadería',
+                            'Supermercado',
+                            'Tienda',
+                            'Farmacia',
+                            'Verdulería',
+                            'Carnicería',
+                            'Complementos',
+                          ].includes(editingRestaurant.category)
+                            ? [editingRestaurant.category]
+                            : []),
+                        ].map((cat) => (
+                          <option key={cat} value={cat}>
+                            {cat}
+                          </option>
+                        ))}
                       </select>
                     </div>
 
@@ -3078,22 +3165,28 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                     </div>
                   </div>
 
-                  <div className="flex justify-end gap-2 pt-3 border-t">
-                    <button
-                      type="button"
-                      onClick={() => setEditingRestaurant(null)}
-                      className="px-4 py-2 border rounded-xl text-xs font-bold text-gray-600 hover:bg-gray-100"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-5 py-2 bg-[#ed0718] hover:bg-[#c90012] text-white rounded-xl text-xs font-black shadow-xs"
-                    >
-                      Guardar Restaurante
-                    </button>
-                  </div>
-                </form>
+                    </div>
+
+                    <div className="flex justify-end gap-2 px-5 py-3.5 border-t border-gray-200 bg-gray-50 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingRestaurant(null);
+                          setIsCreatingRestaurant(false);
+                        }}
+                        className="px-4 py-2.5 border border-gray-300 bg-white rounded-xl text-xs font-bold text-gray-700 hover:bg-gray-100 cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-5 py-2.5 bg-[#ed0718] hover:bg-[#c90012] text-white rounded-xl text-xs font-black shadow-sm cursor-pointer"
+                      >
+                        Guardar Restaurante
+                      </button>
+                    </div>
+                  </form>
+                </div>
               )}
 
               {/* Modal de Personalizaciones / Extras del Platillo (Admin) */}
@@ -3376,17 +3469,28 @@ _RODO Moto Mandados · San Miguel de Allende_`;
 
                       <div className="bg-gray-100 p-3 flex justify-between items-center border-t border-gray-200">
                         <button
+                          type="button"
                           onClick={() => {
-                            setEditingRestaurant(rest);
+                            setEditingRestaurant({
+                              ...rest,
+                              description: rest.description || '',
+                              category: rest.category || 'Tacos',
+                              time: rest.time || '25–35 min',
+                              menu: Array.isArray(rest.menu)
+                                ? rest.menu.map((item) => ({ ...item }))
+                                : [],
+                              tags: Array.isArray(rest.tags) ? [...rest.tags] : [],
+                            });
                             setIsCreatingRestaurant(false);
                           }}
-                          className="text-xs font-bold text-gray-700 hover:text-black flex items-center gap-1"
+                          className="text-xs font-extrabold text-slate-900 bg-white hover:bg-slate-900 hover:text-white border border-gray-300 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition cursor-pointer"
                         >
                           <Edit className="w-3.5 h-3.5" /> Editar Tarifas y Menú
                         </button>
                         <button
+                          type="button"
                           onClick={() => handleDeleteRestaurant(rest.id, rest.name)}
-                          className="text-xs font-bold text-red-600 hover:text-red-800 flex items-center gap-1"
+                          className="text-xs font-extrabold text-red-700 bg-red-50 hover:bg-red-600 hover:text-white border border-red-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition cursor-pointer"
                         >
                           <Trash2 className="w-3.5 h-3.5" /> Eliminar
                         </button>

@@ -118,13 +118,11 @@ export function sanitizeRestaurantForCustomer(r: Restaurant): Restaurant {
 }
 
 export async function getRestaurants(): Promise<Restaurant[]> {
-  const localList = getLocalStoredRestaurants();
   try {
     const remoteList = await apiFetch<Restaurant[]>('/api/restaurants');
-    if (Array.isArray(remoteList) && remoteList.length > 0) {
-      const existingIds = new Set(remoteList.map((r) => r.id));
-      const missingDefaults = DEFAULT_RESTAURANTS.filter((r) => !existingIds.has(r.id));
-      const finalResult = [...remoteList, ...missingDefaults].map(sanitizeRestaurantForCustomer);
+    if (Array.isArray(remoteList)) {
+      // PostgreSQL es la fuente única de verdad: jamás re-inyectar restaurantes eliminados desde DEFAULT_RESTAURANTS
+      const finalResult = remoteList.map(sanitizeRestaurantForCustomer);
       try {
         localStorage.setItem(LOCAL_STORAGE_RESTAURANTS, JSON.stringify(finalResult));
       } catch {}
@@ -133,6 +131,7 @@ export async function getRestaurants(): Promise<Restaurant[]> {
     }
   } catch {}
 
+  const localList = getLocalStoredRestaurants();
   const idbRestaurants = await getRestaurantsFromIDB();
   const fallbackList =
     localList.length > 0 ? localList : idbRestaurants.length > 0 ? idbRestaurants : DEFAULT_RESTAURANTS;
@@ -142,32 +141,42 @@ export async function getRestaurants(): Promise<Restaurant[]> {
 }
 
 export async function saveRestaurant(restaurant: Restaurant): Promise<void> {
-  saveLocalStoredRestaurant(restaurant);
-  syncRestaurantsToIDB(getLocalStoredRestaurants());
-
   try {
-    await apiFetch(`/api/restaurants/${encodeURIComponent(restaurant.id)}`, {
+    const saved = await apiFetch<Restaurant>(`/api/restaurants/${encodeURIComponent(restaurant.id)}`, {
       method: 'PUT',
       body: restaurant,
     });
+    const toStore = saved && saved.id ? saved : restaurant;
+    saveLocalStoredRestaurant(toStore);
+    syncRestaurantsToIDB(getLocalStoredRestaurants());
+    return;
   } catch (err) {
+    if (err instanceof ApiHttpError) {
+      throw err;
+    }
     console.warn('[API] Fallback local al guardar restaurante:', err);
+    saveLocalStoredRestaurant(restaurant);
+    syncRestaurantsToIDB(getLocalStoredRestaurants());
   }
 }
 
 export async function deleteRestaurant(id: string): Promise<void> {
   try {
-    const current = getLocalStoredRestaurants().filter((r) => r.id !== id);
-    localStorage.setItem(LOCAL_STORAGE_RESTAURANTS, JSON.stringify(current));
-  } catch {}
-
-  try {
     await apiFetch(`/api/restaurants/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     });
   } catch (err) {
+    if (err instanceof ApiHttpError) {
+      throw err;
+    }
     console.warn('[API] Fallback local al eliminar restaurante:', err);
   }
+
+  try {
+    const current = getLocalStoredRestaurants().filter((r) => r.id !== id);
+    localStorage.setItem(LOCAL_STORAGE_RESTAURANTS, JSON.stringify(current));
+    syncRestaurantsToIDB(current);
+  } catch {}
 }
 
 // CONFIGURACIÓN DE DESPACHO

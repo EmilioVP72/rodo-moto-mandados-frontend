@@ -44,6 +44,7 @@ export async function syncRestaurantsToIDB(restaurants: Restaurant[]): Promise<v
     const database = await openOfflineDb();
     const tx = database.transaction(STORE_RESTAURANTS, 'readwrite');
     const store = tx.objectStore(STORE_RESTAURANTS);
+    store.clear();
     restaurants.forEach((r) => store.put(r));
   } catch {
     // Graceful no-op in restricted browser contexts

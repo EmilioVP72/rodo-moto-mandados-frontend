@@ -527,7 +527,7 @@ export default function App() {
         getDispatchSettings().catch(() => INITIAL_SETTINGS),
         getOrders().catch(() => []),
       ]);
-      if (fetchedRestaurants && fetchedRestaurants.length > 0) {
+      if (Array.isArray(fetchedRestaurants)) {
         setRestaurants(fetchedRestaurants);
       }
       if (fetchedSettings) {
