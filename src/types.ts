@@ -207,7 +207,7 @@ export interface Order {
   
   // Promoción sobre sobreprecio o código promocional:
   promoCode?: string;
-  promoDiscountType?: 'percent' | 'delivery_free' | 'delivery_discount';
+  promoDiscountType?: 'fixed' | 'percent' | 'delivery_free' | 'delivery_discount';
   promoDiscountApplied?: number;
   promoLabel?: string;
 

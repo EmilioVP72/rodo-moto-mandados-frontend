@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import { apiFetch } from '../api/httpClient';
+import type { CustomerCoupon } from '../types';
+import React, { useState, useEffect } from 'react';
 import { Restaurant, OrderItem, Order, MenuItem } from '../types';
 import { InteractiveMapPicker } from './InteractiveMapPicker';
 import { SmaColoniaCombobox } from './SmaColoniaCombobox';
@@ -161,6 +163,22 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   rainPauseMessage,
 }) => {
   const { t } = useLanguage();
+  const [account, setAccount] = useState<{ id: string; coupons: CustomerCoupon[]; completedOrdersCount: number } | null>(null);
+  useEffect(() => {
+    let active = true;
+    const refresh = () => apiFetch<{ user: NonNullable<typeof account> }>('/api/auth/me')
+      .then(({ user }) => { if (active && user.id === customerId) setAccount(user); })
+      .catch(() => {});
+    void refresh();
+    window.addEventListener('focus', refresh);
+    return () => { active = false; window.removeEventListener('focus', refresh); };
+  }, [customerId]);
+
+  function findCoupon(code: string) {
+    const personal = account?.id === customerId && account?.coupons?.find(c => !c.used && c.code === code);
+    if (personal) return { type: 'fixed' as const, value: personal.discount, label: personal.label };
+    return Object.hasOwn(PROMO_CODES_CATALOG, code) ? PROMO_CODES_CATALOG[code] : undefined;
+  }
   const liveRestaurant = restaurants?.find((r) => r.id === restaurant.id) || restaurant;
   const isLiveClosed = liveRestaurant.isOpen === false || liveRestaurant.isActive === false;
 
@@ -286,11 +304,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const restaurantPromoDiscount = promoPercent > 0 ? Math.round((totalSurchargeInCart * promoPercent) / 100) : 0;
 
   // Código promocional del cliente
-  const couponRule = appliedPromoCode ? PROMO_CODES_CATALOG[appliedPromoCode] : undefined;
+  const couponRule = appliedPromoCode ? findCoupon(appliedPromoCode) : undefined;
   let couponProductDiscount = 0;
   let couponDeliveryDiscount = 0;
   if (couponRule) {
-    if (couponRule.type === 'percent') {
+    if (couponRule.type === 'fixed') {
+      couponProductDiscount = Math.min(couponRule.value, Math.max(0, subtotal - restaurantPromoDiscount));
+    } else if (couponRule.type === 'percent') {
       couponProductDiscount = Math.round((subtotal * couponRule.value) / 100);
     } else if (couponRule.type === 'delivery_free') {
       couponDeliveryDiscount = rawDeliveryFee;
@@ -316,7 +336,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       setPromoFeedback({ ok: false, msg: 'Ingresa un código (ej. RODO10, SMA15, ENVIOGRATIS).' });
       return;
     }
-    const found = PROMO_CODES_CATALOG[code];
+    const found = findCoupon(code);
     if (!found) {
       setAppliedPromoCode(null);
       setPromoFeedback({

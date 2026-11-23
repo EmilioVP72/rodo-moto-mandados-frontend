@@ -985,7 +985,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <label className="block text-[11px] font-black text-gray-700 mb-1 flex items-center justify-between">
                     <span>¿Tienes un Código de Referido de un amigo?</span>
                     <span className="text-[10px] text-amber-700 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                      Opcional · Cupón $50 MXN
+                      Opcional · Cupón $35 MXN
                     </span>
                   </label>
                   <input
