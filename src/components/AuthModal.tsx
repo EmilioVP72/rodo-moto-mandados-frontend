@@ -29,7 +29,6 @@ import {
   getStoredIneAccounts,
   verifyIneCicChecksum,
 } from '../utils/ineScanner';
-import { processReferralRegistration, generateCustomerReferralCode } from '../utils/referralSystem';
 import { CustomerAccount, AccountRecoveryRequest } from '../types';
 import {
   generateRecoveryFolio,
@@ -341,65 +340,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           setIsLoading(false);
           return;
         }
-        // Fallback offline si el servidor no está accesible temporalmente
-        const validation = validateIneAgainstDebtsAndDuplicates(cleanDigits, cleanEmail);
-        if (!validation.allowed) {
-          setErrorMsg(validation.message);
-          if (validation.account) {
-            setBlockedAccountInfo(validation.account);
-          }
-          setIsLoading(false);
-          return;
-        }
-
-        const accountId = 'cust-' + (phone.replace(/[^0-9]/g, '') || Date.now().toString());
-        const myReferralCode = generateCustomerReferralCode(phone, accountId);
-
-        const newAccount: CustomerAccount = {
-          id: accountId,
-          name: name.trim(),
-          phone: phone.trim(),
-          email: cleanEmail,
-          ineVerified: true,
-          ineDigits: cleanDigits,
-          ine10Digits: cleanDigits,
-          inePhotoUploaded: true,
-          ineVerifiedAt: new Date().toISOString(),
-          pendingDebt: 0,
-          status: 'activo',
-          completedOrdersCount: 0,
-          referralCode: myReferralCode,
-          referralRewardsCount: 0,
-          coupons: [],
-          createdAt: new Date().toISOString(),
-        };
-
-        if (referralCodeInput.trim()) {
-          const refRes = processReferralRegistration(referralCodeInput.trim(), newAccount);
-          if (refRes.success && refRes.couponAwarded) {
-            newAccount.coupons = [refRes.couponAwarded];
-            newAccount.referredByCode = referralCodeInput.trim().toUpperCase();
-          }
-        }
-
-        saveIneAccount(newAccount);
-
-        const customerPayload = {
-          id: newAccount.id,
-          name: newAccount.name,
-          phone: newAccount.phone,
-          email: newAccount.email,
-          ine10Digits: cleanDigits,
-          referralCode: myReferralCode,
-        };
-
-        try {
-          localStorage.setItem('rodo_user_session', JSON.stringify(customerPayload));
-        } catch {}
-
-        resetAllFields();
-        onCustomerLogin(customerPayload, 'register');
-        onClose();
+        setErrorMsg('No pudimos confirmar el registro. Revisa tu conexión y vuelve a intentarlo. Si ya recibiste la confirmación, inicia sesión.');
         return;
       } finally {
         setIsLoading(false);
