@@ -201,8 +201,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const loadBroadcasts = async () => {
-    const list = await getBroadcastNotifications();
-    setBroadcastHistory(list);
+    try { setBroadcastHistory(await getBroadcastNotifications()); }
+    catch { showFeedback('No se pudo consultar el historial de campañas.', 'error'); }
   };
 
   const loadRecoveryRequests = async () => {
@@ -270,13 +270,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         title: broadcastTitle.trim(),
         message: broadcastMessage.trim(),
         promoCode: broadcastPromoCode.trim().toUpperCase() || undefined,
-        scheduledFor: broadcastScheduleAt.trim() || undefined,
+        scheduledFor: broadcastScheduleAt ? new Date(broadcastScheduleAt).toISOString() : undefined,
         sendImmediately: !broadcastScheduleAt.trim(),
         sentBy: 'edsoncruz14999@gmail.com',
         createdAt: new Date().toISOString(),
       };
       await sendBroadcastNotification(notif);
-      dispatchRodoNotification(
+      if (notif.sendImmediately) dispatchRodoNotification(
         `📣 ${notif.title}`,
         `${notif.message}${notif.promoCode ? ` · Cupón: ${notif.promoCode}` : ''}`,
         {
@@ -288,7 +288,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       );
       logAdminAction(
         'ajuste_configuracion',
-        `Enviada notificación masiva "${notif.title}" a todos los clientes`,
+        `${notif.scheduledFor ? 'Programada' : 'Enviada'} notificación masiva "${notif.title}" a todos los clientes`,
         'edsoncruz14999@gmail.com'
       );
       setBroadcastHistory((prev) => [notif, ...prev]);
@@ -296,7 +296,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setBroadcastMessage('');
       setBroadcastPromoCode('');
       setBroadcastScheduleAt('');
-      showFeedback('📣 Notificación enviada a todos los usuarios de RODO.');
+      showFeedback(notif.scheduledFor ? 'Campaña programada.' : 'Notificación enviada.');
     } catch {
       showFeedback('Error al enviar notificación masiva.', 'error');
     } finally {
@@ -4351,7 +4351,7 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
                     <div>
                       <label className="block font-bold text-gray-700 mb-1">
-                        Fecha/Hora Programada (Vacío = Envío Inmediato)
+                        Fecha y hora de este dispositivo (vacío para enviar ahora)
                       </label>
                       <input
                         type="datetime-local"

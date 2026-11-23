@@ -18,13 +18,10 @@ import {
   clearOrdersFromIDB,
   upsertOrderToIDB,
   getOrdersFromIDB,
-  saveBroadcastToIDB,
-  getBroadcastsFromIDB,
 } from './indexedDb';
 
 const LOCAL_STORAGE_ORDERS = 'rodo_local_orders';
 const LOCAL_STORAGE_PARTNER_LOCALS = 'rodo_partner_locals';
-const LOCAL_STORAGE_BROADCASTS = 'rodo_broadcast_notifications';
 const LOCAL_STORAGE_RECOVERY = 'rodo_account_recovery_requests';
 
 import {
@@ -638,64 +635,22 @@ export async function logAdminMiddlewareAction(params: {
 // -------------------------------------------------------------
 // NOTIFICACIONES DE MARKETING PROGRAMADAS / ENVIAR A TODOS
 // -------------------------------------------------------------
-export function getLocalBroadcastNotifications(): BroadcastNotification[] {
-  try {
-    return JSON.parse(localStorage.getItem(LOCAL_STORAGE_BROADCASTS) || '[]');
-  } catch {
-    return [];
-  }
-}
-
 export async function sendBroadcastNotification(notif: BroadcastNotification): Promise<void> {
-  try {
-    const existing = getLocalBroadcastNotifications();
-    const updated = [notif, ...existing.filter((n) => n.id !== notif.id)].slice(0, 50);
-    localStorage.setItem(LOCAL_STORAGE_BROADCASTS, JSON.stringify(updated));
-    saveBroadcastToIDB(notif);
-  } catch {}
-
-  try {
-    await apiFetch('/api/broadcasts', {
-      method: 'POST',
-      body: notif,
-    });
-  } catch (err) {
-    console.warn('[API] Broadcast fallback:', err);
-  }
+  await apiFetch('/api/broadcasts', { method: 'POST', body: notif });
 }
 
-export async function getBroadcastNotifications(): Promise<BroadcastNotification[]> {
-  const localList = getLocalBroadcastNotifications();
-  try {
-    const remoteList = await apiFetch<BroadcastNotification[]>('/api/broadcasts');
-    if (Array.isArray(remoteList) && remoteList.length > 0) {
-      localStorage.setItem(LOCAL_STORAGE_BROADCASTS, JSON.stringify(remoteList));
-      return remoteList;
-    }
-  } catch {}
-  if (localList.length > 0) return localList;
-  return await getBroadcastsFromIDB();
+export function getBroadcastNotifications(): Promise<BroadcastNotification[]> {
+  return apiFetch('/api/admin/broadcasts');
 }
 
-export function subscribeToBroadcastNotifications(
-  callback: (items: BroadcastNotification[]) => void
-): () => void {
-  getBroadcastNotifications()
-    .then((list) => callback(list))
-    .catch(() => {});
-
-  const unsub = onSocketEvent<BroadcastNotification>('broadcasts:created', (newNotif) => {
-    const current = getLocalBroadcastNotifications();
-    const updated = [newNotif, ...current.filter((n) => n.id !== newNotif.id)].slice(0, 50);
-    try {
-      localStorage.setItem(LOCAL_STORAGE_BROADCASTS, JSON.stringify(updated));
-    } catch {}
-    callback(updated);
-  });
-
-  return () => {
-    unsub();
-  };
+export function subscribeToBroadcastNotifications(callback: (items: BroadcastNotification[]) => void) {
+  let active = true;
+  const refresh = () => apiFetch<BroadcastNotification[]>('/api/broadcasts')
+    .then(rows => { if (active) callback(rows); }).catch(() => {});
+  void refresh();
+  const timer = setInterval(refresh, 30000);
+  const unsub = onSocketEvent<BroadcastNotification>('broadcasts:created', item => callback([item]));
+  return () => { active = false; clearInterval(timer); unsub(); };
 }
 
 // -------------------------------------------------------------
