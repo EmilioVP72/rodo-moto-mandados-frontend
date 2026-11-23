@@ -175,6 +175,8 @@ export interface FuelEmergencyDetails {
 }
 
 export interface Order {
+  pickupCoordinates?: { lat: number; lng: number };
+  quoteOfferedAt?: string;
   id: string;
   folio: string; // Folio único RD-AAMMDD-XXXXX
   orderType?: 'comida' | 'envio' | 'solicitud_local' | 'auxilio_gasolina' | 'pedido_personalizado' | 'local_no_encontrado';

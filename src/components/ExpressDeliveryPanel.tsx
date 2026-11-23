@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 
 interface ExpressDeliveryPanelProps {
+  bankAccount: string;
   customerId: string;
   customerDefaultName?: string;
   customerDefaultPhone?: string;
@@ -91,6 +92,7 @@ function stripColoniaTypeForGeocode(colonia: string): string {
 
 export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
   customerId,
+  bankAccount,
   customerDefaultName = '',
   customerDefaultPhone = '',
   savedAddresses = [],
@@ -135,6 +137,7 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
   const [itemDescription, setItemDescription] = useState('');
   const [instructions, setInstructions] = useState('');
 
+  const [trackingKey, setTrackingKey] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'efectivo' | 'transferencia'>('efectivo');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -347,7 +350,9 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
         commissionAmount: finalTariff.totalFee,
         total: finalTariff.totalFee,
         paymentMethod,
-        paymentStatus: paymentMethod === 'transferencia' ? 'verificado' : 'en_efectivo',
+        paymentStatus: paymentMethod === 'transferencia' ? 'pendiente' : 'en_efectivo',
+        bankVerification: paymentMethod === 'transferencia' ? { trackingKey: trackingKey.trim(), verified: false, statusMessage: 'Pendiente de revisión.' } : undefined,
+        pickupCoordinates: confirmedQuote.pickupCoords || pickupCoords || undefined,
         pickupAddress: fullPickupAddress,
         pickupPhone: pickupPhone.trim(),
         deliveryAddress: fullDeliveryAddress,
@@ -361,8 +366,8 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
 
       const completedOrder = await submitOrderWithQueue(orderPayload);
       onOrderSuccess(completedOrder);
-    } catch {
-      setErrorMsg('Hubo un error al generar la solicitud de envío.');
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : 'Hubo un error al generar la solicitud de envío.');
     } finally {
       setIsSubmitting(false);
     }
@@ -863,6 +868,10 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
                 <span>Pagar por Transferencia SPEI</span>
               </label>
             </div>
+            {paymentMethod === 'transferencia' && <label className="block text-sm">
+              Cuenta de destino: {bankAccount}. Ingresa la clave de rastreo para revisión por despacho.
+              <input required minLength={6} maxLength={35} value={trackingKey} onChange={e => setTrackingKey(e.target.value)} className="block w-full rounded border p-2" />
+            </label>}
           </div>
 
           {/* Respaldo Legal RODO para Envíos */}

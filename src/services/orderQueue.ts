@@ -108,14 +108,6 @@ export function getAdminAuditLogs(): AdminAuditLogEntry[] {
  * Procesa la creación de un nuevo pedido de forma segura y transaccional
  */
 export async function submitOrderWithQueue(orderData: Omit<Order, 'id' | 'folio' | 'createdAt' | 'updatedAt'>): Promise<Order> {
-  // 1. Recalcular y validar subtotal de seguridad (deliveryFee ya incluye el recargo express si aplica)
-  const secureSubtotal = validateAndRecalculateOrderSubtotal(orderData.items);
-  const deliveryFee = orderData.deliveryFee || 35;
-  const tipAmount = orderData.tipAmount || 0;
-  const promoDiscount = orderData.promoDiscountApplied || 0;
-
-  const secureTotal = Math.max(0, secureSubtotal + deliveryFee + tipAmount - promoDiscount);
-
   // 2. Generar folio único y timestamp
   const now = new Date().toISOString();
   const folio = generateUniqueRodoFolio();
@@ -124,14 +116,12 @@ export async function submitOrderWithQueue(orderData: Omit<Order, 'id' | 'folio'
     ...orderData,
     id: `ord-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
     folio,
-    subtotal: secureSubtotal,
-    total: secureTotal,
     createdAt: now,
     updatedAt: now,
   };
 
   // The order is accepted only after the server confirms persistence.
-  await createOrderInDb(completeOrder);
+  const confirmed = await createOrderInDb(completeOrder);
 
   // 5. Registrar en bitácora de auditoría
   logAdminAction(
@@ -142,5 +132,5 @@ export async function submitOrderWithQueue(orderData: Omit<Order, 'id' | 'folio'
     completeOrder.restaurantName
   );
 
-  return completeOrder;
+  return confirmed;
 }

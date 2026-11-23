@@ -406,7 +406,7 @@ export const TopLeftMenuModal: React.FC<TopLeftMenuModalProps> = ({
                 <div className="border border-gray-200 rounded-2xl p-4 text-xs space-y-2 bg-gray-50">
                   <b className="text-gray-900 block">¿Cómo verificar mi transferencia bancaria?</b>
                   <p className="text-gray-600">
-                    Al confirmar tu pedido con transferencia SPEI, el sistema audita la clave de rastreo bancaria automáticamente para proteger tu dinero y evitar fraudes.
+                    Al confirmar tu pedido con transferencia SPEI, despacho confirma el depósito en la cuenta de destino para proteger tu dinero y evitar fraudes.
                   </p>
                 </div>
               </div>

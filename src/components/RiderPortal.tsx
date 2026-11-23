@@ -6,6 +6,8 @@ import { getAuthToken } from '../api/httpClient';
 import { identifySocketSession, emitSocketEvent } from '../api/socketClient';
 import { getNextRiderStatus, RIDER_STATUS_ACTION } from '../utils/riderWorkflow';
 
+import { paymentInstructionForRider } from '../services/whatsappDispatch';
+
 interface RiderPortalProps {
   riderName: string;
   onLogout: () => void | Promise<void>;
@@ -131,7 +133,7 @@ export const RiderPortal: React.FC<RiderPortalProps> = ({ riderName, onLogout })
                   </a>
                 )}
                 <p className="text-slate-600">{order.items.map((item) => `${item.quantity} × ${item.name}`).join(', ')}</p>
-                <p className="font-bold">Cobro al cliente: ${order.total.toFixed(2)} MXN · {order.paymentMethod === 'efectivo' ? 'Efectivo' : 'Transferencia'}</p>
+                <p className="font-bold">{paymentInstructionForRider(order)}</p>
               </div>
               <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <button

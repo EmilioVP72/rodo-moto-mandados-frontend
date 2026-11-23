@@ -13,6 +13,15 @@ function getStoredRestaurantsSnapshot(): Restaurant[] {
   return DEFAULT_RESTAURANTS;
 }
 
+export function paymentInstructionForRider(order: Pick<Order, 'paymentMethod' | 'paymentStatus' | 'total' | 'orderType'>): string {
+  if (order.paymentMethod === 'transferencia') {
+    return order.paymentStatus === 'verificado' ? 'TRANSFERENCIA VERIFICADA · NO COBRAR AL CLIENTE'
+      : 'TRANSFERENCIA PENDIENTE · Espera la confirmación de despacho antes de entregar.';
+  }
+  return order.orderType === 'solicitud_local' ? `Cobrar al restaurante: $${order.total.toFixed(2)} MXN`
+    : `COBRAR EN EFECTIVO AL ENTREGAR: $${order.total.toFixed(2)} MXN`;
+}
+
 export function buildWhatsAppDispatchMessage(
   order: Order,
   riderName: string,
@@ -54,11 +63,6 @@ _RODO Moto Mandados · Despacho Central San Miguel_`;
   }
 
   if (order.orderType === 'auxilio_gasolina' && order.fuelDetails) {
-    const isTransfer = order.paymentMethod === 'transferencia';
-    const paymentInstruction = isTransfer
-      ? `✅ *TRANSFERENCIA VERIFICADA (NO COBRAR)*`
-      : `💵 *COBRAR EN EFECTIVO:* 👉 *$${order.total.toFixed(2)} MXN*`;
-
     return `⛽ *RODO MOTO MANDADOS · AUXILIO GASOLINA DE EMERGENCIA* 🏍️💨
 ━━━━━━━━━━━━━━━━━━━━
 📌 *FOLIO:* ${order.folio}
@@ -76,18 +80,13 @@ ${order.deliveryNotes ? `📝 *Referencias / Vehículo:* ${order.deliveryNotes}\
 🏍️ *Tarifa de Viaje Auxilio:* $${order.fuelDetails.serviceTravelFee.toFixed(2)} MXN
 ${order.tipAmount ? `❤️ *Propina Repartidor:* $${order.tipAmount.toFixed(2)} MXN\n` : ''}━━━━━━━━━━━━━━━━━━━━
 💰 *TOTAL A LIQUIDAR:* $${order.total.toFixed(2)} MXN
-${paymentInstruction}
+${paymentInstructionForRider(order)}
 
 🎫 *TICKET DIGITAL EN VIVO:*
 ${ticketUrl}
 
 _RODO Moto Mandados · Auxilio Vial Rápido_`;
   }
-
-  const isTransfer = order.paymentMethod === 'transferencia';
-  const paymentInstruction = isTransfer
-    ? `✅ *TRANSFERENCIA BANCARIA PRE-VERIFICADA*\n⚠️ *NO COBRAR AL CLIENTE* (Ya fue pagado y verificado en cuenta).`
-    : `💵 *COBRAR EN EFECTIVO AL ENTREGAR:*\n👉 *$${order.total.toFixed(2)} MXN* exactos.`;
 
   const itemsList = order.items
     .map(
@@ -143,7 +142,7 @@ ${itemsList}
 🏍️ *Envío (${deliveryTypeLabel}):* $${order.deliveryFee.toFixed(2)} MXN
 ${tipText}💲 *TOTAL ORDEN:* $${order.total.toFixed(2)} MXN
 
-${paymentInstruction}
+${paymentInstructionForRider(order)}
 
 🎫 *TICKET DIGITAL EN VIVO:*
 ${ticketUrl}

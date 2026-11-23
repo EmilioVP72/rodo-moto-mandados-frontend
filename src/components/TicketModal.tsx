@@ -686,9 +686,10 @@ _RODO Moto Mandados · Despacho San Miguel_`;
             </p>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-[11px] font-bold text-gray-700 mb-0.5">Costo Alimentos ($ MXN)</label>
+                <label className="block text-[11px] font-bold text-gray-700 mb-0.5">{order.orderType === 'auxilio_gasolina' ? 'Combustible' : 'Artículos'} ($ MXN)</label>
                 <input
                   type="number"
+                  disabled={order.orderType === 'auxilio_gasolina'}
                   value={quoteFoodPrice}
                   onChange={(e) => setQuoteFoodPrice(Number(e.target.value))}
                   className="w-full border border-blue-300 rounded-lg p-2 text-xs font-bold bg-white"
@@ -745,7 +746,7 @@ _RODO Moto Mandados · Despacho San Miguel_`;
             {/* Estado de cotización o pago visual */}
             <div className="my-4">
               {order.status === 'pendiente_cotizacion' ? (
-                order.total && order.total > 0 && !order.quoteConfirmedByCustomer ? (
+                (order.quoteOfferedAt || (order.orderType !== 'auxilio_gasolina' && order.subtotal > 0)) && !order.quoteConfirmedByCustomer ? (
                   <div className="bg-amber-50 border-2 border-amber-400 text-amber-950 rounded-2xl p-4 text-center space-y-3">
                     <div className="flex items-center justify-center gap-1.5 font-black text-sm uppercase text-amber-900">
                       <Sparkles className="w-5 h-5 text-amber-600" />

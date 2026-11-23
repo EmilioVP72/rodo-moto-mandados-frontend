@@ -145,8 +145,8 @@ export const CustomLocalOrderModal: React.FC<CustomLocalOrderModalProps> = ({
         updatedAt: new Date().toISOString(),
       };
 
-      await createOrderInDb(orderData);
-      onOrderSuccess(orderData);
+      const confirmed = await createOrderInDb(orderData);
+      onOrderSuccess(confirmed);
       onClose();
     } catch {
       setErrorMsg('Hubo un error al registrar la solicitud. Intenta nuevamente.');

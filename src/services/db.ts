@@ -321,7 +321,7 @@ export function notifyOrderSubscribers(): void {
   });
 }
 
-export async function createOrderInDb(order: Order): Promise<string> {
+export async function createOrderInDb(order: Order): Promise<Order> {
   const saved = await persistOnlyAfterConfirmation(
     () => apiFetch<Order>('/api/orders', { method: 'POST', body: order }),
     (confirmedOrder) => {
@@ -330,7 +330,14 @@ export async function createOrderInDb(order: Order): Promise<string> {
       notifyOrderSubscribers();
     }
   );
-  return saved.id;
+  return saved;
+}
+
+export async function confirmOrderTransfer(orderId: string): Promise<void> {
+  await persistOnlyAfterConfirmation(
+    () => apiFetch<Order>(`/api/orders/${encodeURIComponent(orderId)}`, { method: 'PATCH', body: { paymentStatus: 'verificado' } }),
+    order => { saveLocalStoredOrder(order); upsertOrderToIDB(order); notifyOrderSubscribers(); }
+  );
 }
 
 export async function updateOrderInDb(orderId: string, updates: Partial<Order>): Promise<void> {

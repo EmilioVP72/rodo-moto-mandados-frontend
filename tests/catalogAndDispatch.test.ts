@@ -1,3 +1,4 @@
+import { paymentInstructionForRider } from '../src/services/whatsappDispatch.ts';
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -126,7 +127,7 @@ describe('Frontend Catalog Seeds & WhatsApp Dispatch Formatter Unit Tests', () =
         'https://rodomotomandados.com'
       );
 
-      assert.ok(msg.includes('TRANSFERENCIA BANCARIA PRE-VERIFICADA'));
+      assert.ok(msg.includes('TRANSFERENCIA VERIFICADA'));
       assert.ok(msg.includes('NO COBRAR AL CLIENTE'));
     });
 
@@ -195,4 +196,8 @@ describe('Frontend Catalog Seeds & WhatsApp Dispatch Formatter Unit Tests', () =
       assert.ok(ojoDeAgua.some((c) => c.label === 'Ojo de Agua - Rancho'));
     });
   });
+});
+
+it('una transferencia pendiente exige confirmación del despacho', () => {
+  assert.match(paymentInstructionForRider({ paymentMethod: 'transferencia', paymentStatus: 'pendiente', total: 20 }), /PENDIENTE/);
 });

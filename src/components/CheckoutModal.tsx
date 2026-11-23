@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { Restaurant, OrderItem, Order, BankVerificationData, MenuItem } from '../types';
-import { verifyBankTransferIncome } from '../services/bankVerification';
+import { Restaurant, OrderItem, Order, MenuItem } from '../types';
 import { InteractiveMapPicker } from './InteractiveMapPicker';
 import { SmaColoniaCombobox } from './SmaColoniaCombobox';
 import { SMA_COLONIAS_CATALOG, normalizeSearchText } from '../data/smaColonias';
@@ -247,14 +246,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     restaurant.acceptsCash ? 'efectivo' : 'transferencia'
   );
 
-  // Simulación realista de transferencia bancaria SPEI y tarjeta solicitada por el usuario
-  const [cardHolderName, setCardHolderName] = useState(customerDefaultName || 'Juan Pérez');
-  const [senderBank, setSenderBank] = useState('BBVA Bancomer');
-  const [paymentSimulationType, setPaymentSimulationType] = useState<'spei' | 'tarjeta'>('spei');
-  const [accountOrCardDigits, setAccountOrCardDigits] = useState('4819');
   const [trackingKey, setTrackingKey] = useState('');
-  const [isVerifyingBank, setIsVerifyingBank] = useState(false);
-  const [bankVerificationResult, setBankVerificationResult] = useState<BankVerificationData | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -407,32 +399,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
   };
 
-  // Verificación de transferencia bancaria
-  const handleVerifyTransfer = async () => {
-    if (!trackingKey.trim() || trackingKey.trim().length < 6) {
-      setErrorMsg('Ingresa una Clave de Rastreo SPEI o Folio bancario válido (mínimo 6 caracteres).');
-      return;
-    }
-    setErrorMsg('');
-    setIsVerifyingBank(true);
-    try {
-      const res = await verifyBankTransferIncome({
-        trackingKey,
-        expectedAmount: total,
-        senderBank,
-        orderFolio: 'VERIF-PREV',
-      });
-      setBankVerificationResult(res);
-      if (!res.verified) {
-        setErrorMsg(res.statusMessage);
-      }
-    } catch {
-      setErrorMsg('Error al conectar con el servicio de verificación bancaria.');
-    } finally {
-      setIsVerifyingBank(false);
-    }
-  };
-
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
@@ -507,13 +473,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         `Por política antifraude para tu pedido #${customerOrdersCount + 1}, el límite en efectivo es de $${cashLimit} MXN en productos. Puedes seleccionar Pago por Transferencia (sin límite) o reducir tu pedido.`
       );
       return;
-    }
-
-    if (paymentMethod === 'transferencia') {
-      if (!bankVerificationResult || !bankVerificationResult.verified) {
-        setErrorMsg('Debes realizar la verificación simulada de tu transferencia/tarjeta antes de generar el pedido para evitar cancelaciones.');
-        return;
-      }
     }
 
     setIsSubmitting(true);
@@ -597,8 +556,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             : undefined),
         total,
         paymentMethod,
-        paymentStatus: paymentMethod === 'transferencia' ? 'verificado' : 'en_efectivo',
-        bankVerification: paymentMethod === 'transferencia' ? (bankVerificationResult || undefined) : undefined,
+        paymentStatus: paymentMethod === 'transferencia' ? 'pendiente' : 'en_efectivo',
+        bankVerification: paymentMethod === 'transferencia' ? { trackingKey: trackingKey.trim(), verified: false, statusMessage: 'Pendiente de revisión.' } : undefined,
         deliveryAddress: fullDeliveryAddress,
         deliveryNotes: deliveryNotes.trim(),
         coordinates: deliveryPinCoords || undefined,
@@ -1298,7 +1257,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 (1er pedido: $300 · 2do: $400 · 3ro: $500 · 4to+: $1,000).
               </p>
               <p className="text-emerald-800 font-semibold">
-                ✓ En Pago por Transferencia / Tarjeta no hay límite de monto.
+                ✓ En Pago por Transferencia SPEI no hay límite de monto.
               </p>
             </div>
 
@@ -1323,7 +1282,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 </div>
               </button>
 
-              {/* Opción Transferencia / Tarjeta */}
+              {/* Opción Transferencia SPEI */}
               <button
                 type="button"
                 disabled={!restaurant.acceptsTransfer || restaurant.establishmentType === 'motomandado'}
@@ -1338,11 +1297,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               >
                 <CreditCard className="w-5 h-5 shrink-0 mt-0.5" />
                 <div>
-                  <div className="font-bold text-xs">Transferencia / Tarjeta</div>
+                  <div className="font-bold text-xs">Transferencia SPEI</div>
                   <div className="text-[11px] text-gray-500">
                     {restaurant.establishmentType === 'motomandado'
                       ? 'No disponible (Solo efectivo)'
-                      : 'Sin límite · SPEI & Tarjeta'}
+                      : 'Sin límite · SPEI'}
                   </div>
                 </div>
               </button>
@@ -1362,173 +1321,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </div>
             )}
 
-            {/* Panel de Simulación Realista de Transferencia y Tarjeta */}
             {paymentMethod === 'transferencia' && (
-              <div className="bg-blue-50/70 border border-blue-200 p-4 rounded-2xl space-y-3.5">
-                <div className="flex items-center justify-between">
-                  <div className="text-xs font-black text-blue-950 flex items-center gap-1.5 uppercase">
-                    <ShieldCheck className="w-4 h-4 text-blue-600" />
-                    Simulación de Pago Bancario (SPEI / Tarjeta)
-                  </div>
-                  <span className="text-[10px] bg-blue-100 text-blue-800 font-black px-2 py-0.5 rounded-full">
-                    Auditoría en Línea
-                  </span>
-                </div>
-
-                <div className="bg-white p-3 rounded-xl border border-blue-200 text-xs space-y-1">
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-500 text-[11px]">Cuenta Destino RODO:</span>
-                    <span className="font-bold text-gray-800">{bancoRodoFallback}</span>
-                  </div>
-                  <strong className="text-gray-900 block font-mono text-xs">{bankClabe}</strong>
-                  <div className="flex justify-between items-center pt-1 border-t border-gray-100">
-                    <span className="text-gray-600 font-semibold">Total exacto a liquidar:</span>
-                    <b className="text-[#ed0718] font-mono text-sm">${total.toFixed(2)} MXN</b>
-                  </div>
-                </div>
-
-                {/* Formulario de simulación bancaria */}
-                <div className="space-y-2.5">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
-                        Nombre del Titular
-                      </label>
-                      <input
-                        type="text"
-                        value={cardHolderName}
-                        onChange={(e) => setCardHolderName(e.target.value)}
-                        placeholder="Ej. Juan Pérez"
-                        className="w-full border border-blue-300 rounded-xl p-2 text-xs bg-white font-semibold outline-none focus:border-blue-600"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
-                        Banco Emisor
-                      </label>
-                      <select
-                        value={senderBank}
-                        onChange={(e) => setSenderBank(e.target.value)}
-                        className="w-full border border-blue-300 rounded-xl p-2 text-xs bg-white font-bold text-gray-800 outline-none focus:border-blue-600"
-                      >
-                        <option value="BBVA Bancomer">BBVA Bancomer</option>
-                        <option value="Santander">Santander</option>
-                        <option value="Banorte">Banorte</option>
-                        <option value="Citibanamex">Citibanamex</option>
-                        <option value="Nu México">Nu México</option>
-                        <option value="Banco Azteca">Banco Azteca</option>
-                        <option value="Mercado Pago">Mercado Pago</option>
-                        <option value="HSBC">HSBC</option>
-                        <option value="Scotiabank">Scotiabank</option>
-                        <option value="Spin by OXXO">Spin by OXXO</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
-                        Modalidad de Pago
-                      </label>
-                      <div className="flex rounded-xl border border-blue-200 overflow-hidden text-xs">
-                        <button
-                          type="button"
-                          onClick={() => setPaymentSimulationType('spei')}
-                          className={`flex-1 py-1.5 font-bold transition text-center ${paymentSimulationType === 'spei' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700'}`}
-                        >
-                          SPEI Móvil
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setPaymentSimulationType('tarjeta')}
-                          className={`flex-1 py-1.5 font-bold transition text-center ${paymentSimulationType === 'tarjeta' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700'}`}
-                        >
-                          Tarjeta
-                        </button>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
-                        {paymentSimulationType === 'spei' ? 'Últimos 4 dígitos cuenta' : 'Últimos 4 dígitos tarjeta'}
-                      </label>
-                      <input
-                        type="text"
-                        maxLength={4}
-                        value={accountOrCardDigits}
-                        onChange={(e) => setAccountOrCardDigits(e.target.value.replace(/[^0-9]/g, ''))}
-                        placeholder="Ej. 4819"
-                        className="w-full border border-blue-300 rounded-xl p-2 text-xs font-mono font-bold bg-white text-center outline-none focus:border-blue-600"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between mb-0.5">
-                      <label className="text-[11px] font-bold text-blue-950">
-                        Clave de Rastreo SPEI / Folio Bancario
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const autoFolio = `${senderBank.slice(0, 4).toUpperCase()}${Date.now().toString().slice(-8)}`;
-                          setTrackingKey(autoFolio);
-                        }}
-                        className="text-[10px] text-blue-700 hover:underline font-bold"
-                      >
-                        ⚡ Generar Clave Simulada
-                      </button>
-                    </div>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={trackingKey}
-                        onChange={(e) => {
-                          setTrackingKey(e.target.value);
-                          setBankVerificationResult(null);
-                        }}
-                        placeholder="Ej. MBAN0100234567..."
-                        className="w-full border border-blue-300 rounded-xl p-2 text-xs font-mono font-bold bg-white outline-none focus:border-blue-600"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleVerifyTransfer}
-                        disabled={isVerifyingBank}
-                        className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white text-xs font-black px-3.5 py-2 rounded-xl flex items-center gap-1.5 shrink-0 transition shadow-xs"
-                      >
-                        {isVerifyingBank ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <span>Verificar Cobro</span>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-
-                  {bankVerificationResult && (
-                    <div
-                      className={`p-3 rounded-xl text-xs flex items-center gap-2 animate-in fade-in ${
-                        bankVerificationResult.verified
-                          ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                          : 'bg-red-100 text-red-900 border border-red-300'
-                      }`}
-                    >
-                      {bankVerificationResult.verified ? (
-                        <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-                      ) : (
-                        <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-                      )}
-                      <div>
-                        <span className="font-bold block">
-                          {bankVerificationResult.verified ? '✓ Cobro Simulado Autorizado' : 'Error en Simulación'}
-                        </span>
-                        <span className="text-[11px] text-gray-700">
-                          {bankVerificationResult.statusMessage}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </div>
+              <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl space-y-2">
+                <p>Cuenta de destino: {bankClabe}</p>
+                <p>Total a transferir: ${total.toFixed(2)} MXN</p>
+                <label className="block text-sm">Clave de rastreo del comprobante SPEI
+                  <input required minLength={6} maxLength={35} value={trackingKey}
+                    onChange={(e) => setTrackingKey(e.target.value)} className="block w-full rounded border p-2" />
+                </label>
+                <p className="text-xs">Despacho confirmará el depósito al revisar la cuenta.</p>
               </div>
             )}
           </div>

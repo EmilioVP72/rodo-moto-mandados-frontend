@@ -16,6 +16,7 @@ import {
   deleteRestaurant,
   saveDispatchSettings,
   updateOrderInDb,
+  confirmOrderTransfer,
   buildWhatsAppDispatchMessage,
   generateWhatsAppLink,
   getPartnerLocals,
@@ -858,16 +859,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   // Validar transferencia bancaria manualmente
   const handleVerifyBankPayment = async (orderId: string) => {
-    await updateOrderInDb(orderId, {
-      paymentStatus: 'verificado',
-      bankVerification: {
-        trackingKey: 'MANUAL-ADMIN-' + Math.random().toString(36).substring(2, 7).toUpperCase(),
-        statusMessage: 'Verificado manualmente por el administrador en cuenta bancaria.',
-        verified: true,
-        verifiedAt: new Date().toLocaleTimeString('es-MX'),
-      },
-    });
-    await onRefreshData();
+    try {
+      await confirmOrderTransfer(orderId);
+      await onRefreshData();
+    } catch (error) {
+      showFeedback(error instanceof Error ? error.message : 'No se pudo confirmar el depósito.', 'error');
+    }
   };
 
   // Notificar al cliente que el repartidor está afuera (+10 minutos)

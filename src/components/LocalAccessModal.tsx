@@ -198,9 +198,9 @@ export const LocalAccessModal: React.FC<LocalAccessModalProps> = ({
         updatedAt: now,
       };
 
-      await createOrderInDb(newOrder);
+      const confirmed = await createOrderInDb(newOrder);
       onClose();
-      onOrderCreated(newOrder);
+      onOrderCreated(confirmed);
     } catch {
       setSubmitError('No se pudo generar la solicitud rápida. Intenta nuevamente.');
     } finally {

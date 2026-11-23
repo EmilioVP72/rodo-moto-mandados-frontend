@@ -1171,6 +1171,7 @@ export default function App() {
         {/* Área de Envíos Express vs Catálogo de Comida */}
         {activeSection === 'envios' ? (
           <ExpressDeliveryPanel
+            bankAccount={`${settings.bancoRodo} · CLABE ${settings.clabeRodo}`}
             customerId={currentUser?.id || 'guest-envio'}
             customerDefaultName={currentUser?.name}
             customerDefaultPhone={currentUser?.phone}
@@ -1791,6 +1792,7 @@ export default function App() {
             handleOpenProfileAddresses();
           }}
           clabeRodoFallback={settings.clabeRodo}
+          expressSurcharge={settings.expressDeliverySurcharge}
           bancoRodoFallback={settings.bancoRodo}
           rainPauseEnabled={settings.rainPauseEnabled}
           rainPauseMessage={settings.rainPauseMessage}
