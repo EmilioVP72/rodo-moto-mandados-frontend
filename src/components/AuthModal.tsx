@@ -85,7 +85,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [resetCode, setResetCode] = useState('');
   const [resetNewPassword, setResetNewPassword] = useState('');
   const [resetInfoMsg, setResetInfoMsg] = useState('');
-  const [resetPreviewCode, setResetPreviewCode] = useState('');
   const [isResettingPass, setIsResettingPass] = useState(false);
 
   const [recOldEmail, setRecOldEmail] = useState('');
@@ -126,7 +125,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setResetCode('');
     setResetNewPassword('');
     setResetInfoMsg('');
-    setResetPreviewCode('');
     setRecOldEmail('');
     setRecNewEmail('');
     setRecDocDataUrl('');
@@ -477,7 +475,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     e.preventDefault();
     setErrorMsg('');
     setResetInfoMsg('');
-    setResetPreviewCode('');
 
     const targetEmail = (resetEmail || email).trim().toLowerCase();
     if (!targetEmail || !targetEmail.includes('@')) {
@@ -490,7 +487,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const res = await apiFetch<{
         ok: boolean;
         message: string;
-        resetCodePreview?: string;
       }>('/api/auth/forgot-password', {
         method: 'POST',
         body: { email: targetEmail },
@@ -498,9 +494,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setResetEmail(targetEmail);
       setResetStep('confirm');
       setResetInfoMsg(res.message);
-      if (res.resetCodePreview) {
-        setResetPreviewCode(res.resetCodePreview);
-      }
     } catch (err: any) {
       setErrorMsg(err?.message || 'No se pudo generar el código de recuperación.');
     } finally {
@@ -753,11 +746,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       {resetInfoMsg && (
                         <div className="bg-blue-50 border border-blue-200 text-blue-950 p-3 rounded-xl text-[11px] font-semibold space-y-1">
                           <p>{resetInfoMsg}</p>
-                          {resetPreviewCode && (
-                            <p className="font-mono text-sm font-black text-[#ed0718] bg-white px-2.5 py-1.5 rounded-lg border border-blue-200 text-center tracking-widest">
-                              Código de verificación: {resetPreviewCode}
-                            </p>
-                          )}
                         </div>
                       )}
 
@@ -797,7 +785,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           onClick={() => {
                             setResetStep('request');
                             setResetCode('');
-                            setResetPreviewCode('');
                             setErrorMsg('');
                           }}
                           className="px-3 py-2.5 rounded-xl border border-gray-300 text-xs font-bold text-gray-700 hover:bg-gray-50 cursor-pointer"
