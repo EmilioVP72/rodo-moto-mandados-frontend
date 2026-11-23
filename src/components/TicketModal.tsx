@@ -665,7 +665,8 @@ _RODO Moto Mandados · Despacho San Miguel_`;
 
             {/* Botón para notificar al cliente que el repartidor está afuera */}
             <button
-              onClick={handleNotifyOutside}
+              disabled={!order.adminNextStatuses?.includes('afuera_del_domicilio')}
+              onClick={() => handleNotifyOutside().catch(err => onShowToast?.(err.message))}
               className="w-full bg-red-600 hover:bg-red-700 text-white font-extrabold text-xs py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 shadow-sm transition"
             >
               <Bell className="w-4 h-4" />
@@ -708,7 +709,7 @@ _RODO Moto Mandados · Despacho San Miguel_`;
               </div>
             </div>
             <button
-              onClick={handleConfirmQuote}
+              onClick={() => handleConfirmQuote().catch(err => onShowToast?.(err.message))}
               className="w-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs py-2.5 rounded-xl shadow-xs transition"
             >
               ✓ Enviar Cotización al Cliente (${(Number(quoteFoodPrice) + Number(quoteDeliveryFee)).toFixed(2)} MXN)
@@ -772,7 +773,7 @@ _RODO Moto Mandados · Despacho San Miguel_`;
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
                       <button
                         type="button"
-                        onClick={handleCustomerAcceptQuote}
+                        onClick={() => handleCustomerAcceptQuote().catch(err => onShowToast?.(err.message))}
                         className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-3 px-3 rounded-xl shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer"
                       >
                         <CheckCircle2 className="w-4 h-4" />
@@ -780,7 +781,7 @@ _RODO Moto Mandados · Despacho San Miguel_`;
                       </button>
                       <button
                         type="button"
-                        onClick={handleCustomerRejectQuote}
+                        onClick={() => handleCustomerRejectQuote().catch(err => onShowToast?.(err.message))}
                         className="w-full bg-white hover:bg-red-50 text-red-600 border-2 border-red-300 hover:border-red-500 font-black text-xs py-3 px-3 rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
                       >
                         <XCircle className="w-4 h-4" />
@@ -995,7 +996,7 @@ _RODO Moto Mandados · Despacho San Miguel_`;
             {(['asignado', 'recolectado', 'en_camino', 'afuera_del_domicilio', 'entregado'] as string[]).includes(order.status) && (
               <div className="my-3 bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-2.5 text-left">
                 <div className="flex flex-wrap gap-2">
-                  {order.status !== 'entregado' && (
+                  {order.status === 'afuera_del_domicilio' && (
                     <button
                       type="button"
                       onClick={handleConfirmReceivedByCustomer}
@@ -1407,16 +1408,10 @@ _RODO Moto Mandados · Despacho San Miguel_`;
               <span className="text-xs font-bold text-gray-700">Estado:</span>
               <select
                 value={order.status}
-                onChange={(e) => handleQuickStatusChange(e.target.value as Order['status'])}
+                onChange={(e) => handleQuickStatusChange(e.target.value as Order['status']).catch(err => onShowToast?.(err.message))}
                 className="bg-white border border-gray-300 text-xs rounded-xl px-2.5 py-1.5 font-bold"
               >
-                <option value="nuevo">Nuevo</option>
-                <option value="en_preparacion">En Preparación</option>
-                <option value="asignado">Asignado a Repartidor</option>
-                <option value="en_camino">En Camino</option>
-                <option value="afuera_del_domicilio">🚨 Afuera del Domicilio (10 min)</option>
-                <option value="entregado">Entregado</option>
-                <option value="cancelado">Cancelado</option>
+                {[order.status, ...(order.adminNextStatuses || [])].map(status => <option key={status} value={status}>{status.replaceAll('_', ' ')}</option>)}
               </select>
             </div>
 

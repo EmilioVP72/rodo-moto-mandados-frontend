@@ -1021,17 +1021,6 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                   setCurrentSettings(nextSettings);
                   try {
                     await saveDispatchSettings(nextSettings);
-                    await saveAdminAuditLogToFirestore({
-                      id: `audit-rain-${Date.now()}`,
-                      timestamp: new Date().toISOString(),
-                      adminEmail: 'edsoncruz14999@gmail.com',
-                      actionType: 'ajuste_configuracion',
-                      details: nextRainState
-                        ? 'Activó pausa temporal de envíos por lluvia'
-                        : 'Reanudó envíos tras pausa por lluvia',
-                      previousValue: currentSettings.rainPauseEnabled ? 'PAUSADO' : 'ACTIVO',
-                      newValue: nextRainState ? 'PAUSADO' : 'ACTIVO',
-                    });
                     await onRefreshData();
                     showFeedback(
                       nextRainState
@@ -1538,19 +1527,10 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                             </span>
                             <select
                               value={order.status}
-                              onChange={(e) => handleStatusChange(order.id, e.target.value as Order['status'])}
+                              onChange={(e) => handleStatusChange(order.id, e.target.value as Order['status']).catch(err => showFeedback(err.message, 'error'))}
                               className="flex-1 sm:flex-none text-xs border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 font-bold bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-[#ed0718]"
                             >
-                              <option value="nuevo">🆕 Nuevo</option>
-                              <option value="en_preparacion">👨‍🍳 En Preparación</option>
-                              <option value="asignado">📋 Asignado a Repartidor</option>
-                              <option value="recolectado">🛵 Pedido Recolectado</option>
-                              <option value="en_camino">🚀 En Camino</option>
-                              <option value="afuera_del_domicilio">📍 Repartidor Afuera (10m)</option>
-                              <option value="entregado">✅ Entregado</option>
-                              <option value="cancelado">❌ Cancelado</option>
-                              <option value="cancelado_con_deuda">⛔ Cancelado con Deuda</option>
-                              <option value="pendiente_cotizacion">💬 Pendiente Cotización</option>
+                              {[order.status, ...(order.adminNextStatuses || [])].map(status => <option key={status} value={status}>{status.replaceAll('_', ' ')}</option>)}
                             </select>
                           </div>
 
@@ -1578,10 +1558,10 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                               <span>Rider 2</span>
                             </a>
 
-                            {order.status !== 'entregado' && order.status !== 'cancelado' && (
+                            {order.adminNextStatuses?.includes('afuera_del_domicilio') && (
                               <button
                                 type="button"
-                                onClick={() => handleNotifyArrivalOutside(order)}
+                                onClick={() => handleNotifyArrivalOutside(order).catch(err => showFeedback(err.message, 'error'))}
                                 className={`text-xs py-2 px-3 rounded-xl font-bold flex items-center gap-1.5 transition cursor-pointer border ${
                                   order.status === 'afuera_del_domicilio'
                                     ? 'bg-amber-500 text-white border-amber-600 animate-pulse'

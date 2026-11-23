@@ -176,6 +176,7 @@ export interface FuelEmergencyDetails {
 
 export interface Order {
   pickupCoordinates?: { lat: number; lng: number };
+  adminNextStatuses?: string[];
   quoteOfferedAt?: string;
   id: string;
   folio: string; // Folio único RD-AAMMDD-XXXXX

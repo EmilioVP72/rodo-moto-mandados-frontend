@@ -41,9 +41,9 @@ interface OrderHistoryApiResponse {
   orders: (Order & {
     statusHistory?: Array<{
       id: string;
-      previousStatus?: string | null;
-      newStatus: string;
-      changedBy?: string | null;
+      fromStatus?: string | null;
+      toStatus: string;
+      changedByRole?: string | null; changedByUserId?: string | null;
       note?: string | null;
       createdAt: string;
     }>;
@@ -443,9 +443,9 @@ export const AdminOrderHistoryView: React.FC<AdminOrderHistoryViewProps> = ({
             const historyTrail = (order as any).statusHistory as
               | Array<{
                   id: string;
-                  previousStatus?: string | null;
-                  newStatus: string;
-                  changedBy?: string | null;
+                  fromStatus?: string | null;
+                  toStatus: string;
+                  changedByRole?: string | null; changedByUserId?: string | null;
                   note?: string | null;
                   createdAt: string;
                 }>
@@ -628,10 +628,10 @@ export const AdminOrderHistoryView: React.FC<AdminOrderHistoryViewProps> = ({
                           <span className="text-gray-500">Comisión RODO:</span>
                           <strong className="font-mono">${Number(order.commissionAmount || 0).toFixed(2)}</strong>
                         </div>
-                        {order.discountAmount ? (
+                        {order.promoDiscountApplied ? (
                           <div className="flex justify-between text-emerald-700">
                             <span>Descuento ({order.promoCode || 'Promo'}):</span>
-                            <strong className="font-mono">-${Number(order.discountAmount).toFixed(2)}</strong>
+                            <strong className="font-mono">-${Number(order.promoDiscountApplied).toFixed(2)}</strong>
                           </div>
                         ) : null}
                         <div className="flex justify-between pt-1 border-t border-gray-200 dark:border-slate-800 text-sm font-black">
@@ -697,15 +697,15 @@ export const AdminOrderHistoryView: React.FC<AdminOrderHistoryViewProps> = ({
                             >
                               <div>
                                 <span className="font-black uppercase text-gray-900 dark:text-white">
-                                  {ev.previousStatus
-                                    ? `${ev.previousStatus.replace(/_/g, ' ')} → ${ev.newStatus.replace(/_/g, ' ')}`
-                                    : ev.newStatus.replace(/_/g, ' ')}
+                                  {ev.fromStatus
+                                    ? `${ev.fromStatus.replace(/_/g, ' ')} → ${ev.toStatus.replace(/_/g, ' ')}`
+                                    : ev.toStatus.replace(/_/g, ' ')}
                                 </span>
                                 {ev.note && (
                                   <span className="text-gray-500 ml-1.5">· {ev.note}</span>
                                 )}
-                                {ev.changedBy && (
-                                  <span className="text-gray-400 ml-1.5">({ev.changedBy})</span>
+                                {ev.changedByUserId && (
+                                  <span className="text-gray-400 ml-1.5">({[ev.changedByRole, ev.changedByUserId].filter(Boolean).join(' · ')})</span>
                                 )}
                               </div>
                               <span className="font-mono text-[10px] text-gray-400">

@@ -32,6 +32,6 @@ export function updateAssignedRiderOrder(
 export function assignRiderToOrder(orderId: string, riderUserId: string | null): Promise<Order> {
   return apiFetch<Order>(`/api/orders/${encodeURIComponent(orderId)}`, {
     method: 'PATCH',
-    body: { assignedRiderUserId: riderUserId, ...(riderUserId ? { status: 'asignado' } : {}) },
+    body: { assignedRiderUserId: riderUserId },
   });
 }

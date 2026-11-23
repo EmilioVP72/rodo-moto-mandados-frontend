@@ -341,31 +341,10 @@ export async function confirmOrderTransfer(orderId: string): Promise<void> {
 }
 
 export async function updateOrderInDb(orderId: string, updates: Partial<Order>): Promise<void> {
-  try {
-    const existing = getLocalStoredOrders();
-    const idx = existing.findIndex((o) => o.id === orderId);
-    if (idx >= 0) {
-      const nextOrder = { ...existing[idx], ...updates, updatedAt: new Date().toISOString() };
-      existing[idx] = nextOrder;
-      localStorage.setItem(LOCAL_STORAGE_ORDERS, JSON.stringify(existing));
-      upsertOrderToIDB(nextOrder);
-    }
-  } catch {}
-  notifyOrderSubscribers();
-
-  try {
-    const updated = await apiFetch<Order>(`/api/orders/${encodeURIComponent(orderId)}`, {
-      method: 'PATCH',
-      body: updates,
-    });
-    if (updated && updated.id) {
-      saveLocalStoredOrder(updated);
-      upsertOrderToIDB(updated);
-      notifyOrderSubscribers();
-    }
-  } catch (err) {
-    console.warn('[API] Actualización de orden en modo fallback:', err);
-  }
+  await persistOnlyAfterConfirmation(
+    () => apiFetch<Order>(`/api/orders/${encodeURIComponent(orderId)}`, { method: 'PATCH', body: updates }),
+    order => { saveLocalStoredOrder(order); upsertOrderToIDB(order); notifyOrderSubscribers(); }
+  );
 }
 
 export async function createOrdersBatchInDb(orders: Order[]): Promise<void> {
