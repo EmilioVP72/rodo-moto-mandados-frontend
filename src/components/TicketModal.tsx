@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Order, DispatchSettings, Restaurant } from '../types';
+import { Order, DispatchSettings, Restaurant, DispatchRider } from '../types';
 import {
   buildWhatsAppDispatchMessage,
   generateWhatsAppLink,
@@ -39,6 +39,7 @@ import { uploadOrderProofToStorage } from '../api/httpClient';
 import { emitSocketEvent, onSocketEvent } from '../api/socketClient';
 import { vibrateSuccess } from '../utils/haptics';
 import { useLanguage } from '../utils/i18n';
+import { assignRiderToOrder } from '../services/riders';
 
 interface TicketModalProps {
   order: Order | null;
@@ -58,6 +59,12 @@ export const TicketModal: React.FC<TicketModalProps> = ({
   const { t } = useLanguage();
   const [copied, setCopied] = useState(false);
   const [selectedRider, setSelectedRider] = useState(order?.assignedRiderName || settings.defaultRider1Name);
+  const [selectedRiderUserId, setSelectedRiderUserId] = useState(order?.assignedRiderUserId || '');
+
+  useEffect(() => {
+    setSelectedRiderUserId(order?.assignedRiderUserId || '');
+    setSelectedRider(order?.assignedRiderName || settings.defaultRider1Name);
+  }, [order?.id, order?.assignedRiderUserId, order?.assignedRiderName, settings.defaultRider1Name]);
 
   // Cuenta regresiva de 10 minutos si el repartidor notificó que está afuera
   const [timeLeft, setTimeLeft] = useState<number>(() => {
@@ -360,7 +367,7 @@ export const TicketModal: React.FC<TicketModalProps> = ({
   const isVerified = order.paymentStatus === 'verificado';
 
   // Lista de hasta 10 repartidores activos configurados con nombre y WhatsApp
-  const dispatchRiders = (settings.ridersList && settings.ridersList.length > 0)
+  const dispatchRiders: DispatchRider[] = (settings.ridersList && settings.ridersList.length > 0)
     ? settings.ridersList.filter((r) => r.isActive && r.phone.trim())
     : [
         { id: 'r1', name: settings.defaultRider1Name || 'Moto 1 - Principal', phone: settings.defaultRider1Phone || '524151019920', isActive: true },
@@ -398,6 +405,7 @@ _RODO Moto Mandados · Despacho San Miguel_`;
     const updates: Partial<Order> = {
       status: newStatus,
       assignedRiderName: selectedRider,
+      assignedRiderUserId: selectedRiderUserId || undefined,
     };
 
     if (newStatus === 'afuera_del_domicilio') {
@@ -411,6 +419,18 @@ _RODO Moto Mandados · Despacho San Miguel_`;
 
     await updateOrderInDb(order.id, updates);
     dispatchIntegrationEvent('order.status_changed', { order: { ...order, ...updates } });
+  };
+
+  const handleRiderAssignment = async (riderUserId: string) => {
+    const rider = dispatchRiders.find((candidate) => candidate.userId === riderUserId);
+    try {
+      await assignRiderToOrder(order.id, riderUserId || null);
+      setSelectedRiderUserId(riderUserId);
+      if (rider) setSelectedRider(rider.name);
+      onShowToast?.(rider ? `Pedido asignado a ${rider.name}.` : 'Se retiró la asignación del pedido.');
+    } catch (error: any) {
+      onShowToast?.(error?.message || 'No se pudo asignar el repartidor.');
+    }
   };
 
   // Notificar al cliente que está afuera
@@ -668,6 +688,19 @@ _RODO Moto Mandados · Despacho San Miguel_`;
             <div className="text-[11px] text-amber-950 font-bold">
               Enviar ticket a repartidor por WhatsApp ({dispatchRiders.length} disponibles):
             </div>
+            <label className="block text-[11px] font-bold text-amber-950">
+              Repartidor asignado
+              <select
+                value={selectedRiderUserId}
+                onChange={(event) => void handleRiderAssignment(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm text-gray-900"
+              >
+                <option value="">Sin asignar</option>
+                {dispatchRiders.filter((rider) => rider.userId).map((rider) => (
+                  <option key={rider.userId} value={rider.userId}>{rider.name} · {rider.phone}</option>
+                ))}
+              </select>
+            </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
               {dispatchRiders.map((rider, idx) => {
                 const msg = buildWhatsAppDispatchMessage(order, rider.name);

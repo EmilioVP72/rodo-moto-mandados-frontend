@@ -7,6 +7,7 @@ import {
   PartnerLocal,
   SpecialtyCategory,
   DispatchRider,
+  RiderAccount,
   BroadcastNotification,
   AccountRecoveryRequest,
 } from '../types';
@@ -28,6 +29,7 @@ import {
   saveAdminAuditLogToFirestore,
 } from '../services/db';
 import { dispatchRodoNotification, resolveNotificationScopeKey } from '../services/notifications';
+import { createRiderAccount, getRiderAccounts } from '../services/riders';
 import { InteractiveMapPicker } from './InteractiveMapPicker';
 import {
   X,
@@ -171,6 +173,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   // Estados para Locales Asociados (Códigos de 3 dígitos)
   const [partnerLocals, setPartnerLocals] = useState<PartnerLocal[]>([]);
+  const [riderAccounts, setRiderAccounts] = useState<RiderAccount[]>([]);
+  const [newRiderAccount, setNewRiderAccount] = useState({ name: '', email: '', phone: '', password: '' });
+  const [isCreatingRider, setIsCreatingRider] = useState(false);
   const [editingPartnerLocal, setEditingPartnerLocal] = useState<PartnerLocal | null>(null);
   const [isCreatingPartnerLocal, setIsCreatingPartnerLocal] = useState(false);
   const [feedbackNotice, setFeedbackNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -200,7 +205,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     loadLocals();
     loadBroadcasts();
     loadRecoveryRequests();
+    getRiderAccounts().then(setRiderAccounts).catch(() => {});
   }, []);
+
+  const handleCreateRiderAccount = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setIsCreatingRider(true);
+    try {
+      const rider = await createRiderAccount(newRiderAccount);
+      setRiderAccounts((current) => [...current, rider]);
+      setNewRiderAccount({ name: '', email: '', phone: '', password: '' });
+      showFeedback(`Cuenta creada para ${rider.name}. Asóciala a un espacio de la flotilla.`);
+    } catch (error: any) {
+      showFeedback(error?.message || 'No se pudo crear la cuenta de repartidor.', 'error');
+    } finally {
+      setIsCreatingRider(false);
+    }
+  };
 
   const handleSendBroadcast = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -818,6 +839,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   // Cambiar estado de orden
   const handleStatusChange = async (orderId: string, newStatus: Order['status']) => {
     const targetOrder = orders.find((o) => o.id === orderId);
+    if (newStatus === 'asignado' && !targetOrder?.assignedRiderUserId) {
+      showFeedback('Abre el ticket y asigna primero una cuenta de repartidor.', 'error');
+      return;
+    }
     await updateOrderInDb(orderId, { status: newStatus });
     logAdminAction(
       'cambio_estatus',
@@ -3831,6 +3856,21 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                 </div>
               )}
 
+              <form onSubmit={handleCreateRiderAccount} className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
+                <div>
+                  <h4 className="font-bold text-sm text-blue-950">Cuentas de acceso de repartidor</h4>
+                  <p className="text-xs text-blue-800">Crea credenciales para que el repartidor inicie sesión en esta app. Después vincúlalo con un espacio de la flotilla.</p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <input required minLength={2} value={newRiderAccount.name} onChange={(e) => setNewRiderAccount((v) => ({ ...v, name: e.target.value }))} placeholder="Nombre completo" className="rounded-lg border border-blue-200 p-2 text-sm" />
+                  <input required type="email" value={newRiderAccount.email} onChange={(e) => setNewRiderAccount((v) => ({ ...v, email: e.target.value }))} placeholder="Correo de acceso" className="rounded-lg border border-blue-200 p-2 text-sm" />
+                  <input required minLength={8} value={newRiderAccount.phone} onChange={(e) => setNewRiderAccount((v) => ({ ...v, phone: e.target.value }))} placeholder="Teléfono" className="rounded-lg border border-blue-200 p-2 text-sm" />
+                  <input required type="password" minLength={8} value={newRiderAccount.password} onChange={(e) => setNewRiderAccount((v) => ({ ...v, password: e.target.value }))} placeholder="Contraseña inicial (mínimo 8)" className="rounded-lg border border-blue-200 p-2 text-sm" />
+                </div>
+                <button disabled={isCreatingRider} className="rounded-lg bg-blue-700 px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{isCreatingRider ? 'Creando...' : 'Crear cuenta de repartidor'}</button>
+                {riderAccounts.length > 0 && <p className="text-xs text-blue-800">Cuentas registradas: {riderAccounts.filter((r) => r.status === 'activo').length}</p>}
+              </form>
+
               {/* Grid de 10 Repartidores */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                 {riders10List.map((rider, idx) => (
@@ -3886,6 +3926,19 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                           className="w-full border border-gray-300 rounded-lg p-1.5 text-xs font-mono font-bold bg-white"
                           placeholder="524151019920"
                         />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="block text-[10px] font-bold text-gray-600 mb-0.5">Cuenta autorizada para recibir pedidos</label>
+                        <select
+                          value={rider.userId || ''}
+                          onChange={(e) => handleUpdateRider(idx, { userId: e.target.value || undefined })}
+                          className="w-full border border-gray-300 rounded-lg p-1.5 text-xs font-semibold bg-white"
+                        >
+                          <option value="">Sin cuenta vinculada</option>
+                          {riderAccounts.filter((account) => account.status === 'activo').map((account) => (
+                            <option key={account.id} value={account.id}>{account.name} · {account.email}</option>
+                          ))}
+                        </select>
                       </div>
                     </div>
                   </div>

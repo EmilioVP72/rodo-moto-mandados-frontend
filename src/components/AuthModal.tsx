@@ -50,6 +50,7 @@ interface AuthModalProps {
       name: string;
       phone: string;
       email: string;
+      role?: 'CUSTOMER' | 'RIDER' | 'PARTNER_LOCAL' | 'ADMIN';
       ine10Digits?: string;
       referralCode?: string;
     },
@@ -435,12 +436,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         return;
       }
 
-      saveIneAccount(res.user);
+      if (!res.user.role || res.user.role === 'CUSTOMER') saveIneAccount(res.user);
       const customerPayload = {
         id: res.user.id,
         name: res.user.name,
         phone: res.user.phone,
         email: res.user.email,
+        role: res.user.role || 'CUSTOMER',
         ine10Digits: res.user.ine10Digits,
         referralCode: res.user.referralCode,
       };

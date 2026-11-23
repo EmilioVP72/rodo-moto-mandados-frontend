@@ -236,6 +236,7 @@ export interface Order {
   cancellationReason?: string;
   assignedRiderName?: string;
   assignedRiderPhone?: string;
+  assignedRiderUserId?: string;
   assignedRidersList?: string[];
   localCode?: string;
   ridersRequestedCount?: number;
@@ -315,6 +316,7 @@ export interface CustomerAccount {
   name: string;
   phone: string;
   email: string;
+  role?: 'CUSTOMER' | 'RIDER' | 'PARTNER_LOCAL' | 'ADMIN';
   ineVerified: boolean;
   ineDigits?: string;
   ine10Digits?: string; // Los 10 dígitos extraídos del reverso de la credencial INE
@@ -353,6 +355,16 @@ export interface DispatchRider {
   name: string;
   phone: string;
   isActive: boolean;
+  userId?: string;
+}
+
+export interface RiderAccount {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  status: 'activo' | 'bloqueado_fraude';
+  createdAt: string;
 }
 
 export interface DispatchSettings {

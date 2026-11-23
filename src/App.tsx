@@ -24,6 +24,7 @@ import { CheckoutModal } from './components/CheckoutModal';
 import { CartDrawerModal } from './components/CartDrawerModal';
 import { TicketModal } from './components/TicketModal';
 import { AuthModal, AuthSuccessMode } from './components/AuthModal';
+import { RiderPortal } from './components/RiderPortal';
 import { ActionFeedbackModal, SuccessToastBanner, TransactionFeedbackPayload } from './components/ActionFeedbackModal';
 import { CustomerProfileModal } from './components/CustomerProfileModal';
 import { ExpressDeliveryPanel } from './components/ExpressDeliveryPanel';
@@ -210,6 +211,7 @@ export default function App() {
     name: string;
     phone: string;
     email: string;
+    role?: 'CUSTOMER' | 'RIDER' | 'PARTNER_LOCAL' | 'ADMIN';
     ine10Digits?: string;
     referralCode?: string;
   } | null>(() => {
@@ -566,6 +568,7 @@ export default function App() {
                 name: res.user.name,
                 phone: res.user.phone || '',
                 email: res.user.email,
+                role: res.user.role === 'RIDER' ? 'RIDER' : 'CUSTOMER',
                 ine10Digits: res.user.ine10Digits,
                 referralCode: res.user.referralCode,
               });
@@ -609,10 +612,11 @@ export default function App() {
   }, [notificationScopeKey]);
 
   useEffect(() => {
-    const isAuthed = !!currentUser || isAdminLoggedIn;
+    const isRider = currentUser?.role === 'RIDER';
+    const isAuthed = (!!currentUser && !isRider) || isAdminLoggedIn;
     const viewerRole: 'admin' | 'customer' | 'guest' = isAdminLoggedIn
       ? 'admin'
-      : currentUser && !currentUser.id.startsWith('guest')
+      : currentUser && !isRider && !currentUser.id.startsWith('guest')
       ? 'customer'
       : 'guest';
     const scope =
@@ -996,6 +1000,10 @@ export default function App() {
     setSearchQuery('');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  if (currentUser?.role === 'RIDER') {
+    return <RiderPortal riderName={currentUser.name} onLogout={() => handleFullLogout(false)} />;
+  }
 
   return (
     <div
@@ -1852,6 +1860,10 @@ export default function App() {
           setIsAdminLoggedIn(false);
           setOrders([]);
           setCurrentUser(cust);
+          if (cust.role === 'RIDER') {
+            setTransactionFeedback(null);
+            return;
+          }
           const hasPendingCart = cart.length > 0;
           const firstName = (cust.name || 'Cliente').split(' ')[0];
 
