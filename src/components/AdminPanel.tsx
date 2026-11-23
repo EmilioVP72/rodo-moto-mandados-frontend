@@ -1,3 +1,4 @@
+import { apiFetch } from '../api/httpClient';
 import { ProtectedImage } from './ProtectedImage';
 import React, { useState, useEffect } from 'react';
 import {
@@ -419,27 +420,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     return o.status === filterStatus;
   });
 
-  // Cálculos de Corte Diario
-  const today = new Date().toISOString().slice(0, 10);
-  const todaysOrders = orders.filter((o) => o.createdAt.startsWith(today) && o.status !== 'cancelado');
-
-  const totalVolume = todaysOrders.reduce((sum, o) => sum + o.total, 0);
-  const totalSubtotals = todaysOrders.reduce((sum, o) => sum + o.subtotal, 0);
-  const totalDeliveryFees = todaysOrders.reduce((sum, o) => sum + o.deliveryFee, 0);
-  const totalCommissions = todaysOrders.reduce((sum, o) => sum + (o.commissionAmount || (o.subtotal * (o.restaurantCommissionRate || 15) / 100)), 0);
-  const totalRodoIncome = totalDeliveryFees + totalCommissions;
-
-  const cashOrders = todaysOrders.filter((o) => o.paymentMethod === 'efectivo');
-  const transferOrders = todaysOrders.filter((o) => o.paymentMethod === 'transferencia');
-  
-  // Regla obligatoria: Propinas en efectivo NO entran al corte diario (100% dinero en mano del repartidor)
-  // Propinas en transferencia Sí entran al corte bancario central para dispersión
-  const cashTipsTotal = cashOrders.reduce((sum, o) => sum + (o.tipAmount || 0), 0);
-  const transferTipsTotal = transferOrders.reduce((sum, o) => sum + (o.tipAmount || 0), 0);
-
-  const totalCashGross = cashOrders.reduce((sum, o) => sum + o.total, 0);
-  const totalCashRodoNet = totalCashGross - cashTipsTotal; // Excluye propinas en efectivo del repartidor
-  const totalTransfer = transferOrders.reduce((sum, o) => sum + o.total, 0);
+  const [receipts, setReceipts] = useState<Record<'count' | 'cashCount' | 'bankCount' | 'totalVolume' | 'totalRodoIncome' |
+    'totalCashRodoNet' | 'totalTransfer' | 'cashTipsTotal' | 'transferTipsTotal' | 'supplierTotal' |
+    'totalCommissions' | 'totalDeliveryFees' | 'debtTotal', number> | null>(null);
+  const [receiptError, setReceiptError] = useState(false);
+  useEffect(() => {
+    if (activeTab !== 'cortes') return;
+    let active = true;
+    const load = async () => {
+      try {
+        const data = await apiFetch<NonNullable<typeof receipts>>('/api/admin/daily-receipts');
+        if (active) { setReceipts(data); setReceiptError(false); }
+      } catch { if (active) { setReceipts(null); setReceiptError(true); } }
+    };
+    void load();
+    const timer = setInterval(load, 30000);
+    return () => { active = false; clearInterval(timer); };
+  }, [activeTab, orders]);
 
   // Guardar configuración de Ajustes
   const handleSaveSettings = async (e: React.FormEvent) => {
@@ -3520,7 +3517,8 @@ _RODO Moto Mandados · San Miguel de Allende_`;
           )}
 
           {/* ================= PESTAÑA: CORTES DIARIOS ================= */}
-          {activeTab === 'cortes' && (
+          {activeTab === 'cortes' && !receipts && <p role="status">{receiptError ? 'No se pudo consultar el corte.' : 'Consultando cobros…'}</p>}
+          {activeTab === 'cortes' && receipts && (
             <div className="space-y-4">
               <div className="bg-white p-4 rounded-xl border border-gray-200 flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -3528,22 +3526,22 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                     Corte Diario de Operación
                   </h3>
                   <p className="text-xs text-gray-500">
-                    Fecha: {new Date().toLocaleDateString('es-MX', { dateStyle: 'full' })}
+                    Fecha: {new Date().toLocaleDateString('es-MX', { dateStyle: 'full', timeZone: 'America/Mexico_City' })}
                   </p>
                 </div>
                 <div className="text-xs font-mono font-bold bg-green-50 text-green-800 px-3 py-1.5 rounded-lg border border-green-200">
-                  {todaysOrders.length} pedidos no cancelados hoy
+                  {receipts.count} cobros registrados hoy
                 </div>
               </div>
 
-              {/* Métricas Principales */}
+              <p>Adeudos generados hoy: ${receipts.debtTotal.toFixed(2)} MXN</p>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-xs">
                   <span className="text-[11px] font-bold text-gray-500 block uppercase">
                     Volumen Total Movido
                   </span>
                   <div className="text-xl sm:text-2xl font-black text-gray-900 mt-1 font-mono">
-                    ${totalVolume.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                    ${receipts.totalVolume.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                   </div>
                   <small className="text-[10px] text-gray-400">Total recaudado hoy</small>
                 </div>
@@ -3553,7 +3551,7 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                     Ganancia RODO (Cortes)
                   </span>
                   <div className="text-xl sm:text-2xl font-black text-emerald-900 mt-1 font-mono">
-                    ${totalRodoIncome.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                    ${receipts.totalRodoIncome.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                   </div>
                   <small className="text-[10px] text-emerald-700">Comisiones + Envíos</small>
                 </div>
@@ -3563,9 +3561,9 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                     Efectivo para Caja RODO
                   </span>
                   <div className="text-xl sm:text-2xl font-black text-blue-900 mt-1 font-mono">
-                    ${totalCashRodoNet.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                    ${receipts.totalCashRodoNet.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                   </div>
-                  <small className="text-[10px] text-blue-700">Sin propinas del repartidor ({cashOrders.length} pedidos)</small>
+                  <small className="text-[10px] text-blue-700">Sin propinas del repartidor ({receipts.cashCount} pedidos)</small>
                 </div>
 
                 <div className="bg-purple-50 p-4 rounded-xl border border-purple-200 shadow-xs">
@@ -3573,9 +3571,9 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                     En Transferencias
                   </span>
                   <div className="text-xl sm:text-2xl font-black text-purple-900 mt-1 font-mono">
-                    ${totalTransfer.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                    ${receipts.totalTransfer.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                   </div>
-                  <small className="text-[10px] text-purple-700">{transferOrders.length} por transferencia</small>
+                  <small className="text-[10px] text-purple-700">{receipts.bankCount} por transferencia</small>
                 </div>
               </div>
 
@@ -3587,7 +3585,7 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                       💵 Propinas en Efectivo (100% Repartidor)
                     </span>
                     <span className="text-xs font-mono font-black text-amber-900 bg-amber-200 px-2 py-0.5 rounded">
-                      ${cashTipsTotal.toFixed(2)} MXN
+                      ${receipts.cashTipsTotal.toFixed(2)} MXN
                     </span>
                   </div>
                   <p className="text-[11px] text-amber-900/90 mt-1.5 leading-snug">
@@ -3601,7 +3599,7 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                       💳 Propinas en Transferencia (Central)
                     </span>
                     <span className="text-xs font-mono font-black text-indigo-900 bg-indigo-200 px-2 py-0.5 rounded">
-                      ${transferTipsTotal.toFixed(2)} MXN
+                      ${receipts.transferTipsTotal.toFixed(2)} MXN
                     </span>
                   </div>
                   <p className="text-[11px] text-indigo-900/90 mt-1.5 leading-snug">
@@ -3617,26 +3615,26 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                 </h4>
                 <div className="divide-y divide-gray-100 text-xs sm:text-sm">
                   <div className="py-2.5 flex justify-between">
-                    <span className="text-gray-600">Suma total de alimentos (a pagar a restaurantes):</span>
+                    <span className="text-gray-600">Importe a liquidar a proveedores:</span>
                     <span className="font-mono font-bold text-gray-900">
-                      ${(totalSubtotals - totalCommissions).toFixed(2)} MXN
+                      ${receipts.supplierTotal.toFixed(2)} MXN
                     </span>
                   </div>
                   <div className="py-2.5 flex justify-between text-emerald-700">
                     <span>Retención por Comisiones RODO pactadas:</span>
-                    <span className="font-mono font-black">+${totalCommissions.toFixed(2)} MXN</span>
+                    <span className="font-mono font-black">+${receipts.totalCommissions.toFixed(2)} MXN</span>
                   </div>
                   <div className="py-2.5 flex justify-between text-emerald-700">
-                    <span>Ingresos por Tarifas de Envíos RODO:</span>
-                    <span className="font-mono font-black">+${totalDeliveryFees.toFixed(2)} MXN</span>
+                    <span>Tarifas netas de descuentos:</span>
+                    <span className="font-mono font-black">+${receipts.totalDeliveryFees.toFixed(2)} MXN</span>
                   </div>
                   <div className="py-2.5 flex justify-between text-indigo-700">
                     <span>Propinas por transferencia (a dispersar a repartidores):</span>
-                    <span className="font-mono font-bold">${transferTipsTotal.toFixed(2)} MXN</span>
+                    <span className="font-mono font-bold">${receipts.transferTipsTotal.toFixed(2)} MXN</span>
                   </div>
                   <div className="py-2.5 flex justify-between bg-gray-50 p-2 rounded-lg font-black text-sm">
                     <span className="text-[#101b29]">UTILIDAD BRUTA RODO HOY (Envíos + Comisiones):</span>
-                    <span className="font-mono text-[#ed0718]">${totalRodoIncome.toFixed(2)} MXN</span>
+                    <span className="font-mono text-[#ed0718]">${receipts.totalRodoIncome.toFixed(2)} MXN</span>
                   </div>
                 </div>
               </div>
