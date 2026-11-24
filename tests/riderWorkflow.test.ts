@@ -1,3 +1,4 @@
+import { availableDispatchRiders } from '../src/utils/riderDirectory.ts';
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { getNextRiderStatus, RIDER_STATUS_ACTION } from '../src/utils/riderWorkflow.ts';
@@ -22,4 +23,12 @@ describe('Rider delivery workflow', () => {
     assert.equal(RIDER_STATUS_ACTION.en_camino, 'Avisar que estoy afuera');
     assert.equal(RIDER_STATUS_ACTION.entregado, undefined);
   });
+});
+
+it('ofrece en despacho los repartidores disponibles y conserva los contactos de WhatsApp sin acceso', () => {
+  const rider = { id: 'r1', userId: 'r1', email: 'r@example.invalid', name: 'Moto', phone: '4151234567',
+    available: true, status: 'activo' as const, createdAt: '' };
+  const contact = { ...rider, id: 'contact', userId: null, email: null };
+  assert.deepEqual(availableDispatchRiders([rider, contact, { ...rider, available: false },
+    { ...rider, status: 'bloqueado_fraude' }, { ...rider, phone: ' ' }]), [rider, contact]);
 });

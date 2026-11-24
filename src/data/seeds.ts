@@ -117,18 +117,6 @@ export const INITIAL_SETTINGS: DispatchSettings = {
   defaultRider1Phone: '524151019920', // Número de soporte obligatorio: 415-101-9920
   defaultRider2Name: 'Repartidor de Guardia',
   defaultRider2Phone: '524151019920',
-  ridersList: [
-    { id: 'rider-1', name: 'Moto 1 - Juan Principal', phone: '524151019920', isActive: true },
-    { id: 'rider-2', name: 'Moto 2 - Carlos Respaldo', phone: '524151019920', isActive: true },
-    { id: 'rider-3', name: 'Moto 3 - Repartidor Centro', phone: '524151019920', isActive: true },
-    { id: 'rider-4', name: 'Moto 4 - Repartidor Aurora', phone: '524151019920', isActive: true },
-    { id: 'rider-5', name: 'Moto 5 - Repartidor San Antonio', phone: '524151019920', isActive: true },
-    { id: 'rider-6', name: 'Moto 6 - Repartidor Malanquín', phone: '524151019920', isActive: false },
-    { id: 'rider-7', name: 'Moto 7 - Repartidor Estación', phone: '524151019920', isActive: false },
-    { id: 'rider-8', name: 'Moto 8 - Repartidor Frailes', phone: '524151019920', isActive: false },
-    { id: 'rider-9', name: 'Moto 9 - Guardia Nocturna', phone: '524151019920', isActive: false },
-    { id: 'rider-10', name: 'Moto 10 - Apoyo Fin de Semana', phone: '524151019920', isActive: false },
-  ],
   clabeRodo: '012180015678901234',
   bancoRodo: 'BBVA Bancomer',
   titularRodo: 'RODO Moto Mandados Oficial',

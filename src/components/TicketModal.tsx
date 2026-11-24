@@ -1,6 +1,6 @@
 import { ProtectedImage } from './ProtectedImage';
 import React, { useState, useEffect } from 'react';
-import { Order, DispatchSettings, Restaurant, DispatchRider } from '../types';
+import { Order, DispatchSettings, Restaurant } from '../types';
 import {
   buildWhatsAppDispatchMessage,
   generateWhatsAppLink,
@@ -40,6 +40,8 @@ import { uploadOrderProofToStorage } from '../api/httpClient';
 import { onSocketEvent } from '../api/socketClient';
 import { vibrateSuccess } from '../utils/haptics';
 import { useLanguage } from '../utils/i18n';
+import { availableDispatchRiders } from '../utils/riderDirectory';
+import { useRiderDirectory } from '../hooks/useRiderDirectory';
 import { assignRiderToOrder } from '../services/riders';
 
 interface TicketModalProps {
@@ -58,6 +60,7 @@ export const TicketModal: React.FC<TicketModalProps> = ({
   onShowToast,
 }) => {
   const { t } = useLanguage();
+  const directory = useRiderDirectory(isAdmin && !!order);
   const [copied, setCopied] = useState(false);
   const [selectedRider, setSelectedRider] = useState(order?.assignedRiderName || settings.defaultRider1Name);
   const [selectedRiderUserId, setSelectedRiderUserId] = useState(order?.assignedRiderUserId || '');
@@ -311,17 +314,9 @@ export const TicketModal: React.FC<TicketModalProps> = ({
   const isTransfer = order.paymentMethod === 'transferencia';
   const isVerified = order.paymentStatus === 'verificado';
 
-  // Lista de hasta 10 repartidores activos configurados con nombre y WhatsApp
-  const dispatchRiders: DispatchRider[] = (settings.ridersList && settings.ridersList.length > 0)
-    ? settings.ridersList.filter((r) => r.isActive && r.phone.trim())
-    : [
-        { id: 'r1', name: settings.defaultRider1Name || 'Moto 1 - Principal', phone: settings.defaultRider1Phone || '524151019920', isActive: true },
-        { id: 'r2', name: settings.defaultRider2Name || 'Moto 2 - Respaldo', phone: settings.defaultRider2Phone || '524151019920', isActive: true },
-      ];
-
+  const dispatchRiders = availableDispatchRiders(directory.riders);
   const primaryRider = dispatchRiders[0] || { name: settings.defaultRider1Name, phone: settings.defaultRider1Phone };
   const messageRider1 = buildWhatsAppDispatchMessage(order, primaryRider.name);
-  const linkRider1 = generateWhatsAppLink(primaryRider.phone, messageRider1);
 
   // Mensaje directo al cliente avisando que el repartidor está afuera
   const customerArrivalMsg = `🚨 *RODO MOTO MANDADOS · ¡TU REPARTIDOR ESTÁ AFUERA!* 🏍️💨
@@ -646,6 +641,7 @@ _RODO Moto Mandados · Despacho San Miguel_`;
             <div className="text-[11px] text-amber-950 font-bold">
               Enviar ticket a repartidor por WhatsApp ({dispatchRiders.length} disponibles):
             </div>
+            {directory.error && <p role="alert">{directory.error} <button type="button" onClick={directory.reload}>Reintentar</button></p>}
             <label className="block text-[11px] font-bold text-amber-950">
               Repartidor asignado
               <select
@@ -654,7 +650,7 @@ _RODO Moto Mandados · Despacho San Miguel_`;
                 className="mt-1 w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm text-gray-900"
               >
                 <option value="">Sin asignar</option>
-                {dispatchRiders.filter((rider) => rider.userId).map((rider) => (
+                {dispatchRiders.map((rider) => rider.userId && (
                   <option key={rider.userId} value={rider.userId}>{rider.name} · {rider.phone}</option>
                 ))}
               </select>

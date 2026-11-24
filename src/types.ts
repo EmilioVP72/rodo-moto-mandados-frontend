@@ -355,18 +355,12 @@ export interface CoverageZone {
   centerLng?: number;
 }
 
-export interface DispatchRider {
-  id: string;
-  name: string;
-  phone: string;
-  isActive: boolean;
-  userId?: string;
-}
-
 export interface RiderAccount {
   id: string;
   name: string;
-  email: string;
+  userId: string | null;
+  email: string | null;
+  available: boolean;
   phone: string;
   status: 'activo' | 'bloqueado_fraude';
   createdAt: string;
@@ -377,7 +371,6 @@ export interface DispatchSettings {
   defaultRider1Phone: string;
   defaultRider2Name: string;
   defaultRider2Phone: string;
-  ridersList?: DispatchRider[];
   clabeRodo: string;
   bancoRodo: string;
   titularRodo: string;

@@ -181,15 +181,7 @@ export async function getDispatchSettings(): Promise<DispatchSettings> {
   try {
     const data = await apiFetch<Partial<DispatchSettings>>('/api/settings');
     if (data && Object.keys(data).length > 0) {
-      const mergedRiders =
-        data.ridersList && Array.isArray(data.ridersList) && data.ridersList.length >= 10
-          ? data.ridersList
-          : INITIAL_SETTINGS.ridersList;
-      return {
-        ...INITIAL_SETTINGS,
-        ...data,
-        ridersList: mergedRiders,
-      } as DispatchSettings;
+      return { ...INITIAL_SETTINGS, ...data };
     }
   } catch {}
   return INITIAL_SETTINGS;

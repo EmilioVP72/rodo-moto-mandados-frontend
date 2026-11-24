@@ -159,7 +159,7 @@ export async function apiFetch<T>(path: string, options: ApiRequestOptions = {})
 
     if (!response.ok) {
       const errorMsg =
-        (payload && typeof payload === 'object' && payload.error) ||
+        (payload && typeof payload === 'object' && (payload.message || payload.error)) ||
         `HTTP Error ${response.status}`;
       throw new ApiHttpError(response.status, errorMsg, payload);
     }

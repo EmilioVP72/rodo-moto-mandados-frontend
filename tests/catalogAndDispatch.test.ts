@@ -51,8 +51,8 @@ describe('Frontend Catalog Seeds & WhatsApp Dispatch Formatter Unit Tests', () =
       }
     });
 
-    it('la configuración inicial incluye zonas de cobertura y 10 repartidores configurados', () => {
-      assert.equal(INITIAL_SETTINGS.ridersList?.length, 10);
+    it('la configuración inicial incluye zonas de cobertura y deja la flotilla en el directorio', () => {
+      assert.equal('ridersList' in INITIAL_SETTINGS, false);
       assert.ok(INITIAL_SETTINGS.coverageZones.length >= 10);
       assert.ok(INITIAL_SPECIALTIES.length >= 10);
     });
