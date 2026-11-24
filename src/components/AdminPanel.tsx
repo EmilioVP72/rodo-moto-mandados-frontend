@@ -39,6 +39,7 @@ import { availableDispatchRiders } from '../utils/riderDirectory';
 import { assignRiderToOrder, notifyCustomerArrival } from '../services/riders';
 import {
   dispatchRodoNotification,
+  getBrowserNotificationCapability,
   getNotificationSettings,
   requestBrowserNotificationPermission,
   resolveNotificationScopeKey,
@@ -179,16 +180,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   );
 
   const handleToggleAdminMobileAlerts = async () => {
-    if (typeof window === 'undefined' || !('Notification' in window)) {
-      showFeedback('Este navegador no soporta notificaciones push.', 'warning');
-      return;
-    }
-    const granted = await requestBrowserNotificationPermission();
-    setAdminPushPerm(Notification.permission);
-    if (!granted) {
-      showFeedback('Permiso bloqueado. Actívalo en configuración de Chrome para este sitio.', 'warning');
-      return;
-    }
+    const capability = getBrowserNotificationCapability();
     const current = getNotificationSettings();
     saveNotificationSettings({
       ...current,
@@ -196,9 +188,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       soundEnabled: true,
       urgentAlertsEnabled: true,
     });
+
+    if (capability === 'ios_requires_pwa') {
+      showFeedback(
+        'En iPhone/iPad: toca Compartir → "Agregar a pantalla de inicio" para recibir notificaciones del sistema. El sonido y alertas en pantalla ya están activos.',
+        'warning'
+      );
+      return;
+    }
+    if (capability !== 'supported') {
+      showFeedback('Sonido y alertas en pantalla activados (este navegador no expone notificaciones del sistema).', 'warning');
+      return;
+    }
+
+    const granted = await requestBrowserNotificationPermission();
+    setAdminPushPerm(Notification.permission);
+    if (!granted) {
+      showFeedback('Permiso bloqueado. Habilítalo en la configuración del navegador para este sitio.', 'warning');
+      return;
+    }
     dispatchRodoNotification(
       'Alertas de Admin activadas',
-      'Recibirás notificaciones en tu móvil al entrar un nuevo pedido y cuando sea entregado.',
+      'Recibirás notificaciones al entrar un nuevo pedido y cuando sea entregado.',
       {
         scopeKey: resolveNotificationScopeKey({ isAdmin: true }),
         audience: 'admin',
@@ -207,7 +218,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         playSound: true,
       }
     );
-    showFeedback('Alertas móviles activas para nuevos pedidos y entregas.');
+    showFeedback('Alertas activas para nuevos pedidos y entregas.');
   };
 
   // Estados para Cambio de Contraseña de Administrador (Requiere Código 1999)
@@ -1061,27 +1072,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
 
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-              {adminPushPerm !== 'unsupported' && (
-                <button
-                  type="button"
-                  onClick={() => void handleToggleAdminMobileAlerts()}
-                  title={
-                    adminPushPerm === 'granted'
-                      ? 'Alertas móviles activas (toca para probar sonido y notificación)'
-                      : 'Activar notificaciones en Chrome móvil para nuevos pedidos y entregas'
-                  }
-                  className={`flex items-center gap-1.5 text-xs px-2.5 sm:px-3 h-9 rounded-xl transition font-black border cursor-pointer shrink-0 whitespace-nowrap ${
-                    adminPushPerm === 'granted'
-                      ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800 hover:bg-emerald-100'
-                      : 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600 shadow-xs animate-pulse'
-                  }`}
-                >
-                  <Bell className="w-4 h-4 shrink-0" />
-                  <span className="hidden sm:inline">
-                    {adminPushPerm === 'granted' ? 'Alertas ON' : 'Activar Alertas'}
-                  </span>
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => void handleToggleAdminMobileAlerts()}
+                title={
+                  adminPushPerm === 'granted'
+                    ? 'Alertas activas (toca para probar sonido y notificación)'
+                    : 'Activar notificaciones para nuevos pedidos y entregas'
+                }
+                className={`flex items-center gap-1.5 text-xs px-2.5 sm:px-3 h-9 rounded-xl transition font-black border cursor-pointer shrink-0 whitespace-nowrap ${
+                  adminPushPerm === 'granted'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800 hover:bg-emerald-100'
+                    : 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600 shadow-xs animate-pulse'
+                }`}
+              >
+                <Bell className="w-4 h-4 shrink-0" />
+                <span className="hidden sm:inline">
+                  {adminPushPerm === 'granted' ? 'Alertas ON' : 'Activar Alertas'}
+                </span>
+              </button>
 
               <button
                 type="button"

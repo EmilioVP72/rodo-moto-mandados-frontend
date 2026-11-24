@@ -1,3 +1,8 @@
+import {
+  dispatchRodoNotification,
+  requestBrowserNotificationPermission,
+} from '../services/notifications';
+
 /**
  * Utilidades para la gestión de permisos nativos del teléfono en RODO Moto Mandados:
  * - Ubicación (GPS)
@@ -92,25 +97,24 @@ export async function requestStoragePermission(): Promise<PermissionStatusState>
 }
 
 /**
- * 3. Solicitar Permiso de Notificaciones Push
+ * 3. Solicitar Permiso de Notificaciones Push (multi-navegador)
  */
 export async function requestNotificationsPermission(): Promise<PermissionStatusState> {
-  if (!('Notification' in window)) {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
     return 'unsupported';
   }
 
   try {
-    const result = await Notification.requestPermission();
-    if (result === 'granted') {
-      try {
-        new Notification('🏍️ RODO Moto Mandados', {
-          body: 'Notificaciones activadas. Te avisaremos cuando el repartidor esté afuera de tu domicilio.',
-          icon: '/assets/aistudio/IMG-20260902-WA0090_1__d4eb6002.jpg',
-        });
-      } catch {}
+    const granted = await requestBrowserNotificationPermission();
+    if (granted) {
+      dispatchRodoNotification(
+        'RODO Moto Mandados',
+        'Notificaciones activadas. Te avisaremos en tiempo real sobre tus pedidos.',
+        { type: 'info', playSound: true }
+      );
       return 'granted';
     }
-    return result === 'denied' ? 'denied' : 'prompt';
+    return Notification.permission === 'denied' ? 'denied' : 'prompt';
   } catch (err) {
     console.warn('Notification permission error:', err);
     return 'denied';

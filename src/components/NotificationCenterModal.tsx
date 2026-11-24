@@ -25,6 +25,7 @@ import {
   clearNotificationHistory,
   playNotificationChime,
   requestBrowserNotificationPermission,
+  getBrowserNotificationCapability,
 } from '../services/notifications';
 import { useBackdropClose } from '../utils/modalBackdrop';
 
@@ -49,6 +50,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
   const [history, setHistory] = useState<RodoNotification[]>([]);
   const [browserPermission, setBrowserPermission] = useState<string>('default');
   const [testedSound, setTestedSound] = useState(false);
+  const browserCapability = getBrowserNotificationCapability();
   const backdropHandlers = useBackdropClose(isOpen, onClose);
 
   useEffect(() => {
@@ -157,9 +159,19 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
                 Preferencias de Alertas
               </span>
               <span className="text-[11px] text-gray-500 dark:text-gray-400 font-medium">
-                {browserPermission === 'granted' ? 'Push activo' : 'Permiso pendiente'}
+                {browserPermission === 'granted'
+                  ? 'Push activo'
+                  : browserCapability === 'ios_requires_pwa'
+                  ? 'iOS: Agrega a Inicio'
+                  : 'Permiso pendiente'}
               </span>
             </div>
+
+            {browserCapability === 'ios_requires_pwa' && (
+              <p className="text-[11px] bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 rounded-xl p-2.5 leading-snug">
+                En iPhone/iPad, toca <b>Compartir → Agregar a pantalla de inicio</b> para recibir notificaciones del sistema. El timbre y avisos en pantalla ya funcionan.
+              </p>
+            )}
 
             {/* Switch Notificaciones del Navegador */}
             <div className="flex items-center justify-between gap-3 p-2.5 bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-700">
