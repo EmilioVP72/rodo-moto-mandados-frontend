@@ -4,6 +4,7 @@ import { updateOrderInDb } from '../services/db';
 import { Star, Bike, Utensils, X, CheckCircle, Loader2 } from 'lucide-react';
 import { vibrateSuccess } from '../utils/haptics';
 import { useLanguage } from '../utils/i18n';
+import { useBackdropClose } from '../utils/modalBackdrop';
 
 interface OrderRatingModalProps {
   order: Order | null;
@@ -22,6 +23,7 @@ export const OrderRatingModal: React.FC<OrderRatingModalProps> = ({
   const [comment, setComment] = useState<string>('');
   const [saving, setSaving] = useState<boolean>(false);
   const [done, setDone] = useState<boolean>(false);
+  const backdropHandlers = useBackdropClose(Boolean(order), onClose);
 
   if (!order) return null;
 
@@ -54,7 +56,10 @@ export const OrderRatingModal: React.FC<OrderRatingModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-70 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs overflow-y-auto">
+    <div
+      {...backdropHandlers}
+      className="fixed inset-0 z-70 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs overflow-y-auto"
+    >
       <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl border border-amber-200 dark:border-slate-700 my-auto animate-in fade-in zoom-in-95 duration-200">
         <div className="bg-gradient-to-r from-[#101b29] to-[#233349] text-white p-4 flex items-center justify-between">
           <div>
