@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useBackdropClose } from '../utils/modalBackdrop';
 import {
   SecurityOtpAction,
   verifyOtpCode,
@@ -60,9 +61,13 @@ export const SecurityOtpModal: React.FC<SecurityOtpModalProps> = ({
 
   const waUrl = getWhatsAppOtpDispatchUrl(adminPhone || '5214151234567', challenge);
   const smsUrl = getSmsOtpDispatchUrl(adminPhone || '5214151234567', challenge);
+  const backdropHandlers = useBackdropClose(true, onCancel);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-xs">
+    <div
+      {...backdropHandlers}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-xs"
+    >
       <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden border border-gray-200 animate-in fade-in zoom-in-95 duration-200">
         {/* Cabecera de Seguridad */}
         <div className="bg-[#101b29] text-white p-5 flex items-center justify-between border-b border-gray-800">

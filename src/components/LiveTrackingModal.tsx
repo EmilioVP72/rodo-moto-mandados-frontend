@@ -8,6 +8,7 @@ import {
   calculateHaversineDistance,
   fetchCachedOsrmStreetRoute,
 } from '../services/routing';
+import { useBackdropClose } from '../utils/modalBackdrop';
 
 const SMA_CENTER = { lat: 20.9144, lng: -100.7437 };
 
@@ -25,6 +26,7 @@ export const LiveTrackingModal: React.FC<LiveTrackingModalProps> = ({
   onOpenTicket,
 }) => {
   const { t, lang } = useLanguage();
+  const backdropHandlers = useBackdropClose(Boolean(order), onClose);
   const [simProgress, setSimProgress] = useState(0.35);
   const [liveRiderCoords, setLiveRiderCoords] = useState<{ lat: number; lng: number } | null>(
     order?.riderLiveCoordinates || null
@@ -149,7 +151,10 @@ export const LiveTrackingModal: React.FC<LiveTrackingModalProps> = ({
       : [originCoords, estimatedRiderCoords, destCoords];
 
   return (
-    <div className="fixed inset-0 z-70 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs overflow-y-auto">
+    <div
+      {...backdropHandlers}
+      className="fixed inset-0 z-70 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs overflow-y-auto"
+    >
       <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl border border-gray-200 dark:border-slate-800 my-auto animate-in fade-in zoom-in-95 duration-200">
         {/* Header */}
         <div className="bg-[#101b29] text-white p-4 flex items-center justify-between">

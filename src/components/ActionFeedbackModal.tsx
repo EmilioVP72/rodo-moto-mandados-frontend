@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useBackdropClose } from '../utils/modalBackdrop';
 import {
   CheckCircle2,
   Sparkles,
@@ -31,6 +32,7 @@ export const ActionFeedbackModal: React.FC<ActionFeedbackModalProps> = ({
   onClose,
 }) => {
   const [copied, setCopied] = useState(false);
+  const backdropHandlers = useBackdropClose(Boolean(feedback), onClose);
 
   useEffect(() => {
     setCopied(false);
@@ -64,7 +66,10 @@ export const ActionFeedbackModal: React.FC<ActionFeedbackModalProps> = ({
   }[feedback.variant];
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150">
+    <div
+      {...backdropHandlers}
+      className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150"
+    >
       <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl border border-gray-200 dark:border-slate-700 animate-in zoom-in-95 duration-200">
         {/* Cabecera Celebratoria */}
         <div className={`bg-gradient-to-br ${gradientByVariant} text-white p-6 text-center relative`}>

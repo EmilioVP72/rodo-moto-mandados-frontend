@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Restaurant, OrderItem, MenuItem } from '../types';
 import { X, Star, Clock, Bike, Plus, Minus, ShoppingBag, AlertTriangle, Ban, ShieldCheck, Check, SlidersHorizontal, Utensils } from 'lucide-react';
 import { ComboBuilderModal } from './ComboBuilderModal';
+import { useBackdropClose } from '../utils/modalBackdrop';
 
 interface RestaurantDetailModalProps {
   restaurant: Restaurant | null;
@@ -20,13 +21,16 @@ export const RestaurantDetailModal: React.FC<RestaurantDetailModalProps> = ({
   onProceedToCheckout,
   onClose,
 }) => {
-  if (!restaurant) return null;
-
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
   const [comboDish, setComboDish] = useState<MenuItem | null>(null);
   const [selectedOptions, setSelectedOptions] = useState<Record<string, string[]>>({});
   const [selectedCustomizations, setSelectedCustomizations] = useState<string[]>([]);
   const [itemNote, setItemNote] = useState('');
+
+  const mainBackdropHandlers = useBackdropClose(Boolean(restaurant) && !customizingItem && !comboDish, onClose);
+  const customBackdropHandlers = useBackdropClose(Boolean(customizingItem), () => setCustomizingItem(null));
+
+  if (!restaurant) return null;
 
   const isClosed = restaurant.isOpen === false;
   const cartSubtotal = cart.reduce((sum, it) => sum + it.price * it.quantity, 0);
@@ -133,7 +137,10 @@ export const RestaurantDetailModal: React.FC<RestaurantDetailModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/75 backdrop-blur-xs overflow-y-auto">
+    <div
+      {...mainBackdropHandlers}
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/75 backdrop-blur-xs overflow-y-auto"
+    >
       <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-2xl max-h-[94dvh] sm:max-h-[92vh] flex flex-col shadow-2xl overflow-hidden sm:my-auto animate-in fade-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200">
         {/* Banner de Cierre Temporal si está inactivo por desfile o evento */}
         {isClosed && (
@@ -423,7 +430,10 @@ export const RestaurantDetailModal: React.FC<RestaurantDetailModalProps> = ({
 
       {/* Sub-modal de Personalización de Guisados y Opciones (Comida China y Combos) */}
       {customizingItem && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-3 bg-black/80 backdrop-blur-xs animate-in fade-in duration-150">
+        <div
+          {...customBackdropHandlers}
+          className="fixed inset-0 z-60 flex items-center justify-center p-3 bg-black/80 backdrop-blur-xs animate-in fade-in duration-150"
+        >
           <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-2xl overflow-hidden border border-gray-100">
             {/* Header del Platillo */}
             <div className="p-4 bg-gray-900 text-white flex items-start justify-between gap-3">

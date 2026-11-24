@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { PartnerLocal, Order } from '../types';
+import { useBackdropClose } from '../utils/modalBackdrop';
 import {
   findPartnerLocalByCode,
   generateUniqueTicketFolio,
@@ -68,6 +69,7 @@ export const LocalAccessModal: React.FC<LocalAccessModalProps> = ({
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const backdropHandlers = useBackdropClose(isOpen, onClose);
 
   if (!isOpen) return null;
 
@@ -209,7 +211,10 @@ export const LocalAccessModal: React.FC<LocalAccessModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs overflow-y-auto">
+    <div
+      {...backdropHandlers}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs overflow-y-auto"
+    >
       <div className="bg-white rounded-3xl w-full max-w-xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 my-auto">
         {/* Cabecera */}
         <div className="bg-[#101b29] text-white p-4 sm:p-5 flex items-center justify-between border-b border-gray-800 shrink-0">

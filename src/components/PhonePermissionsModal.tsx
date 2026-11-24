@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useBackdropClose } from '../utils/modalBackdrop';
 import {
   X,
   MapPin,
@@ -44,6 +45,8 @@ export const PhonePermissionsModal: React.FC<PhonePermissionsModalProps> = ({
       setPermissions(getSavedPhonePermissions());
     }
   }, [isOpen]);
+
+  const backdropHandlers = useBackdropClose(isOpen, onClose);
 
   if (!isOpen) return null;
 
@@ -113,7 +116,10 @@ export const PhonePermissionsModal: React.FC<PhonePermissionsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-xs overflow-y-auto">
+    <div
+      {...backdropHandlers}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-xs overflow-y-auto"
+    >
       <div className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl my-auto animate-in fade-in zoom-in-95 duration-200 border border-gray-100 max-h-[94vh] flex flex-col">
         {/* Cabecera */}
         <div className="bg-[#101b29] text-white p-4 sm:p-5 flex items-center justify-between shrink-0">

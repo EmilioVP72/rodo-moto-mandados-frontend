@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useBackdropClose } from '../utils/modalBackdrop';
 import { Order } from '../types';
 import { submitOrderWithQueue } from '../services/orderQueue';
 import { InteractiveMapPicker } from './InteractiveMapPicker';
@@ -123,6 +124,7 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
 
   // Modal para seleccionar en mapa (A o B)
   const [activeMapPickerTarget, setActiveMapPickerTarget] = useState<'pickup' | 'delivery' | null>(null);
+  const mapPickerBackdrop = useBackdropClose(Boolean(activeMapPickerTarget), () => setActiveMapPickerTarget(null));
 
   // Modalidad de Envío: Normal, Exprés, Programado
   const [deliveryType, setDeliveryType] = useState<'normal' | 'express' | 'programada'>('normal');
@@ -905,7 +907,10 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
 
         {/* MODAL DE SELECCIÓN EN MAPA (Para A o B) */}
         {activeMapPickerTarget && (
-          <div className="fixed inset-0 z-80 bg-black/80 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
+          <div
+            {...mapPickerBackdrop}
+            className="fixed inset-0 z-80 bg-black/80 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in"
+          >
             <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-lg max-h-[92dvh] flex flex-col overflow-hidden shadow-2xl border border-gray-200">
               <div className="flex items-center justify-between border-b p-4 sm:p-5 shrink-0">
                 <div>

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useBackdropClose } from '../utils/modalBackdrop';
 import {
   X,
   MapPin,
@@ -80,6 +81,8 @@ export const CustomerMicroLocationModal: React.FC<CustomerMicroLocationModalProp
     setShowCustomMapSection(savedAddresses.length === 0);
   }, [isOpen, currentAddress, initialCoords?.lat, initialCoords?.lng, savedAddresses.length]);
 
+  const backdropHandlers = useBackdropClose(isOpen, onClose);
+
   if (!isOpen) return null;
 
   // Mover marcador en micro-ajuste de 10 metros y autollenar calle si existe
@@ -151,7 +154,10 @@ export const CustomerMicroLocationModal: React.FC<CustomerMicroLocationModalProp
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/70 backdrop-blur-xs animate-in fade-in duration-200">
+    <div
+      {...backdropHandlers}
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/70 backdrop-blur-xs animate-in fade-in duration-200"
+    >
       <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-lg max-h-[92dvh] sm:max-h-[88dvh] overflow-hidden shadow-2xl flex flex-col border border-gray-200">
         {/* Cabecera */}
         <div className="bg-[#101b29] text-white px-4 py-3.5 sm:p-4 flex items-center justify-between shrink-0">

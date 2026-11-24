@@ -1,5 +1,6 @@
 import React from 'react';
 import { Restaurant, OrderItem, MenuItem } from '../types';
+import { useBackdropClose } from '../utils/modalBackdrop';
 import {
   X,
   ShoppingBag,
@@ -35,6 +36,8 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
   onClearCart,
   onProceedToCheckout,
 }) => {
+  const backdropHandlers = useBackdropClose(isOpen, onClose);
+
   if (!isOpen) return null;
 
   const totalItemsCount = cart.reduce((sum, it) => sum + it.quantity, 0);
@@ -78,7 +81,10 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/60 backdrop-blur-xs transition-opacity animate-in fade-in duration-200">
+    <div
+      {...backdropHandlers}
+      className="fixed inset-0 z-50 flex items-center justify-end bg-black/60 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"
+    >
       <div className="w-full sm:max-w-md h-[100dvh] bg-white shadow-2xl flex flex-col justify-between overflow-hidden animate-in slide-in-from-right duration-300">
         {/* Encabezado del Carrito */}
         <div className="bg-[#101b29] text-white p-3.5 sm:p-4 pt-safe flex items-center justify-between border-b border-gray-800 shrink-0">

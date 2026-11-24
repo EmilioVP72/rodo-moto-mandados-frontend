@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useBackdropClose } from '../utils/modalBackdrop';
 import {
   X,
   User,
@@ -138,6 +139,8 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
       .finally(() => setLoading(false));
   }, [isOpen, currentUser?.id]);
 
+  const backdropHandlers = useBackdropClose(Boolean(isOpen && currentUser), onClose);
+
   if (!isOpen || !currentUser) return null;
 
   const handleSaveProfile = async (e: React.FormEvent) => {
@@ -238,7 +241,10 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-xs overflow-y-auto">
+    <div
+      {...backdropHandlers}
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-xs overflow-y-auto"
+    >
       <div className="bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-t-3xl sm:rounded-3xl w-full sm:max-w-lg overflow-hidden shadow-2xl sm:my-auto border border-gray-200 dark:border-slate-700 max-h-[94dvh] sm:max-h-[92vh] flex flex-col animate-in fade-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200">
         {/* Cabecera */}
         <div className="bg-[#101b29] text-white p-4 sm:p-5 flex items-center justify-between shrink-0">

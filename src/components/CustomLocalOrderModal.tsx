@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Restaurant, Order } from '../types';
+import { useBackdropClose } from '../utils/modalBackdrop';
 import { generateUniqueTicketFolio, createOrderInDb, getDispatchSettings } from '../services/db';
 import {
   X,
@@ -43,8 +44,6 @@ export const CustomLocalOrderModal: React.FC<CustomLocalOrderModalProps> = ({
   rainPauseMessage,
   onOrderSuccess,
 }) => {
-  if (!isOpen) return null;
-
   const isUnknownLocal = !targetRestaurant;
   const [localName, setLocalName] = useState(targetRestaurant ? targetRestaurant.name : '');
   const [localApproxLocation, setLocalApproxLocation] = useState(
@@ -57,6 +56,9 @@ export const CustomLocalOrderModal: React.FC<CustomLocalOrderModalProps> = ({
   const [deliveryNotes, setDeliveryNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const backdropHandlers = useBackdropClose(isOpen, onClose);
+
+  if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -156,7 +158,10 @@ export const CustomLocalOrderModal: React.FC<CustomLocalOrderModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
+    <div
+      {...backdropHandlers}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200"
+    >
       <div className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col my-auto border border-gray-200">
         {/* Cabecera */}
         <div className="bg-[#101b29] text-white p-4 flex items-center justify-between">

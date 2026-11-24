@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useBackdropClose } from '../utils/modalBackdrop';
 import { Order, Restaurant } from '../types';
 import { FreeOsmMap } from './FreeOsmMap';
 import {
@@ -187,8 +188,13 @@ _Despacho Central RODO Moto Mandados_`;
     },
   ];
 
+  const backdropHandlers = useBackdropClose(true, onClose);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
+    <div
+      {...backdropHandlers}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200"
+    >
       <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl overflow-hidden my-auto border border-gray-200 flex flex-col max-h-[92vh]">
         {/* Cabecera del Modal */}
         <div className="bg-[#101b29] text-white p-4 sm:p-5 flex items-center justify-between border-b border-gray-800 shrink-0">

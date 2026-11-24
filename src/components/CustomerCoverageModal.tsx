@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useBackdropClose } from '../utils/modalBackdrop';
 import {
   X,
   MapPin,
@@ -37,6 +38,7 @@ export const CustomerCoverageModal: React.FC<CustomerCoverageModalProps> = ({
 }) => {
   const [selectedCoords, setSelectedCoords] = useState<{ lat: number; lng: number }>(initialCoords);
   const [selectedAddress, setSelectedAddress] = useState<string>(currentAddress || 'San Miguel de Allende, Gto.');
+  const backdropHandlers = useBackdropClose(isOpen, onClose);
 
   if (!isOpen) return null;
 
@@ -73,7 +75,10 @@ export const CustomerCoverageModal: React.FC<CustomerCoverageModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-xs overflow-y-auto font-sans">
+    <div
+      {...backdropHandlers}
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-xs overflow-y-auto font-sans"
+    >
       <div className="bg-white rounded-3xl w-full max-w-3xl max-h-[94vh] flex flex-col shadow-2xl overflow-hidden border border-gray-200">
         {/* Cabecera del Modal */}
         <div className="bg-[#101b29] text-white p-4 sm:p-5 flex items-center justify-between border-b border-gray-800 shrink-0">

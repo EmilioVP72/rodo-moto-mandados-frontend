@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { MenuItem, Restaurant, OrderItem, ComboBuilderConfig, ComboSideOption, ComboMainDishOption } from '../types';
+import { useBackdropClose } from '../utils/modalBackdrop';
 import { X, Check, Plus, Minus, UtensilsCrossed, Sparkles, AlertCircle, ShoppingBag, Flame } from 'lucide-react';
 
 interface ComboBuilderModalProps {
@@ -132,6 +133,7 @@ export const ComboBuilderModal: React.FC<ComboBuilderModalProps> = ({
   const [selectedSideId, setSelectedSideId] = useState<string>(sideOptions[0]?.id || '');
   const [selectedGuisadosMap, setSelectedGuisadosMap] = useState<Record<string, number>>({});
   const [specialInstructions, setSpecialInstructions] = useState('');
+  const backdropHandlers = useBackdropClose(isOpen, onClose);
 
   if (!isOpen) return null;
 
@@ -212,7 +214,10 @@ export const ComboBuilderModal: React.FC<ComboBuilderModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-60 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-xs overflow-y-auto">
+    <div
+      {...backdropHandlers}
+      className="fixed inset-0 z-60 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-xs overflow-y-auto"
+    >
       <div className="bg-white dark:bg-[#0c1017] rounded-3xl w-full max-w-2xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden border border-gray-200 dark:border-gray-800 animate-in fade-in zoom-in-95 duration-200">
         
         {/* Cabecera del Platillo */}
