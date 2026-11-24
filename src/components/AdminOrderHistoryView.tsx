@@ -172,10 +172,10 @@ export const AdminOrderHistoryView: React.FC<AdminOrderHistoryViewProps> = ({
           </div>
           <div>
             <h3 className="font-black text-sm sm:text-base tracking-wide">
-              Registro Histórico Permanente de Pedidos (Solo Administrador)
+              Histórico de Pedidos
             </h3>
             <p className="text-[11px] sm:text-xs text-gray-300 mt-0.5">
-              Los pedidos desaparecen de Despacho en Vivo después de 24 horas para mantener la operación limpia, pero aquí se conservan permanentemente con sus estatus finales y auditoría completa.
+              Registro permanente de pedidos recientes y archivados (+24h).
             </p>
           </div>
         </div>
@@ -202,9 +202,9 @@ export const AdminOrderHistoryView: React.FC<AdminOrderHistoryViewProps> = ({
       </div>
 
       {/* KPIs Resumen según filtros activos */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-3">
         <div className="bg-white dark:bg-slate-900 rounded-2xl p-3.5 border border-gray-200 dark:border-slate-800 shadow-2xs">
-          <span className="text-[10px] font-black uppercase text-gray-500 block">Pedidos Filtrados</span>
+          <span className="text-[10px] font-black uppercase text-gray-500 block">Pedidos</span>
           <div className="text-xl sm:text-2xl font-black text-gray-900 dark:text-white mt-0.5 font-mono">
             {summary.totalCount}
           </div>
@@ -214,25 +214,7 @@ export const AdminOrderHistoryView: React.FC<AdminOrderHistoryViewProps> = ({
         </div>
 
         <div className="bg-white dark:bg-slate-900 rounded-2xl p-3.5 border border-gray-200 dark:border-slate-800 shadow-2xs">
-          <span className="text-[10px] font-black uppercase text-gray-500 block">Estatus Finales</span>
-          <div className="flex items-center gap-2.5 mt-1 text-xs font-black">
-            <span className="text-emerald-600 flex items-center gap-1">
-              <CheckCircle2 className="w-3.5 h-3.5" /> {summary.deliveredCount}
-            </span>
-            <span className="text-red-600 flex items-center gap-1">
-              <XCircle className="w-3.5 h-3.5" /> {summary.cancelledCount}
-            </span>
-            <span className="text-blue-600 flex items-center gap-1">
-              <Clock className="w-3.5 h-3.5" /> {summary.activeCount}
-            </span>
-          </div>
-          <span className="text-[10px] text-gray-500 block mt-1">
-            Entregados · Cancelados · En curso
-          </span>
-        </div>
-
-        <div className="bg-white dark:bg-slate-900 rounded-2xl p-3.5 border border-gray-200 dark:border-slate-800 shadow-2xs">
-          <span className="text-[10px] font-black uppercase text-gray-500 block">Volumen (No Cancelados)</span>
+          <span className="text-[10px] font-black uppercase text-gray-500 block">Volumen</span>
           <div className="text-lg sm:text-xl font-black text-[#ed0718] mt-0.5 font-mono">
             ${summary.totalRevenue.toFixed(2)}
           </div>
@@ -241,20 +223,20 @@ export const AdminOrderHistoryView: React.FC<AdminOrderHistoryViewProps> = ({
           </span>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 rounded-2xl p-3.5 border border-gray-200 dark:border-slate-800 shadow-2xs">
+        <div className="col-span-2 lg:col-span-1 bg-white dark:bg-slate-900 rounded-2xl p-3.5 border border-gray-200 dark:border-slate-800 shadow-2xs">
           <span className="text-[10px] font-black uppercase text-gray-500 block">Efectivo vs SPEI</span>
           <div className="text-xs font-black mt-1 space-y-0.5 font-mono">
             <div className="text-emerald-700 dark:text-emerald-400">
-              💵 ${summary.cashTotal.toFixed(2)}
+              Efectivo: ${summary.cashTotal.toFixed(2)}
             </div>
             <div className="text-blue-700 dark:text-blue-400">
-              💳 ${summary.transferTotal.toFixed(2)}
+              SPEI: ${summary.transferTotal.toFixed(2)}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Panel de Filtros Avanzados */}
+      {/* Panel de Filtros */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl p-3.5 sm:p-4 border border-gray-200 dark:border-slate-800 shadow-2xs space-y-3">
         {/* Chips de rango rápido */}
         <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -264,11 +246,11 @@ export const AdminOrderHistoryView: React.FC<AdminOrderHistoryViewProps> = ({
             </span>
             {(
               [
-                { id: 'todos', label: 'Todo el historial' },
-                { id: 'archivados_24h', label: '📦 Archivados (+24h)' },
+                { id: 'todos', label: 'Todo' },
+                { id: 'archivados_24h', label: 'Archivados (+24h)' },
                 { id: 'hoy', label: 'Hoy' },
-                { id: '7d', label: 'Últimos 7 días' },
-                { id: '30d', label: 'Últimos 30 días' },
+                { id: '7d', label: '7 días' },
+                { id: '30d', label: '30 días' },
               ] as const
             ).map((preset) => {
               const isActive =
@@ -297,40 +279,22 @@ export const AdminOrderHistoryView: React.FC<AdminOrderHistoryViewProps> = ({
             className="text-xs font-bold text-[#ed0718] hover:underline flex items-center gap-1 cursor-pointer shrink-0"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span>Limpiar filtros</span>
+            <span>Limpiar</span>
           </button>
         </div>
 
         {/* Buscador y Selects */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
           <div className="sm:col-span-2 relative flex items-center">
             <Search className="w-4 h-4 text-gray-400 absolute left-3 pointer-events-none" />
             <input
               type="text"
               value={filters.search}
               onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
-              placeholder="Buscar folio, cliente, teléfono, local, SPEI..."
+              placeholder="Buscar folio, cliente, teléfono, local..."
               className="w-full border border-gray-300 dark:border-slate-700 rounded-xl pl-9 pr-3 py-2 text-xs font-semibold outline-none focus:border-[#ed0718]"
             />
           </div>
-
-          <select
-            aria-label="Filtrar por estatus final"
-            value={filters.status}
-            onChange={(e) => setFilters((prev) => ({ ...prev, status: e.target.value }))}
-            className="border border-gray-300 dark:border-slate-700 rounded-xl px-2.5 py-2 text-xs font-bold bg-white dark:bg-slate-800 outline-none focus:border-[#ed0718]"
-          >
-            <option value="todos">Estatus: Todos</option>
-            <option value="entregado">✅ Entregado</option>
-            <option value="cancelados_todos">❌ Todos los Cancelados</option>
-            <option value="cancelado">❌ Cancelado</option>
-            <option value="cancelado_con_deuda">⛔ Cancelado con Deuda</option>
-            <option value="activos">🏍️ En Curso / Activos</option>
-            <option value="nuevo">🆕 Nuevo</option>
-            <option value="en_preparacion">👨‍🍳 En Preparación</option>
-            <option value="asignado">📋 Asignado</option>
-            <option value="en_camino">🚀 En Camino</option>
-          </select>
 
           <select
             aria-label="Filtrar por método de pago"
@@ -341,8 +305,8 @@ export const AdminOrderHistoryView: React.FC<AdminOrderHistoryViewProps> = ({
             className="border border-gray-300 dark:border-slate-700 rounded-xl px-2.5 py-2 text-xs font-bold bg-white dark:bg-slate-800 outline-none focus:border-[#ed0718]"
           >
             <option value="todos">Pago: Todos</option>
-            <option value="efectivo">💵 Efectivo</option>
-            <option value="transferencia">💳 Transferencia SPEI</option>
+            <option value="efectivo">Efectivo</option>
+            <option value="transferencia">Transferencia SPEI</option>
           </select>
 
           <select
@@ -354,10 +318,10 @@ export const AdminOrderHistoryView: React.FC<AdminOrderHistoryViewProps> = ({
             className="border border-gray-300 dark:border-slate-700 rounded-xl px-2.5 py-2 text-xs font-bold bg-white dark:bg-slate-800 outline-none focus:border-[#ed0718]"
           >
             <option value="todos">Tipo: Todos</option>
-            <option value="comida">🍔 Comida / Local</option>
-            <option value="envio">📦 Envío Express</option>
-            <option value="solicitud_local">🏪 Local Asociado</option>
-            <option value="auxilio_gasolina">⛽ Auxilio Gasolina</option>
+            <option value="comida">Comida / Local</option>
+            <option value="envio">Envío Express</option>
+            <option value="solicitud_local">Local Asociado</option>
+            <option value="auxilio_gasolina">Auxilio Gasolina</option>
           </select>
 
           <select
@@ -367,10 +331,10 @@ export const AdminOrderHistoryView: React.FC<AdminOrderHistoryViewProps> = ({
             className="border border-gray-300 dark:border-slate-700 rounded-xl px-2.5 py-2 text-xs font-bold bg-white dark:bg-slate-800 outline-none focus:border-[#ed0718]"
           >
             <option value="todos">Repartidor: Todos</option>
-            <option value="sin_asignar">Sin repartidor asignado</option>
+            <option value="sin_asignar">Sin asignar</option>
             {availableRiders.map((rider) => (
               <option key={rider} value={rider}>
-                🏍️ {rider}
+                {rider}
               </option>
             ))}
           </select>
@@ -464,9 +428,13 @@ export const AdminOrderHistoryView: React.FC<AdminOrderHistoryViewProps> = ({
                         {order.folio}
                       </span>
                       <span
-                        className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full border ${statusInfo.className}`}
+                        className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full border ${
+                          order.assignedRiderName
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                            : 'bg-amber-50 text-amber-800 border-amber-200'
+                        }`}
                       >
-                        {statusInfo.label}
+                        {order.assignedRiderName ? `Asignado · ${order.assignedRiderName}` : 'Sin asignar'}
                       </span>
                       <span
                         className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
@@ -475,7 +443,7 @@ export const AdminOrderHistoryView: React.FC<AdminOrderHistoryViewProps> = ({
                             : 'bg-slate-100 text-slate-700 border border-slate-300'
                         }`}
                       >
-                        {isRecent ? '⏱️ Últimas 24h' : '📦 Archivado (+24h)'}
+                        {isRecent ? 'Últimas 24h' : 'Archivado'}
                       </span>
                       <span className="text-[11px] text-gray-500 font-medium">
                         {new Date(order.createdAt).toLocaleString('es-MX', {
@@ -491,8 +459,7 @@ export const AdminOrderHistoryView: React.FC<AdminOrderHistoryViewProps> = ({
                           ${Number(order.total || 0).toFixed(2)} MXN
                         </div>
                         <span className="text-[10px] text-gray-500">
-                          {order.paymentMethod === 'transferencia' ? '💳 SPEI' : '💵 Efectivo'} ·{' '}
-                          {order.paymentStatus}
+                          {order.paymentMethod === 'transferencia' ? 'SPEI' : 'Efectivo'}
                         </span>
                       </div>
                     </div>
@@ -553,11 +520,7 @@ export const AdminOrderHistoryView: React.FC<AdminOrderHistoryViewProps> = ({
                         <>
                           <ChevronDown className="w-4 h-4" />
                           <span>
-                            Ver detalle completo ({(order.items || []).length} artículos
-                            {historyTrail && historyTrail.length > 0
-                              ? ` · ${historyTrail.length} eventos`
-                              : ''}
-                            )
+                            Ver detalle ({(order.items || []).length} artículos)
                           </span>
                         </>
                       )}
@@ -682,43 +645,6 @@ export const AdminOrderHistoryView: React.FC<AdminOrderHistoryViewProps> = ({
                         </div>
                       </div>
                     </div>
-
-                    {/* Línea de Tiempo de Estatus */}
-                    {historyTrail && historyTrail.length > 0 && (
-                      <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-gray-200 dark:border-slate-800 space-y-2">
-                        <h4 className="font-black text-[11px] uppercase text-gray-500">
-                          Auditoría de Cambios de Estatus
-                        </h4>
-                        <div className="space-y-1.5">
-                          {historyTrail.map((ev) => (
-                            <div
-                              key={ev.id}
-                              className="flex flex-wrap items-center justify-between gap-2 text-[11px] border-l-2 border-[#ed0718] pl-2.5 py-0.5"
-                            >
-                              <div>
-                                <span className="font-black uppercase text-gray-900 dark:text-white">
-                                  {ev.fromStatus
-                                    ? `${ev.fromStatus.replace(/_/g, ' ')} → ${ev.toStatus.replace(/_/g, ' ')}`
-                                    : ev.toStatus.replace(/_/g, ' ')}
-                                </span>
-                                {ev.note && (
-                                  <span className="text-gray-500 ml-1.5">· {ev.note}</span>
-                                )}
-                                {ev.changedByUserId && (
-                                  <span className="text-gray-400 ml-1.5">({[ev.changedByRole, ev.changedByUserId].filter(Boolean).join(' · ')})</span>
-                                )}
-                              </div>
-                              <span className="font-mono text-[10px] text-gray-400">
-                                {new Date(ev.createdAt).toLocaleString('es-MX', {
-                                  dateStyle: 'short',
-                                  timeStyle: 'short',
-                                })}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>

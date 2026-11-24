@@ -36,6 +36,8 @@ import {
 import { RiderDirectory } from './RiderDirectory';
 import { useRiderDirectory } from '../hooks/useRiderDirectory';
 import { availableDispatchRiders } from '../utils/riderDirectory';
+import { assignRiderToOrder, notifyCustomerArrival } from '../services/riders';
+import { useBackdropClose } from '../utils/modalBackdrop';
 import { InteractiveMapPicker } from './InteractiveMapPicker';
 import {
   X,
@@ -367,10 +369,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   // Filtrado de órdenes activas en Despacho en Vivo (últimas 24 horas)
   const filteredOrders = liveOrders.filter((o) => {
     if (filterStatus === 'todos') return true;
-    if (filterStatus === 'cancelado') {
-      return o.status === 'cancelado' || o.status === 'cancelado_con_deuda';
-    }
-    return o.status === filterStatus;
+    if (filterStatus === 'sin_asignar') return !o.assignedRiderName;
+    if (filterStatus === 'asignados') return Boolean(o.assignedRiderName);
+    return true;
   });
 
   const [receipts, setReceipts] = useState<Record<'count' | 'cashCount' | 'bankCount' | 'totalVolume' | 'totalRodoIncome' |
@@ -867,29 +868,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
-  // Notificar al cliente que el repartidor está afuera (+10 minutos)
+  // Asignar repartidor automáticamente al compartir ticket por WhatsApp
+  const handleShareRiderFromCard = (
+    order: Order,
+    rider: { id: string; userId?: string | null; name: string; phone: string }
+  ) => {
+    const link = generateWhatsAppLink(rider.phone, buildWhatsAppDispatchMessage(order, rider.name));
+    window.open(link, '_blank', 'noopener,noreferrer');
+    assignRiderToOrder(order.id, { riderId: rider.id })
+      .then(() => {
+        showFeedback(`Pedido ${order.folio} asignado a ${rider.name}.`);
+        return onRefreshData();
+      })
+      .catch((err: any) => {
+        showFeedback(err?.message || 'No se pudo asignar el repartidor.', 'error');
+      });
+  };
+
+  // Notificar al cliente que el repartidor está afuera (+10 minutos, push + timbre + vibración)
   const handleNotifyArrivalOutside = async (order: Order) => {
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-    await updateOrderInDb(order.id, {
-      status: 'afuera_del_domicilio',
-      arrivalNotifiedAt: new Date().toISOString(),
-      arrivalExpiresAt: expiresAt,
-      customerNotifiedOutside: true,
-    });
-    const text = `🏍️ *¡RODO MOTO MANDADOS LLEGÓ A TU DOMICILIO!*
-━━━━━━━━━━━━━━━━━━━━
-📌 *Folio:* ${order.folio}
-👋 Hola *${order.customerName}*, tu repartidor ya se encuentra *afuera de tu domicilio* listo para entregarte tu pedido.
-📍 *Dirección:* ${order.deliveryAddress}
-
-⏱️ *TIEMPO LÍMITE DE RECEPCIÓN:*
-Cuentas con *10 minutos de tolerancia* para salir a recibir al repartidor.
-⚠️ *Por seguridad de la ruta, si el pedido no se recibe en 10 minutos se dará por cancelado con registro de cobro.*
-
-🎫 *Ticket en vivo:* ${window.location.origin}/?ticket=${order.folio}
-
-_RODO Moto Mandados · San Miguel de Allende_`;
-    window.open(`https://wa.me/${order.customerPhone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(text)}`, '_blank');
+    await notifyCustomerArrival(order.id);
+    showFeedback(`Aviso de llegada enviado al cliente (${order.folio}).`);
     await onRefreshData();
   };
 
@@ -956,19 +955,34 @@ _RODO Moto Mandados · San Miguel de Allende_`;
   const activeTabMeta = getAdminTabMeta(activeTab, navGroups);
 
   // KPIs operativos de las últimas 24 horas para Despacho en Vivo
-  const liveNewCount = liveOrders.filter((o) => o.status === 'nuevo').length;
-  const liveInProgressCount = liveOrders.filter((o) =>
-    ['en_preparacion', 'asignado', 'recolectado', 'en_camino', 'afuera_del_domicilio', 'pendiente_cotizacion'].includes(
-      o.status
-    )
-  ).length;
-  const liveDeliveredCount = liveOrders.filter((o) => o.status === 'entregado').length;
+  const liveUnassignedCount = liveOrders.filter((o) => !o.assignedRiderName).length;
+  const liveAssignedCount = liveOrders.filter((o) => Boolean(o.assignedRiderName)).length;
+  const liveNewCount = liveUnassignedCount;
   const liveRevenue24h = liveOrders
     .filter((o) => o.status !== 'cancelado' && o.status !== 'cancelado_con_deuda')
     .reduce((sum, o) => sum + Number(o.total || 0), 0);
 
+  const mainBackdropHandlers = useBackdropClose(
+    !editingRestaurant && !editingDishUrlItem && !editingCustomizationsDish && !selectedRouteOrder && !activeChallenge,
+    onClose
+  );
+  const dishUrlBackdropHandlers = useBackdropClose(Boolean(editingDishUrlItem), () => setEditingDishUrlItem(null));
+  const restFormBackdropHandlers = useBackdropClose(
+    Boolean(editingRestaurant) && !editingDishUrlItem && !editingCustomizationsDish,
+    () => {
+      setEditingRestaurant(null);
+      setIsCreatingRestaurant(false);
+    }
+  );
+  const customDishBackdropHandlers = useBackdropClose(Boolean(editingCustomizationsDish), () =>
+    setEditingCustomizationsDish(null)
+  );
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-3 lg:p-4 bg-slate-950/80 backdrop-blur-xs">
+    <div
+      {...mainBackdropHandlers}
+      className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-3 lg:p-4 bg-slate-950/80 backdrop-blur-xs"
+    >
       <div className="bg-slate-100 dark:bg-[#070a10] text-slate-900 dark:text-slate-100 rounded-none sm:rounded-2xl w-full max-w-7xl h-[100dvh] sm:h-[94vh] flex flex-row shadow-2xl overflow-hidden border-0 sm:border border-slate-300 dark:border-slate-800">
         {/* Sidebar de Navegación Categorizada (Escritorio fijo + Drawer en Móvil) */}
         <AdminSidebarNav
@@ -1140,7 +1154,10 @@ _RODO Moto Mandados · San Miguel de Allende_`;
 
           {/* Modal / Popover para ingresar URL de foto de platillo */}
           {editingDishUrlItem && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-2xs">
+            <div
+              {...dishUrlBackdropHandlers}
+              className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-2xs"
+            >
               <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl max-w-md w-full border border-gray-200 dark:border-slate-700 shadow-2xl space-y-3">
                 <h4 className="font-black text-sm text-gray-900 dark:text-white">
                   Editar Enlace de Foto del Platillo
@@ -1213,15 +1230,24 @@ _RODO Moto Mandados · San Miguel de Allende_`;
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
                 <div className="bg-white dark:bg-[#0f141e] rounded-2xl p-3.5 border border-slate-200 dark:border-slate-800 shadow-2xs">
                   <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                    Por Atender (Nuevos)
+                    Pedidos (24h)
+                  </span>
+                  <div className="text-2xl font-black font-mono text-slate-900 dark:text-white mt-1">
+                    {liveOrders.length}
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-[#0f141e] rounded-2xl p-3.5 border border-slate-200 dark:border-slate-800 shadow-2xs">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Sin asignar
                   </span>
                   <div className="flex items-baseline justify-between mt-1">
-                    <span className={`text-2xl font-black font-mono ${liveNewCount > 0 ? 'text-[#ed0718]' : 'text-slate-900 dark:text-white'}`}>
-                      {liveNewCount}
+                    <span className={`text-2xl font-black font-mono ${liveUnassignedCount > 0 ? 'text-[#ed0718]' : 'text-slate-900 dark:text-white'}`}>
+                      {liveUnassignedCount}
                     </span>
-                    {liveNewCount > 0 && (
+                    {liveUnassignedCount > 0 && (
                       <span className="text-[10px] font-black bg-red-100 dark:bg-red-950 text-[#ed0718] px-2 py-0.5 rounded-full">
-                        Urgente
+                        Pendiente
                       </span>
                     )}
                   </div>
@@ -1229,19 +1255,10 @@ _RODO Moto Mandados · San Miguel de Allende_`;
 
                 <div className="bg-white dark:bg-[#0f141e] rounded-2xl p-3.5 border border-slate-200 dark:border-slate-800 shadow-2xs">
                   <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                    En Preparación / Ruta
-                  </span>
-                  <div className="text-2xl font-black font-mono text-blue-600 dark:text-blue-400 mt-1">
-                    {liveInProgressCount}
-                  </div>
-                </div>
-
-                <div className="bg-white dark:bg-[#0f141e] rounded-2xl p-3.5 border border-slate-200 dark:border-slate-800 shadow-2xs">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                    Entregados (24h)
+                    Asignados
                   </span>
                   <div className="text-2xl font-black font-mono text-emerald-600 dark:text-emerald-400 mt-1">
-                    {liveDeliveredCount}
+                    {liveAssignedCount}
                   </div>
                 </div>
 
@@ -1260,10 +1277,10 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                 <div className="flex items-center gap-2">
                   <Clock className="w-4 h-4 text-amber-400 shrink-0" />
                   <span>
-                    <b>Limpieza automática cada 24h:</b> Mostrando <b>{liveOrders.length}</b> pedido(s) recientes.
+                    <b>Últimas 24h:</b> {liveOrders.length} pedido(s) recientes.
                     {archivedOrders.length > 0 && (
                       <span className="text-slate-400">
-                        {' '}· {archivedOrders.length} archivado(s) permanentemente.
+                        {' '}· {archivedOrders.length} en histórico.
                       </span>
                     )}
                   </span>
@@ -1277,18 +1294,14 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                 </button>
               </div>
 
-              {/* Barra de Filtros de Estatus con Conteo */}
+              {/* Barra de Filtros de Asignación */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-white dark:bg-[#0f141e] p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs">
                 <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5 sm:pb-0">
                   {(
                     [
                       { id: 'todos', label: 'Todos', count: liveOrders.length },
-                      { id: 'nuevo', label: 'Nuevos', count: liveOrders.filter((o) => o.status === 'nuevo').length },
-                      { id: 'en_preparacion', label: 'Preparación', count: liveOrders.filter((o) => o.status === 'en_preparacion').length },
-                      { id: 'asignado', label: 'Asignados', count: liveOrders.filter((o) => o.status === 'asignado').length },
-                      { id: 'en_camino', label: 'En Camino', count: liveOrders.filter((o) => o.status === 'en_camino').length },
-                      { id: 'entregado', label: 'Entregados', count: liveOrders.filter((o) => o.status === 'entregado').length },
-                      { id: 'cancelado', label: 'Cancelados', count: liveOrders.filter((o) => o.status === 'cancelado' || o.status === 'cancelado_con_deuda').length },
+                      { id: 'sin_asignar', label: 'Sin asignar', count: liveUnassignedCount },
+                      { id: 'asignados', label: 'Asignados', count: liveAssignedCount },
                     ] as const
                   ).map((st) => (
                     <button
@@ -1371,14 +1384,9 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                                   minute: '2-digit',
                                 })}
                               </span>
-                              {order.status === 'nuevo' && (
-                                <span className="bg-[#ed0718] text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-pulse">
-                                  NUEVA ORDEN
-                                </span>
-                              )}
                               {order.deliveryType === 'programada' && (
                                 <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black px-2 py-0.5 rounded-full">
-                                  🕒 PROGRAMADO: {order.scheduledDeliveryDate || 'Hoy'} {order.scheduledDeliveryTime || ''}
+                                  PROGRAMADO: {order.scheduledDeliveryDate || 'Hoy'} {order.scheduledDeliveryTime || ''}
                                 </span>
                               )}
                             </div>
@@ -1516,41 +1524,47 @@ _RODO Moto Mandados · San Miguel de Allende_`;
                         {/* Barra de Acciones Organizada y Clara */}
                         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
                           <div className="flex items-center gap-2">
-                            <span className="text-[11px] font-black uppercase text-slate-500 shrink-0">
-                              Estatus:
-                            </span>
-                            <select
-                              value={order.status}
-                              onChange={(e) => handleStatusChange(order.id, e.target.value as Order['status']).catch(err => showFeedback(err.message, 'error'))}
-                              className="flex-1 sm:flex-none text-xs border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 font-bold bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-[#ed0718]"
+                            <span
+                              className={`text-xs font-black px-3 py-1.5 rounded-xl border ${
+                                order.assignedRiderName
+                                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                                  : 'bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                              }`}
                             >
-                              {[order.status, ...(order.adminNextStatuses || [])].map(status => <option key={status} value={status}>{status.replaceAll('_', ' ')}</option>)}
-                            </select>
+                              {order.assignedRiderName ? `Asignado: ${order.assignedRiderName}` : 'Sin asignar'}
+                            </span>
                           </div>
 
                           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                            {/* Acciones de Comunicación WhatsApp */}
+                            {/* Acciones de Comunicación WhatsApp (asigna automáticamente al compartir) */}
                             {whatsappRiders.map(rider => (
-                              <a key={rider.id} target="_blank" rel="noreferrer"
-                                href={generateWhatsAppLink(rider.phone, buildWhatsAppDispatchMessage(order, rider.name))}
-                                className="rounded-xl border border-emerald-300 px-3 py-2 text-xs font-bold text-emerald-800">
+                              <button
+                                key={rider.id}
+                                type="button"
+                                onClick={() => handleShareRiderFromCard(order, rider)}
+                                className={`rounded-xl border px-3 py-2 text-xs font-bold transition cursor-pointer ${
+                                  order.assignedRiderName === rider.name
+                                    ? 'bg-emerald-600 text-white border-emerald-700'
+                                    : 'border-emerald-300 text-emerald-800 hover:bg-emerald-50'
+                                }`}
+                              >
                                 WhatsApp · {rider.name}
-                              </a>
+                              </button>
                             ))}
 
-                            {order.adminNextStatuses?.includes('afuera_del_domicilio') && (
+                            {!['entregado', 'cancelado', 'cancelado_con_deuda'].includes(order.status) && (
                               <button
                                 type="button"
                                 onClick={() => handleNotifyArrivalOutside(order).catch(err => showFeedback(err.message, 'error'))}
                                 className={`text-xs py-2 px-3 rounded-xl font-bold flex items-center gap-1.5 transition cursor-pointer border ${
                                   order.status === 'afuera_del_domicilio'
-                                    ? 'bg-amber-500 text-white border-amber-600 animate-pulse'
-                                    : 'bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-500 text-amber-900 dark:text-amber-300 hover:text-white border-amber-300 dark:border-amber-800'
+                                    ? 'bg-red-600 text-white border-red-700'
+                                    : 'bg-red-50 dark:bg-red-950/50 hover:bg-red-600 text-red-700 dark:text-red-300 hover:text-white border-red-300 dark:border-red-800'
                                 }`}
-                                title="Avisar por WhatsApp al cliente que el repartidor está afuera (10 min tolerancia)"
+                                title="Avisar al cliente que el repartidor está afuera (10 min)"
                               >
                                 <Bell className="w-3.5 h-3.5" />
-                                <span>{order.status === 'afuera_del_domicilio' ? 'Reenviar 10m' : 'Afuera (10m)'}</span>
+                                <span>{order.status === 'afuera_del_domicilio' ? 'Reenviar aviso' : 'Estoy afuera'}</span>
                               </button>
                             )}
 
@@ -1650,7 +1664,10 @@ _RODO Moto Mandados · San Miguel de Allende_`;
 
               {/* Modal Flotante de Alta o Edición de Restaurante (siempre visible sin importar el scroll) */}
               {editingRestaurant && (
-                <div className="fixed inset-0 z-60 bg-black/75 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150">
+                <div
+                  {...restFormBackdropHandlers}
+                  className="fixed inset-0 z-60 bg-black/75 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150"
+                >
                   <form
                     onSubmit={handleSaveRestaurant}
                     className="bg-white text-gray-900 rounded-t-3xl sm:rounded-3xl w-full max-w-4xl max-h-[92dvh] sm:max-h-[90dvh] border-2 border-[#ed0718] shadow-2xl flex flex-col overflow-hidden"
@@ -2776,7 +2793,10 @@ _RODO Moto Mandados · San Miguel de Allende_`;
 
               {/* Modal de Personalizaciones / Extras del Platillo (Admin) */}
               {editingCustomizationsDish && (
-                <div className="fixed inset-0 z-70 flex items-center justify-center p-3 bg-black/75 backdrop-blur-xs">
+                <div
+                  {...customDishBackdropHandlers}
+                  className="fixed inset-0 z-70 flex items-center justify-center p-3 bg-black/75 backdrop-blur-xs"
+                >
                   <div className="bg-white rounded-2xl w-full max-w-lg p-5 sm:p-6 space-y-4 shadow-2xl border border-gray-200 animate-in fade-in zoom-in-95">
                     <div className="flex items-start justify-between border-b pb-3">
                       <div>

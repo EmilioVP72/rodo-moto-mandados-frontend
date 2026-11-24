@@ -42,7 +42,9 @@ import { vibrateSuccess } from '../utils/haptics';
 import { useLanguage } from '../utils/i18n';
 import { availableDispatchRiders } from '../utils/riderDirectory';
 import { useRiderDirectory } from '../hooks/useRiderDirectory';
-import { assignRiderToOrder } from '../services/riders';
+import { assignRiderToOrder, notifyCustomerArrival } from '../services/riders';
+import { useBackdropClose } from '../utils/modalBackdrop';
+import { showSystemToast } from './SystemDialogHost';
 
 interface TicketModalProps {
   order: Order | null;
@@ -61,14 +63,23 @@ export const TicketModal: React.FC<TicketModalProps> = ({
 }) => {
   const { t } = useLanguage();
   const directory = useRiderDirectory(isAdmin && !!order);
+  const backdropHandlers = useBackdropClose(!!order, onClose);
   const [copied, setCopied] = useState(false);
-  const [selectedRider, setSelectedRider] = useState(order?.assignedRiderName || settings.defaultRider1Name);
-  const [selectedRiderUserId, setSelectedRiderUserId] = useState(order?.assignedRiderUserId || '');
+  const [selectedRiderKey, setSelectedRiderKey] = useState(
+    order?.assignedRiderId || order?.assignedRiderUserId || ''
+  );
+  const [assigningRider, setAssigningRider] = useState(false);
+  const [notifyingOutside, setNotifyingOutside] = useState(false);
 
   useEffect(() => {
-    setSelectedRiderUserId(order?.assignedRiderUserId || '');
-    setSelectedRider(order?.assignedRiderName || settings.defaultRider1Name);
-  }, [order?.id, order?.assignedRiderUserId, order?.assignedRiderName, settings.defaultRider1Name]);
+    const matched = directory.riders.find(
+      (r) =>
+        (order?.assignedRiderId && r.id === order.assignedRiderId) ||
+        (order?.assignedRiderUserId && r.userId === order.assignedRiderUserId) ||
+        (order?.assignedRiderName && r.name === order.assignedRiderName)
+    );
+    setSelectedRiderKey(matched?.id || order?.assignedRiderId || order?.assignedRiderUserId || '');
+  }, [order?.id, order?.assignedRiderId, order?.assignedRiderUserId, order?.assignedRiderName, directory.riders]);
 
   // Cuenta regresiva de 10 minutos si el repartidor notificó que está afuera
   const [timeLeft, setTimeLeft] = useState<number>(() => {
@@ -341,43 +352,53 @@ _RODO Moto Mandados · Despacho San Miguel_`;
     window.print();
   };
 
-  const handleQuickStatusChange = async (newStatus: Order['status']) => {
-    const updates: Partial<Order> = {
-      status: newStatus,
-      assignedRiderName: selectedRider,
-      assignedRiderUserId: selectedRiderUserId || undefined,
-    };
-
-    if (newStatus === 'afuera_del_domicilio') {
-      const now = new Date();
-      const expires = new Date(now.getTime() + 10 * 60 * 1000);
-      updates.arrivalNotifiedAt = now.toISOString();
-      updates.arrivalExpiresAt = expires.toISOString();
-      updates.customerNotifiedOutside = true;
-      setTimeLeft(600);
-    }
-
-    await updateOrderInDb(order.id, updates);
-    dispatchIntegrationEvent('order.status_changed', { order: { ...order, ...updates } });
-  };
-
-  const handleRiderAssignment = async (riderUserId: string) => {
-    const rider = dispatchRiders.find((candidate) => candidate.userId === riderUserId);
+  const handleRiderAssignment = async (riderId: string) => {
+    const rider = dispatchRiders.find((candidate) => candidate.id === riderId || candidate.userId === riderId);
+    setAssigningRider(true);
     try {
-      await assignRiderToOrder(order.id, riderUserId || null);
-      setSelectedRiderUserId(riderUserId);
-      if (rider) setSelectedRider(rider.name);
-      onShowToast?.(rider ? `Pedido asignado a ${rider.name}.` : 'Se retiró la asignación del pedido.');
+      await assignRiderToOrder(order.id, { riderId: rider ? rider.id : null });
+      setSelectedRiderKey(rider ? rider.id : '');
+      const msg = rider ? `Pedido asignado a ${rider.name}.` : 'Se retiró la asignación del pedido.';
+      onShowToast?.(msg);
+      showSystemToast({ message: msg, tone: 'success' });
     } catch (error: any) {
-      onShowToast?.(error?.message || 'No se pudo asignar el repartidor.');
+      const msg = error?.message || 'No se pudo asignar el repartidor.';
+      onShowToast?.(msg);
+      showSystemToast({ message: msg, tone: 'error' });
+    } finally {
+      setAssigningRider(false);
     }
   };
 
-  // Notificar al cliente que está afuera
+  const handleShareToRiderWhatsApp = (rider: { id: string; userId?: string | null; name: string; phone: string }) => {
+    const msg = buildWhatsAppDispatchMessage(order, rider.name);
+    const link = generateWhatsAppLink(rider.phone, msg);
+    window.open(link, '_blank', 'noopener,noreferrer');
+    void handleRiderAssignment(rider.id);
+  };
+
+  // Notificar al cliente en tiempo real que el repartidor está afuera (sonido + vibración + notificación + 10 min)
+  const canNotifyOutside = !['entregado', 'cancelado', 'cancelado_con_deuda'].includes(order.status);
   const handleNotifyOutside = async () => {
-    await handleQuickStatusChange('afuera_del_domicilio');
-    // Abrir WhatsApp al cliente
-    window.open(linkCustomerArrival, '_blank');
+    if (notifyingOutside || !canNotifyOutside) return;
+    setNotifyingOutside(true);
+    try {
+      await notifyCustomerArrival(order.id);
+      setTimeLeft(600);
+      vibrateSuccess();
+      const msg = 'Aviso enviado al cliente. 10 min de tolerancia activados.';
+      onShowToast?.(msg);
+      showSystemToast({ message: msg, tone: 'success' });
+      dispatchIntegrationEvent('order.status_changed', {
+        order: { ...order, status: 'afuera_del_domicilio', customerNotifiedOutside: true },
+      });
+    } catch (err: any) {
+      const msg = err?.message || 'No se pudo enviar el aviso al cliente.';
+      onShowToast?.(msg);
+      showSystemToast({ message: msg, tone: 'error' });
+    } finally {
+      setNotifyingOutside(false);
+    }
   };
 
   // Administrador envía cotización al cliente para su aprobación
@@ -441,140 +462,32 @@ _RODO Moto Mandados · Despacho San Miguel_`;
   };
 
   return (
-    <div className="fixed inset-0 z-60 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/70 backdrop-blur-xs overflow-y-auto">
+    <div
+      {...backdropHandlers}
+      className="fixed inset-0 z-60 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/70 backdrop-blur-xs overflow-y-auto"
+    >
       <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-lg max-h-[95dvh] overflow-y-auto shadow-2xl sm:my-auto animate-in fade-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200 border border-gray-200">
         {/* Encabezado modal */}
         <div className="bg-[#101b29] text-white p-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <span className="bg-[#ed0718] p-1.5 rounded-xl text-white">
               <Bike className="w-5 h-5" />
             </span>
             <div>
               <h3 className="font-extrabold text-sm sm:text-base tracking-wide">
-                TICKET DE DESPACHO DIGITAL
+                TICKET DIGITAL
               </h3>
               <p className="text-xs text-gray-300 font-mono">Folio: {order.folio}</p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="text-gray-400 hover:text-white p-1 rounded-full hover:bg-white/10 transition"
+            aria-label="Cerrar ticket"
+            className="text-gray-400 hover:text-white p-1.5 rounded-full hover:bg-white/10 transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
-        </div>
-
-        {/* ESTATUS DEL PEDIDO EN VIVO (Stepper con animaciones framer-motion) */}
-        <div className="bg-slate-900 text-white p-4 border-b border-slate-800">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-[11px] font-black uppercase text-gray-300 tracking-wider flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5 text-amber-400" />
-              Estatus del Pedido en Tiempo Real
-            </span>
-
-            <AnimatePresence mode="wait">
-              <motion.span
-                key={order.status}
-                initial={{ opacity: 0, y: -6, scale: 0.95 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 6, scale: 0.95 }}
-                transition={{ duration: 0.25 }}
-                className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full inline-flex items-center gap-1.5 ${
-                  order.status === 'entregado'
-                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-                    : order.status === 'afuera_del_domicilio'
-                    ? 'bg-red-500 text-white shadow-lg shadow-red-500/30 animate-pulse'
-                    : order.status === 'en_camino'
-                    ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
-                    : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                }`}
-              >
-                {order.status === 'nuevo' && '● 1. Recibido por RODO'}
-                {order.status === 'en_preparacion' && '● 2. En Cocina / Preparando'}
-                {order.status === 'asignado' && '● Repartidor asignado'}
-                {order.status === 'recolectado' && '● Pedido recolectado'}
-                {order.status === 'en_camino' && '● 4. Pedido en Camino'}
-                {order.status === 'afuera_del_domicilio' && '🚨 4. ¡Repartidor Afuera!'}
-                {order.status === 'entregado' && '✓ 5. Pedido Entregado'}
-                {order.status === 'cancelado' && '✕ Cancelado'}
-                {order.status === 'pendiente_cotizacion' && '💬 Cotizando'}
-              </motion.span>
-            </AnimatePresence>
-          </div>
-
-          {/* Stepper visual animado con Framer Motion (5 pasos: Recibido, En cocina, Recolectado, En camino, Entregado) */}
-          {order.status !== 'cancelado' && order.status !== 'pendiente_cotizacion' && (
-            <div className="space-y-2 pt-1">
-              <div className="grid grid-cols-5 gap-1 text-center">
-                {[
-                  {
-                    key: 'recibido',
-                    stepNum: 1,
-                    label: 'Recibido',
-                    active: true,
-                    done: order.status !== 'nuevo',
-                  },
-                  {
-                    key: 'cocina',
-                    stepNum: 2,
-                    label: 'En Cocina',
-                    active: order.status !== 'nuevo',
-                    done: ['asignado', 'recolectado', 'en_camino', 'afuera_del_domicilio', 'entregado'].includes(order.status),
-                  },
-                  {
-                    key: 'recolectado',
-                    stepNum: 3,
-                    label: 'Recolectado',
-                    active: ['recolectado', 'en_camino', 'afuera_del_domicilio', 'entregado'].includes(order.status),
-                    done: ['en_camino', 'afuera_del_domicilio', 'entregado'].includes(order.status),
-                  },
-                  {
-                    key: 'en_camino',
-                    stepNum: 4,
-                    label: 'En Camino',
-                    active: ['en_camino', 'afuera_del_domicilio', 'entregado'].includes(order.status),
-                    done: order.status === 'entregado',
-                  },
-                  {
-                    key: 'entregado',
-                    stepNum: 5,
-                    label: 'Entregado',
-                    active: order.status === 'entregado',
-                    done: order.status === 'entregado',
-                  },
-                ].map((s) => (
-                  <motion.div
-                    key={s.key}
-                    layout
-                    className={`p-1.5 sm:p-2 rounded-xl text-[9px] sm:text-[10px] font-bold border transition-colors flex flex-col items-center justify-between min-h-[50px] ${
-                      s.done
-                        ? 'bg-emerald-950/80 border-emerald-500/80 text-emerald-300'
-                        : s.active
-                        ? order.status === 'afuera_del_domicilio' && s.key === 'en_camino'
-                          ? 'bg-red-600 border-red-400 text-white animate-pulse'
-                          : 'bg-amber-500/20 border-amber-400 text-amber-200'
-                        : 'bg-white/5 border-white/10 text-gray-400'
-                    }`}
-                  >
-                    <motion.div
-                      animate={s.active && !s.done ? { scale: [1, 1.15, 1] } : { scale: 1 }}
-                      transition={s.active && !s.done ? { type: 'tween', repeat: Infinity, duration: 1.8, ease: 'easeInOut' } : { duration: 0.2 }}
-                      className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black mb-1 ${
-                        s.done
-                          ? 'bg-emerald-500 text-black'
-                          : s.active
-                          ? 'bg-amber-400 text-black'
-                          : 'bg-white/10 text-gray-400'
-                      }`}
-                    >
-                      {s.done ? '✓' : s.stepNum}
-                    </motion.div>
-                    <span className="leading-tight truncate w-full">{s.label}</span>
-                  </motion.div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* ALERTA Y CUENTA REGRESIVA DE 10 MINUTOS SI ESTÁ AFUERA */}
@@ -582,10 +495,10 @@ _RODO Moto Mandados · Despacho San Miguel_`;
           <div className="bg-red-600 text-white p-4 text-center shadow-inner space-y-2 animate-in fade-in">
             <div className="flex items-center justify-center gap-2 font-black text-sm uppercase tracking-wide">
               <Bell className="w-5 h-5 animate-bounce" />
-              <span>¡EL REPARTIDOR ESTÁ AFUERA DE TU DOMICILIO!</span>
+              <span>¡Tu repartidor está afuera!</span>
             </div>
             <p className="text-xs text-red-100">
-              Por favor sal a recibir tu pedido al timbre o zaguán. Tienes 10 minutos de tolerancia:
+              Sal a recibir tu pedido. Tienes 10 minutos de tolerancia:
             </p>
             <div className="inline-block bg-black/30 border border-white/30 px-5 py-2 rounded-2xl">
               <span className="font-mono text-3xl font-black tracking-wider text-yellow-300">
@@ -594,96 +507,143 @@ _RODO Moto Mandados · Despacho San Miguel_`;
             </div>
             {timeLeft === 0 && (
               <p className="text-xs font-bold bg-white text-red-700 py-1 px-3 rounded-lg mt-1 inline-block">
-                ⚠️ Tiempo de tolerancia expirado.
+                Tiempo de tolerancia expirado.
               </p>
             )}
           </div>
         )}
 
         {/* CANAL OFICIAL DE ATENCIÓN CON EL PEDIDO */}
-        <div className="bg-emerald-50 border-b border-emerald-200 p-3 px-4 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="bg-emerald-600 text-white p-1.5 rounded-lg text-xs">💬</span>
-            <div>
-              <span className="text-[11px] font-black text-emerald-950 uppercase block">¿Dudas o cambios con tu pedido?</span>
-              <span className="text-xs text-emerald-800 font-semibold">Atención y seguimiento por WhatsApp</span>
-            </div>
+        <div className="bg-emerald-50 border-b border-emerald-200 p-3 px-4 flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <span className="text-xs font-black text-emerald-950 block">¿Dudas con tu pedido?</span>
+            <span className="text-[11px] text-emerald-800 font-medium">Soporte por WhatsApp</span>
           </div>
-          <div className="flex items-center gap-1.5">
-            <a
-              href={`https://wa.me/524151019920?text=${encodeURIComponent(`Hola RODO Moto Mandados, necesito ayuda con mi pedido Folio: ${order.folio}`)}`}
-              target="_blank"
-              rel="noreferrer"
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2 px-3.5 rounded-xl shadow-xs transition flex items-center gap-1.5"
-            >
-              <span>📲</span>
-              <span>WhatsApp Oficial</span>
-            </a>
-          </div>
+          <a
+            href={`https://wa.me/524151019920?text=${encodeURIComponent(`Hola RODO Moto Mandados, necesito ayuda con mi pedido Folio: ${order.folio}`)}`}
+            target="_blank"
+            rel="noreferrer"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2 px-3.5 rounded-xl shadow-xs transition flex items-center gap-1.5 shrink-0"
+          >
+            <Send className="w-3.5 h-3.5" />
+            <span>WhatsApp</span>
+          </a>
         </div>
 
         {/* Acciones de WhatsApp directas para Administrador */}
         {isAdmin && (
-          <div className="bg-amber-50 border-b border-amber-200 p-3 sm:p-4 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-amber-900 uppercase tracking-wider flex items-center gap-1.5">
-                <Share2 className="w-3.5 h-3.5" /> Despacho Central WhatsApp
-              </span>
+          <div className="bg-amber-50 border-b border-amber-200 p-3 sm:p-4 space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-amber-900 uppercase tracking-wider flex items-center gap-1.5">
+                  <Share2 className="w-3.5 h-3.5" /> Despacho WhatsApp
+                </span>
+                <span
+                  className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
+                    order.assignedRiderName
+                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                      : 'bg-amber-200/80 text-amber-950 border border-amber-300'
+                  }`}
+                >
+                  {order.assignedRiderName ? `Asignado · ${order.assignedRiderName}` : 'Sin asignar'}
+                </span>
+              </div>
               <button
+                type="button"
                 onClick={handleCopy}
-                className="text-xs bg-white text-gray-700 px-2.5 py-1 rounded-md border border-gray-300 hover:bg-gray-50 flex items-center gap-1 font-semibold"
+                className="text-xs bg-white text-gray-700 px-2.5 py-1 rounded-md border border-gray-300 hover:bg-gray-50 flex items-center gap-1 font-semibold cursor-pointer"
               >
                 {copied ? <CheckCircle className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />}
-                {copied ? '¡Copiado!' : 'Copiar texto'}
+                {copied ? 'Copiado' : 'Copiar'}
               </button>
             </div>
 
-            <div className="text-[11px] text-amber-950 font-bold">
-              Enviar ticket a repartidor por WhatsApp ({dispatchRiders.length} disponibles):
-            </div>
-            {directory.error && <p role="alert">{directory.error} <button type="button" onClick={directory.reload}>Reintentar</button></p>}
+            {directory.error && (
+              <p role="alert" className="text-xs text-red-700 font-semibold">
+                {directory.error}{' '}
+                <button type="button" onClick={directory.reload} className="underline">
+                  Reintentar
+                </button>
+              </p>
+            )}
             <label className="block text-[11px] font-bold text-amber-950">
               Repartidor asignado
               <select
-                value={selectedRiderUserId}
+                value={selectedRiderKey}
+                disabled={assigningRider}
                 onChange={(event) => void handleRiderAssignment(event.target.value)}
                 className="mt-1 w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm text-gray-900"
               >
                 <option value="">Sin asignar</option>
-                {dispatchRiders.map((rider) => rider.userId && (
-                  <option key={rider.userId} value={rider.userId}>{rider.name} · {rider.phone}</option>
+                {dispatchRiders.map((rider) => (
+                  <option key={rider.id} value={rider.id}>
+                    {rider.name} · {rider.phone}
+                  </option>
                 ))}
               </select>
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
               {dispatchRiders.map((rider, idx) => {
-                const msg = buildWhatsAppDispatchMessage(order, rider.name);
-                const link = generateWhatsAppLink(rider.phone, msg);
+                const isAssignedToThis =
+                  (selectedRiderKey && selectedRiderKey === rider.id) ||
+                  (order.assignedRiderName && order.assignedRiderName === rider.name);
                 return (
-                  <a
+                  <button
                     key={rider.id || idx}
-                    href={link}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 px-3 rounded-xl flex items-center justify-start gap-2 shadow-xs transition"
-                    title={`Enviar ticket a ${rider.name} (${rider.phone})`}
+                    type="button"
+                    disabled={assigningRider}
+                    onClick={() => handleShareToRiderWhatsApp(rider)}
+                    className={`font-bold text-xs py-2 px-3 rounded-xl flex items-center justify-between gap-2 shadow-xs transition cursor-pointer ${
+                      isAssignedToThis
+                        ? 'bg-emerald-800 hover:bg-emerald-900 text-white ring-2 ring-emerald-400'
+                        : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                    }`}
+                    title={`Enviar ticket y asignar a ${rider.name} (${rider.phone})`}
                   >
-                    <span className="shrink-0">📲</span>
-                    <span className="truncate">{rider.name}</span>
-                  </a>
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <Send className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">{rider.name}</span>
+                    </span>
+                    {isAssignedToThis && (
+                      <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded-full shrink-0">
+                        Asignado
+                      </span>
+                    )}
+                  </button>
                 );
               })}
             </div>
 
             {/* Botón para notificar al cliente que el repartidor está afuera */}
-            <button
-              disabled={!order.adminNextStatuses?.includes('afuera_del_domicilio')}
-              onClick={() => handleNotifyOutside().catch(err => onShowToast?.(err.message))}
-              className="w-full bg-red-600 hover:bg-red-700 text-white font-extrabold text-xs py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 shadow-sm transition"
-            >
-              <Bell className="w-4 h-4" />
-              <span>🔔 Avisar al Cliente: ¡Estoy afuera! (Activar 10 min de tolerancia)</span>
-            </button>
+            <div className="flex flex-col sm:flex-row gap-2 pt-0.5">
+              <button
+                type="button"
+                disabled={!canNotifyOutside || notifyingOutside}
+                onClick={() => void handleNotifyOutside()}
+                className="flex-1 bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-extrabold text-xs py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 shadow-sm transition cursor-pointer"
+              >
+                <Bell className="w-4 h-4 shrink-0" />
+                <span>
+                  {notifyingOutside
+                    ? 'Enviando aviso...'
+                    : order.status === 'afuera_del_domicilio'
+                    ? 'Reenviar aviso: ¡Estoy afuera! (10 min)'
+                    : 'Avisar al cliente: ¡Estoy afuera! (10 min)'}
+                </span>
+              </button>
+              {order.customerPhone && canNotifyOutside && (
+                <a
+                  href={linkCustomerArrival}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-300 font-bold text-xs py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 transition shrink-0"
+                  title="También enviar aviso por WhatsApp al cliente"
+                >
+                  <Phone className="w-3.5 h-3.5" />
+                  <span>WhatsApp</span>
+                </a>
+              )}
+            </div>
           </div>
         )}
 
@@ -823,27 +783,27 @@ _RODO Moto Mandados · Despacho San Miguel_`;
                   <div className="bg-emerald-50 border border-emerald-300 text-emerald-900 rounded-xl p-3 text-center">
                     <div className="flex items-center justify-center gap-1.5 font-black text-sm">
                       <ShieldCheck className="w-5 h-5 text-emerald-600" />
-                      TRANSFERENCIA BANCARIA VERIFICADA
+                      TRANSFERENCIA VERIFICADA
                     </div>
                     <div className="text-xs text-emerald-700 mt-1 font-semibold">
-                      ⚠️ NO COBRAR EN LA ENTREGA (Pago recibido y auditado)
+                      No cobrar en la entrega (pago confirmado)
                     </div>
                   </div>
                 ) : (
                   <div className="bg-amber-50 border border-amber-300 text-amber-900 rounded-xl p-3 text-center">
                     <div className="flex items-center justify-center gap-1.5 font-black text-sm">
                       <AlertTriangle className="w-5 h-5 text-amber-600" />
-                      TRANSFERENCIA PENDIENTE DE REVISIÓN
+                      TRANSFERENCIA PENDIENTE
                     </div>
                   </div>
                 )
               ) : (
                 <div className="bg-blue-50 border border-blue-300 text-blue-950 rounded-xl p-3 text-center">
                   <div className="text-xs uppercase font-extrabold tracking-wider text-blue-700">
-                    Cobro en destino
+                    Cobro en efectivo
                   </div>
                   <div className="text-lg font-black text-blue-900 mt-0.5">
-                    COBRAR EN EFECTIVO: ${order.total.toFixed(2)} MXN
+                    ${order.total.toFixed(2)} MXN
                   </div>
                 </div>
               )}
@@ -858,14 +818,14 @@ _RODO Moto Mandados · Despacho San Miguel_`;
                   </span>
                   <div className="flex-1">
                     <span className="font-black text-blue-950 uppercase text-[11px] block tracking-wider">
-                      📍 Punto de Recolección (Dónde se recoge):
+                      Recolección
                     </span>
                     <div className="text-gray-900 font-extrabold text-xs sm:text-sm mt-0.5">
                       {order.pickupAddress}
                     </div>
                     {order.pickupPhone && (
                       <div className="text-gray-600 text-xs mt-1">
-                        📞 Tel. Contacto Recolección: <b>{order.pickupPhone}</b>
+                        Tel: <b>{order.pickupPhone}</b>
                       </div>
                     )}
                   </div>
@@ -884,13 +844,13 @@ _RODO Moto Mandados · Despacho San Miguel_`;
                       <div className="flex items-start gap-2">
                         <Building className="w-4 h-4 text-[#ed0718] shrink-0 mt-0.5" />
                         <div className="flex-1">
-                          <span className="font-bold text-gray-900 block text-xs">Restaurante / Recolectar:</span>
+                          <span className="font-bold text-gray-500 block text-[11px] uppercase">Local</span>
                           <div className="font-extrabold text-gray-900 text-sm">
-                            {order.restaurantName} {isAdmin && order.localCode ? `(PIN Local #${order.localCode})` : ''}
+                            {order.restaurantName} {isAdmin && order.localCode ? `(PIN #${order.localCode})` : ''}
                           </div>
                           {formattedAddress && (
                             <div className="text-gray-600 text-xs mt-1">
-                              📍 <b>Ubicación fija:</b> {formattedAddress}
+                              {formattedAddress}
                             </div>
                           )}
                         </div>
@@ -904,7 +864,7 @@ _RODO Moto Mandados · Despacho San Miguel_`;
                           className="self-start inline-flex items-center gap-1.5 bg-[#ed0718] hover:bg-[#c90012] text-white text-xs font-black py-1.5 px-3 rounded-xl shadow-xs transition"
                         >
                           <MapPin className="w-3.5 h-3.5" />
-                          <span>🗺️ Ruta GPS al Local (Google Maps)</span>
+                          <span>Abrir ruta en Maps</span>
                         </a>
                       )}
                     </div>
@@ -918,22 +878,22 @@ _RODO Moto Mandados · Despacho San Miguel_`;
                 </span>
                 <div className="flex-1">
                   <span className="font-black text-emerald-950 uppercase text-[11px] block tracking-wider">
-                    🏁 Punto de Entrega (Destino final):
+                    Entrega
                   </span>
                   <div className="font-extrabold text-gray-900 text-xs sm:text-sm mt-0.5">
                     {order.deliveryAddress}
                   </div>
                   <div className="text-gray-700 text-xs mt-0.5">
-                    Destinatario: <b>{order.customerName}</b>
+                    Cliente: <b>{order.customerName}</b>
                   </div>
                   {order.customerPhone && (
                     <div className="text-gray-600 text-xs mt-0.5">
-                      📞 Tel. Contacto Entrega: <b>{order.customerPhone}</b>
+                      Tel: <b>{order.customerPhone}</b>
                     </div>
                   )}
                   {order.deliveryNotes && (
                     <div className="text-gray-600 text-xs mt-1 bg-white p-2 rounded-lg border border-gray-200">
-                      <b className="text-gray-800">Notas / Referencias:</b> {order.deliveryNotes}
+                      <b className="text-gray-800">Notas:</b> {order.deliveryNotes}
                     </div>
                   )}
                 </div>
@@ -1367,18 +1327,18 @@ _RODO Moto Mandados · Despacho San Miguel_`;
             {/* Sumatoria Desglosada */}
             <div className="pt-3 border-t border-dashed border-gray-300 space-y-1.5 text-xs sm:text-sm">
               <div className="flex justify-between text-gray-700">
-                <span>Subtotal de artículos:</span>
+                <span>Subtotal:</span>
                 <span className="font-mono font-bold">${order.subtotal.toFixed(2)} MXN</span>
               </div>
               {order.promoDiscountApplied && order.promoDiscountApplied > 0 && (
                 <div className="flex justify-between text-amber-800 text-xs">
-                  <span>🎟️ {order.promoLabel || `Cupón ${order.promoCode || 'RODO'}`}:</span>
+                  <span>{order.promoLabel || `Cupón ${order.promoCode || 'RODO'}`}:</span>
                   <span className="font-mono font-black">-${order.promoDiscountApplied.toFixed(2)} MXN</span>
                 </div>
               )}
               <div className="flex justify-between text-gray-700">
                 <span>
-                  Tarifa de envío ({order.deliveryType === 'express' ? '⚡ Exprés' : order.deliveryType === 'programada' ? `🕒 Programada (${order.scheduledDeliveryTime || ''})` : '🛵 Normal'}):
+                  Envío ({order.deliveryType === 'express' ? 'Exprés' : order.deliveryType === 'programada' ? `Programada (${order.scheduledDeliveryTime || ''})` : 'Normal'}):
                 </span>
                 <span className="font-mono font-bold">${order.deliveryFee.toFixed(2)} MXN</span>
               </div>
@@ -1424,21 +1384,15 @@ _RODO Moto Mandados · Despacho San Miguel_`;
 
         {/* Footer con controles de Administrador */}
         {isAdmin && (
-          <div className="bg-gray-100 p-4 border-t border-gray-200 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-gray-700">Estado:</span>
-              <select
-                value={order.status}
-                onChange={(e) => handleQuickStatusChange(e.target.value as Order['status']).catch(err => onShowToast?.(err.message))}
-                className="bg-white border border-gray-300 text-xs rounded-xl px-2.5 py-1.5 font-bold"
-              >
-                {[order.status, ...(order.adminNextStatuses || [])].map(status => <option key={status} value={status}>{status.replaceAll('_', ' ')}</option>)}
-              </select>
-            </div>
+          <div className="bg-gray-100 p-3.5 border-t border-gray-200 flex items-center justify-between gap-3">
+            <span className="text-xs font-bold text-gray-600">
+              {order.assignedRiderName ? `Repartidor: ${order.assignedRiderName}` : 'Sin repartidor asignado'}
+            </span>
 
             <button
+              type="button"
               onClick={handlePrint}
-              className="px-3 py-1.5 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 text-xs font-bold rounded-xl flex items-center gap-1.5 transition"
+              className="px-3.5 py-1.5 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 text-xs font-bold rounded-xl flex items-center gap-1.5 transition cursor-pointer"
             >
               <Printer className="w-3.5 h-3.5" />
               Imprimir

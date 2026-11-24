@@ -121,7 +121,6 @@ export const RiderPortal: React.FC<RiderPortalProps> = ({ riderName, onLogout })
             <article key={order.id} className="rounded-2xl bg-white p-4 text-slate-900 shadow-xl">
               <div className="flex items-start justify-between gap-3">
                 <div><p className="text-xs font-bold text-red-600">FOLIO {order.folio}</p><h3 className="text-lg font-black">{order.restaurantName}</h3></div>
-                <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-900">{order.status.replaceAll('_', ' ')}</span>
               </div>
               <div className="mt-4 space-y-2 border-t border-slate-100 pt-3 text-sm">
                 <p><b>Cliente:</b> {order.customerName}</p>

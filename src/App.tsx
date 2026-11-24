@@ -52,9 +52,11 @@ import {
   buildOrderNotificationForViewer,
   markAllNotificationsAsRead,
   clearLegacySharedNotificationHistory,
+  initNotificationAudioUnlock,
 } from './services/notifications';
 import { apiFetch, getAuthToken, logoutSession } from './api/httpClient';
-import { identifySocketSession } from './api/socketClient';
+import { identifySocketSession, onSocketEvent } from './api/socketClient';
+import { showSystemToast } from './components/SystemDialogHost';
 import { useCart } from './hooks/useCart';
 import { resolveCartOwnerKey, resolveCartRestaurant } from './utils/cartStorage';
 import {
@@ -231,7 +233,6 @@ export default function App() {
   // Modales automáticos de Tracking en Vivo, Calificación y Cart Toast
   const [liveTrackingOrder, setLiveTrackingOrder] = useState<Order | null>(null);
   const [ratingModalOrder, setRatingModalOrder] = useState<Order | null>(null);
-  const [ordersHistoryFilter, setOrdersHistoryFilter] = useState<'todos' | 'en_camino' | 'entregado' | 'cancelado'>('todos');
   const cartOwnerKey = resolveCartOwnerKey(currentUser?.id, isAdminLoggedIn);
   const {
     cart,
@@ -435,6 +436,11 @@ export default function App() {
     return () => window.removeEventListener('hashchange', handleRouteTrigger);
   }, [isAdminLoggedIn]);
 
+  // Desbloquear Web Audio en el primer toque/clic para que los timbres suenen en móvil
+  useEffect(() => {
+    initNotificationAudioUnlock();
+  }, []);
+
   // Solicitar permiso de notificaciones push del navegador al iniciar la aplicación
   useEffect(() => {
     if (typeof window !== 'undefined' && 'Notification' in window) {
@@ -451,12 +457,12 @@ export default function App() {
     setShowPushNotificationPrompt(false);
     const granted = await requestBrowserNotificationPermission();
     if (granted) {
-      showSuccessToast('🔔 ¡Notificaciones en tiempo real activadas!');
+      showSuccessToast('Notificaciones en tiempo real activadas.');
       dispatchRodoNotification(
-        '🔔 Notificaciones RODO Activadas',
+        'Notificaciones RODO activadas',
         isAdminLoggedIn
-          ? 'Recibirás alertas exclusivas de despacho cuando entren nuevos pedidos o cambien de estado.'
-          : 'Recibirás alertas en tiempo real sobre el estado y actualizaciones de tus pedidos.',
+          ? 'Recibirás alertas cuando entren nuevos pedidos.'
+          : 'Recibirás avisos cuando tu repartidor llegue a tu domicilio.',
         {
           scopeKey: notificationScopeKey,
           audience: isAdminLoggedIn ? 'admin' : 'customer',
@@ -628,11 +634,55 @@ export default function App() {
     knownOrderIdsRef.current = new Set();
     let hasReceivedInitialSnapshot = false;
     const notifiedQuotes = new Map<string, string>();
+    const notifiedArrivals = new Map<string, string>();
     for (const notice of getNotificationHistory(notificationScopeKey)) {
       if (notice.orderId && notice.quoteOfferedAt && !notifiedQuotes.has(notice.orderId)) {
         notifiedQuotes.set(notice.orderId, notice.quoteOfferedAt);
       }
     }
+
+    const triggerCustomerArrivalAlert = (payload: {
+      id: string;
+      folio: string;
+      customerId: string;
+      assignedRiderName?: string;
+      arrivalNotifiedAt?: string;
+    }) => {
+      if (viewerRole !== 'customer' || !currentUser || payload.customerId !== currentUser.id) {
+        return;
+      }
+      const marker = payload.arrivalNotifiedAt || new Date().toISOString();
+      if (notifiedArrivals.get(payload.id) === marker) return;
+      notifiedArrivals.set(payload.id, marker);
+
+      dispatchRodoNotification(
+        '¡Tu repartidor está afuera!',
+        `${payload.assignedRiderName || 'Tu repartidor'} llegó con tu pedido #${payload.folio}. Tienes 10 minutos para salir a recibirlo.`,
+        {
+          scopeKey: notificationScopeKey,
+          audience: 'customer',
+          orderId: payload.id,
+          folio: payload.folio,
+          tag: `rodo-arrival-${payload.id}-${marker}`,
+          type: 'urgent',
+          playSound: true,
+        }
+      );
+      setUnreadNotifsCount((prev) => prev + 1);
+      showSystemToast({
+        message: `¡Tu repartidor está afuera! Pedido #${payload.folio} (10 min de tolerancia).`,
+        tone: 'warning',
+        durationMs: 7000,
+      });
+    };
+
+    const unsubArrivalAlert = onSocketEvent<{
+      id: string;
+      folio: string;
+      customerId: string;
+      assignedRiderName?: string;
+      arrivalNotifiedAt?: string;
+    }>('order:arrival-alert', triggerCustomerArrivalAlert);
 
     const unsubscribe = subscribeToOrders((liveOrders) => {
       setOrders(liveOrders);
@@ -642,23 +692,37 @@ export default function App() {
         const isNewOrder = hasReceivedInitialSnapshot && !knownOrderIdsRef.current.has(order.id);
         const prevStatus = previousOrderStatusesRef.current[order.id];
 
+        if (!hasReceivedInitialSnapshot && order.arrivalNotifiedAt) {
+          notifiedArrivals.set(order.id, order.arrivalNotifiedAt);
+        }
+
         const notifPayload = buildOrderNotificationForViewer({
           viewerRole,
           viewerUserId: currentUser?.id,
           order,
           prevStatus,
           lastNotifiedQuote: notifiedQuotes.get(order.id),
+          lastNotifiedArrivalAt: notifiedArrivals.get(order.id),
           isNewOrder,
         });
 
         if (notifPayload) {
           if (notifPayload.quoteOfferedAt) notifiedQuotes.set(order.id, notifPayload.quoteOfferedAt);
+          if (notifPayload.arrivalNotifiedAt) {
+            if (notifiedArrivals.get(order.id) === notifPayload.arrivalNotifiedAt) {
+              knownOrderIdsRef.current.add(order.id);
+              previousOrderStatusesRef.current[order.id] = order.status;
+              return;
+            }
+            notifiedArrivals.set(order.id, notifPayload.arrivalNotifiedAt);
+          }
           dispatchRodoNotification(notifPayload.title, notifPayload.message, {
             scopeKey: notificationScopeKey,
             audience: notifPayload.audience,
             orderId: notifPayload.orderId,
             folio: notifPayload.folio,
             quoteOfferedAt: notifPayload.quoteOfferedAt,
+            tag: notifPayload.arrivalNotifiedAt ? `rodo-arrival-${order.id}-${notifPayload.arrivalNotifiedAt}` : undefined,
             type: notifPayload.type,
             playSound: true,
           });
@@ -696,7 +760,10 @@ export default function App() {
       }
     }, isAuthed, scope);
 
-    return () => unsubscribe();
+    return () => {
+      unsubArrivalAlert();
+      unsubscribe();
+    };
   }, [currentUser, isAdminLoggedIn, notificationScopeKey]);
 
   const openCart = () => {
@@ -930,24 +997,11 @@ export default function App() {
     customerCoords,
   ]);
 
-  // Pedidos del cliente actual y filtro de historial (aislamiento estricto por usuario)
+  // Pedidos del cliente actual (aislamiento estricto por usuario)
   const myOrders = useMemo(() => {
     if (!currentUser) return isAdminLoggedIn ? orders : [];
     return orders.filter((o) => o.customerId === currentUser.id);
   }, [orders, currentUser, isAdminLoggedIn]);
-
-  const filteredMyOrders = useMemo(() => {
-    if (ordersHistoryFilter === 'todos') return myOrders;
-    if (ordersHistoryFilter === 'en_camino') {
-      return myOrders.filter((o) =>
-        ['nuevo', 'en_preparacion', 'asignado', 'recolectado', 'en_camino', 'afuera_del_domicilio', 'pendiente_cotizacion'].includes(o.status)
-      );
-    }
-    if (ordersHistoryFilter === 'entregado') {
-      return myOrders.filter((o) => o.status === 'entregado');
-    }
-    return myOrders.filter((o) => o.status === 'cancelado' || o.status === 'cancelado_con_deuda');
-  }, [myOrders, ordersHistoryFilter]);
 
   const handleSelectCategoryWithHighlight = (catName: string) => {
     setSelectedCategory(catName);
@@ -1014,53 +1068,48 @@ export default function App() {
     >
       {/* Alerta Global de Pausa de Envíos por Lluvia */}
       {settings.rainPauseEnabled && (
-        <div className="bg-gradient-to-r from-sky-700 via-blue-800 to-sky-700 text-white px-4 py-3 text-xs font-bold text-center flex flex-wrap items-center justify-center gap-2 shadow-md border-b border-sky-900">
-          <CloudRain className="w-5 h-5 text-sky-200 shrink-0 animate-bounce" />
-          <span className="font-black uppercase tracking-wide">
-            🌧️ Pausa Temporal por Lluvia:
-          </span>
+        <div className="bg-gradient-to-r from-sky-700 via-blue-800 to-sky-700 text-white px-4 py-2.5 text-xs font-bold text-center flex flex-wrap items-center justify-center gap-2 shadow-md border-b border-sky-900">
+          <CloudRain className="w-4 h-4 text-sky-200 shrink-0" />
+          <span className="font-black uppercase tracking-wide">Pausa por lluvia:</span>
           <span>
             {settings.rainPauseMessage ||
-              'Envíos pausados temporalmente por lluvia en San Miguel de Allende. Reanudamos en cuanto mejore el clima.'}
+              'Envíos pausados temporalmente por lluvia. Reanudamos pronto.'}
           </span>
         </div>
       )}
 
       {/* Alerta de Modo Día Festivo / Desfiles en San Miguel */}
       {settings.festiveModeEnabled && (
-        <div className="bg-gradient-to-r from-amber-600 via-amber-700 to-amber-600 text-white px-4 py-2.5 text-xs font-bold text-center flex flex-wrap items-center justify-center gap-2 shadow-sm border-b border-amber-800">
-          <Sparkles className="w-4 h-4 text-amber-200 shrink-0 animate-spin" />
-          <span>{settings.festiveModeMessage || 'Fechas Festivas en San Miguel de Allende: Se prevén demoras en tránsito.'}</span>
+        <div className="bg-gradient-to-r from-amber-600 via-amber-700 to-amber-600 text-white px-4 py-2 text-xs font-bold text-center flex flex-wrap items-center justify-center gap-2 shadow-sm border-b border-amber-800">
+          <Sparkles className="w-4 h-4 text-amber-200 shrink-0" />
+          <span>{settings.festiveModeMessage || 'Días festivos: posibles demoras en tránsito.'}</span>
           <span className="bg-black/30 px-2 py-0.5 rounded font-mono font-black text-[11px] text-amber-200">
-            Demora estimada: {settings.festiveEstimatedDelay || '+15 a 25 min'}
+            {settings.festiveEstimatedDelay || '+15 a 25 min'}
           </span>
         </div>
       )}
 
       {/* Alerta de Activación de Notificaciones Push del Navegador */}
       {showPushNotificationPrompt && (
-        <div className="bg-[#101b29] text-white px-4 py-2.5 text-xs flex flex-wrap items-center justify-between gap-3 shadow-md border-b-2 border-[#ed0718] animate-in fade-in slide-in-from-top-2">
-          <div className="flex items-center gap-2">
-            <span className="text-base animate-pulse">🔔</span>
-            <div>
-              <span className="font-extrabold block">¿Deseas activar las notificaciones de tus pedidos?</span>
-              <span className="text-[11px] text-gray-300">
-                Te avisaremos en tiempo real cuando tu repartidor vaya en camino y cuando esté afuera de tu domicilio.
-              </span>
-            </div>
+        <div className="bg-[#101b29] text-white px-3.5 py-2.5 text-xs flex flex-wrap items-center justify-between gap-2.5 shadow-md border-b-2 border-[#ed0718] animate-in fade-in slide-in-from-top-2">
+          <div className="min-w-0 flex-1">
+            <span className="font-extrabold block">Activa las notificaciones</span>
+            <span className="text-[11px] text-gray-300">
+              Te avisamos con timbre cuando llegue tu repartidor.
+            </span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={handleEnablePushNotifications}
               className="bg-[#ed0718] hover:bg-[#c90012] text-white px-3 py-1.5 rounded-xl font-black text-xs shadow-xs transition cursor-pointer"
             >
-              Activar Notificaciones
+              Activar
             </button>
             <button
               onClick={() => setShowPushNotificationPrompt(false)}
               className="text-gray-400 hover:text-white text-xs px-2 py-1 cursor-pointer"
             >
-              Ahora no
+              Luego
             </button>
           </div>
         </div>
@@ -1068,13 +1117,13 @@ export default function App() {
 
       {/* Alerta de Urgencia: Repartidor Afuera del Domicilio (solo para el cliente dueño de esa orden) */}
       {!isAdminLoggedIn && currentUser && myOrders.some((o) => o.status === 'afuera_del_domicilio') && (
-        <div className="bg-[#ed0718] text-white px-4 py-3 text-xs font-black flex flex-wrap items-center justify-between gap-3 shadow-lg border-b-2 border-red-900 animate-pulse">
-          <div className="flex items-center gap-2.5">
+        <div className="bg-[#ed0718] text-white px-4 py-3 text-xs font-black flex flex-wrap items-center justify-between gap-2.5 shadow-lg border-b-2 border-red-900">
+          <div className="flex items-center gap-2">
             <AlertCircle className="w-5 h-5 text-amber-300 shrink-0" />
             <div>
-              <span className="text-sm uppercase tracking-wide block">🚨 ¡Tu Repartidor ya está afuera de tu Domicilio!</span>
+              <span className="text-sm uppercase tracking-wide block">¡Tu repartidor está afuera!</span>
               <span className="text-[11px] text-white/90 font-normal">
-                Tienes 10 minutos de tolerancia para salir a recibir tu pedido antes de que se cancele.
+                Sal a recibir tu pedido (10 min de tolerancia).
               </span>
             </div>
           </div>
@@ -1085,7 +1134,7 @@ export default function App() {
             }}
             className="bg-white text-[#ed0718] hover:bg-gray-100 px-3.5 py-1.5 rounded-xl font-black text-xs shadow-md transition cursor-pointer"
           >
-            Ver Ticket Digital
+            Ver ticket
           </button>
         </div>
       )}
@@ -1301,22 +1350,22 @@ export default function App() {
                 highlightedCatalog ? 'ring-4 ring-[#ed0718] ring-offset-2' : ''
               }`}
             >
-              <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center justify-between mb-4">
                 <div>
                   <h2 className="font-extrabold text-lg sm:text-xl">
                     {activeSection === 'restaurantes'
-                      ? '🍴 Restaurantes con Facturación'
-                      : '🏍 Motomandados, Comercios & Esenciales'}
+                      ? 'Restaurantes'
+                      : 'Mandados y comercios'}
                   </h2>
                   <p className="text-xs text-gray-400 mt-0.5">
                     {activeSection === 'restaurantes'
-                      ? 'Locales formales que sí facturan · Aceptan Efectivo y Transferencia SPEI'
-                      : 'Tiendas, farmacias, mercados y puestos de barrio · Pago en Efectivo'}
+                      ? 'Efectivo y Transferencia SPEI'
+                      : 'Tiendas, farmacias y locales · Efectivo'}
                   </p>
                 </div>
                 <button
                   onClick={() => handleSelectCategoryWithHighlight('Todos')}
-                  className="text-xs text-[#ed0718] hover:text-red-400 font-extrabold cursor-pointer"
+                  className="text-xs text-[#ed0718] hover:text-red-400 font-extrabold cursor-pointer shrink-0"
                 >
                   {t('viewAllCatalog')}
                 </button>
@@ -1344,50 +1393,46 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => setSortOption('fastest')}
-                      className={`text-xs px-2.5 py-1.5 rounded-xl font-bold transition flex items-center gap-1 cursor-pointer shrink-0 whitespace-nowrap ${
+                      className={`text-xs px-2.5 py-1.5 rounded-xl font-bold transition cursor-pointer shrink-0 whitespace-nowrap ${
                         sortOption === 'fastest'
                           ? 'bg-[#ed0718] text-white shadow-xs'
                           : 'bg-white/10 text-gray-300 hover:text-white hover:bg-white/15'
                       }`}
                     >
-                      <span>⚡</span>
-                      <span>{t('sortFastest')}</span>
+                      {t('sortFastest')}
                     </button>
                     <button
                       type="button"
                       onClick={() => setSortOption('distance')}
-                      className={`text-xs px-2.5 py-1.5 rounded-xl font-bold transition flex items-center gap-1 cursor-pointer shrink-0 whitespace-nowrap ${
+                      className={`text-xs px-2.5 py-1.5 rounded-xl font-bold transition cursor-pointer shrink-0 whitespace-nowrap ${
                         sortOption === 'distance'
                           ? 'bg-[#ed0718] text-white shadow-xs'
                           : 'bg-white/10 text-gray-300 hover:text-white hover:bg-white/15'
                       }`}
                     >
-                      <span>📍</span>
-                      <span>{t('sortDistance')}</span>
+                      {t('sortDistance')}
                     </button>
                     <button
                       type="button"
                       onClick={() => setSortOption('rating')}
-                      className={`text-xs px-2.5 py-1.5 rounded-xl font-bold transition flex items-center gap-1 cursor-pointer shrink-0 whitespace-nowrap ${
+                      className={`text-xs px-2.5 py-1.5 rounded-xl font-bold transition cursor-pointer shrink-0 whitespace-nowrap ${
                         sortOption === 'rating'
                           ? 'bg-[#ed0718] text-white shadow-xs'
                           : 'bg-white/10 text-gray-300 hover:text-white hover:bg-white/15'
                       }`}
                     >
-                      <span>⭐</span>
-                      <span>{t('sortRating')}</span>
+                      {t('sortRating')}
                     </button>
                     <button
                       type="button"
                       onClick={() => setSortOption('cheapest_delivery')}
-                      className={`text-xs px-2.5 py-1.5 rounded-xl font-bold transition flex items-center gap-1 cursor-pointer shrink-0 whitespace-nowrap ${
+                      className={`text-xs px-2.5 py-1.5 rounded-xl font-bold transition cursor-pointer shrink-0 whitespace-nowrap ${
                         sortOption === 'cheapest_delivery'
                           ? 'bg-[#ed0718] text-white shadow-xs'
                           : 'bg-white/10 text-gray-300 hover:text-white hover:bg-white/15'
                       }`}
                     >
-                      <span>🛵</span>
-                      <span>{t('sortCheapest')}</span>
+                      {t('sortCheapest')}
                     </button>
                   </div>
 
@@ -1507,7 +1552,7 @@ export default function App() {
                             />
                             {restaurant.isOpen === false ? (
                               <span className="absolute top-3 left-3 bg-amber-600 text-white text-[11px] font-black px-2.5 py-1 rounded-full shadow-md uppercase tracking-wider">
-                                🚫 Cerrado por Desfile / Evento
+                                Cerrado
                               </span>
                             ) : restaurant.badge ? (
                               <span className="absolute top-3 left-3 bg-[#ed0718] text-white text-[11px] font-black px-2.5 py-0.5 rounded-full shadow-sm">
@@ -1528,20 +1573,20 @@ export default function App() {
                           </div>
 
                           {/* Info del Comercio */}
-                          <div className="p-4 space-y-2">
+                          <div className="p-3.5 sm:p-4 space-y-2">
                             <div className="flex items-start justify-between gap-1">
                               <h3 className="font-extrabold text-base leading-snug line-clamp-1">
                                 {restaurant.name}
                               </h3>
                               <span className="text-[10px] font-mono font-black text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded-md shrink-0">
-                                📍 {distKm} km
+                                {distKm} km
                               </span>
                             </div>
 
-                            {/* Aviso de cierre temporal por desfile o evento */}
+                            {/* Aviso de cierre temporal */}
                             {restaurant.isOpen === false && (
                               <div className="bg-amber-50 border border-amber-200 text-amber-900 px-2.5 py-1.5 rounded-lg text-[11px] font-bold">
-                                ⚠️ {restaurant.closureReason || 'Cerrado por evento o desfile en San Miguel'}
+                                {restaurant.closureReason || 'Cerrado temporalmente'}
                               </div>
                             )}
 
@@ -1550,10 +1595,10 @@ export default function App() {
                                 <Star className="w-3.5 h-3.5 fill-[#ed0718] text-[#ed0718]" />
                                 {restaurant.rating}
                               </span>
-                              <span>({restaurant.reviews} reseñas)</span>
+                              <span>({restaurant.reviews})</span>
                               <span>·</span>
                               <span className="text-gray-500 font-medium truncate">
-                                🕒 {restaurant.schedule || '12:00 PM – 10:00 PM'}
+                                {restaurant.schedule || '12:00 PM – 10:00 PM'}
                               </span>
                             </div>
 
@@ -1611,7 +1656,7 @@ export default function App() {
                         </div>
 
                         {/* Botón de Acción */}
-                        <div className="p-4 pt-0">
+                        <div className="p-3.5 sm:p-4 pt-0">
                           {restaurant.hasFixedMenu === false ? (
                             <button
                               onClick={() => {
@@ -1620,7 +1665,7 @@ export default function App() {
                               }}
                               className="w-full font-black text-xs py-2.5 px-4 rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 bg-[#101b29] hover:bg-black text-white cursor-pointer"
                             >
-                              <span>✍️ Pide lo que se te antoje (Cotización RODO)</span>
+                              <span>{t('customOrderBtn')}</span>
                             </button>
                           ) : (
                             <button
@@ -1633,7 +1678,7 @@ export default function App() {
                                   : 'bg-[#ed0718] hover:bg-[#c90012] text-white'
                               }`}
                             >
-                              <span>{restaurant.isOpen === false ? 'Ver Menú (Pedidos Pausados)' : 'Ver Menú & Pedir'}</span>
+                              <span>{restaurant.isOpen === false ? t('viewMenuPaused') : t('viewMenuOrder')}</span>
                             </button>
                           )}
                         </div>
@@ -1644,17 +1689,17 @@ export default function App() {
               )}
 
               {/* Botón / Sección: No encontré mi local aquí */}
-              <div className="mt-6 bg-linear-to-r from-gray-900 via-gray-800 to-gray-900 border border-gray-700 text-white rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg">
+              <div className="mt-5 bg-linear-to-r from-gray-900 via-gray-800 to-gray-900 border border-gray-700 text-white rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-red-600/20 border border-red-500/40 flex items-center justify-center text-red-400 shrink-0">
-                    <Store className="w-5 h-5" />
+                  <div className="w-9 h-9 rounded-xl bg-red-600/20 border border-red-500/40 flex items-center justify-center text-red-400 shrink-0">
+                    <Store className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="font-extrabold text-sm sm:text-base">
-                      ¿No encontraste el local o puesto que buscas en San Miguel?
+                    <h3 className="font-extrabold text-sm">
+                      ¿Buscas otro local?
                     </h3>
                     <p className="text-xs text-gray-300">
-                      Anota qué local o changarro buscas y qué necesitas. Nosotros lo localizamos y te cotizamos el servicio.
+                      Dinos dónde y qué necesitas; te cotizamos el envío.
                     </p>
                   </div>
                 </div>
@@ -1665,9 +1710,9 @@ export default function App() {
                     setCustomOrderInitialLocal(undefined);
                     setShowCustomOrderModal(true);
                   }}
-                  className="bg-[#ed0718] hover:bg-[#c90012] text-white font-black text-xs py-2.5 px-4 rounded-xl shadow-md transition whitespace-nowrap cursor-pointer shrink-0"
+                  className="w-full sm:w-auto bg-[#ed0718] hover:bg-[#c90012] text-white font-black text-xs py-2.5 px-4 rounded-xl shadow-md transition whitespace-nowrap cursor-pointer shrink-0"
                 >
-                  🔍 Solicitar Local No Encontrado
+                  Pedir en otro local
                 </button>
               </div>
             </section>
@@ -1950,77 +1995,49 @@ export default function App() {
         onAddressesChanged={handleAddressesChanged}
       />
 
-      {/* 8. Modal de Historial de Pedidos con Filtros de Estado y Rastreo en Vivo */}
+      {/* 8. Modal de Historial de Pedidos */}
       {showOrdersHistory && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs">
+        <div
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setShowOrdersHistory(false);
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs"
+        >
           <div className="bg-white rounded-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden shadow-2xl">
             <div className="bg-[#101b29] text-white p-4 flex justify-between items-center">
               <h3 className="font-extrabold text-base flex items-center gap-2">
                 <Receipt className="w-5 h-5 text-[#ed0718]" />
                 {t('orderHistoryTitle')}
               </h3>
-              <button onClick={() => setShowOrdersHistory(false)} className="text-gray-400 hover:text-white cursor-pointer">
-                ✕
+              <button
+                type="button"
+                onClick={() => setShowOrdersHistory(false)}
+                aria-label="Cerrar historial"
+                className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
               </button>
-            </div>
-
-            {/* Pestañas de filtro por estado */}
-            <div className="bg-gray-100 border-b border-gray-200 px-3 py-2 flex gap-1.5 overflow-x-auto text-xs font-bold">
-              {(
-                [
-                  { id: 'todos', label: t('filterAll') },
-                  { id: 'en_camino', label: t('filterOnWay') },
-                  { id: 'entregado', label: t('filterDelivered') },
-                  { id: 'cancelado', label: t('filterCancelled') },
-                ] as const
-              ).map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setOrdersHistoryFilter(tab.id)}
-                  className={`px-3 py-1.5 rounded-xl transition whitespace-nowrap cursor-pointer ${
-                    ordersHistoryFilter === tab.id
-                      ? 'bg-[#ed0718] text-white shadow-xs'
-                      : 'bg-white text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
             </div>
 
             {reorderError && (
               <div className="bg-amber-50 border border-amber-300 text-amber-950 p-3 mx-4 mt-3 rounded-xl text-xs flex items-center justify-between shadow-2xs">
-                <span>⚠️ {reorderError}</span>
+                <span>{reorderError}</span>
                 <button onClick={() => setReorderError(null)} className="text-gray-500 hover:text-black font-bold ml-2">✕</button>
               </div>
             )}
-            <div className="p-4 sm:p-6 overflow-y-auto space-y-3">
-              {filteredMyOrders.length === 0 ? (
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-3">
+              {myOrders.length === 0 ? (
                 <div className="text-center py-8 text-gray-500 text-xs">
-                  No hay pedidos en esta categoría.
+                  Aún no tienes pedidos registrados.
                 </div>
               ) : (
-                filteredMyOrders.map((o) => (
+                myOrders.map((o) => (
                   <div
                     key={o.id}
-                    className="p-3.5 border rounded-xl bg-gray-50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs"
+                    className="p-3.5 border border-gray-200 rounded-xl bg-gray-50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs"
                   >
                     <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono font-black text-gray-900">{o.folio}</span>
-                        <span
-                          className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
-                            o.status === 'entregado'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : o.status === 'cancelado' || o.status === 'cancelado_con_deuda'
-                              ? 'bg-red-100 text-red-700'
-                              : 'bg-blue-100 text-blue-800'
-                          }`}
-                        >
-                          {o.status.replace(/_/g, ' ')}
-                        </span>
-                      </div>
+                      <span className="font-mono font-black text-gray-900">{o.folio}</span>
                       <div className="font-bold text-gray-800 mt-0.5">{o.restaurantName}</div>
                       <div className="text-gray-500 text-[11px]">
                         {new Date(o.createdAt).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })}
@@ -2028,17 +2045,6 @@ export default function App() {
                       <div className="text-[#ed0718] font-bold mt-0.5">${o.total.toFixed(2)} MXN</div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 self-end sm:self-center">
-                      {(o.status === 'en_camino' || o.status === 'afuera_del_domicilio') && (
-                        <button
-                          onClick={() => {
-                            setShowOrdersHistory(false);
-                            setLiveTrackingOrder(o);
-                          }}
-                          className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg font-bold text-xs transition cursor-pointer"
-                        >
-                          {t('liveTrack')}
-                        </button>
-                      )}
                       <button
                         onClick={() => {
                           setShowOrdersHistory(false);
@@ -2055,14 +2061,13 @@ export default function App() {
                             (r) => r.id === o.restaurantId || r.name.toLowerCase() === o.restaurantName.toLowerCase()
                           );
                           if (!rest) {
-                            setReorderError(`El establecimiento "${o.restaurantName}" no está disponible en este momento.`);
+                            setReorderError(`"${o.restaurantName}" no está disponible en este momento.`);
                             return;
                           }
                           if (rest.isOpen === false) {
-                            setReorderError(`El local "${rest.name}" está cerrado temporalmente (${rest.closureReason || 'pedidos pausados'}).`);
+                            setReorderError(`"${rest.name}" está cerrado temporalmente.`);
                             return;
                           }
-                          // Cargar productos del ticket previo al carrito y redirigir al checkout
                           setCart(o.items, rest.id);
                           setCatalogOverlay(null);
                           setShowOrdersHistory(false);
@@ -2083,23 +2088,38 @@ export default function App() {
 
       {/* 9. Modal de Ayuda */}
       {showHelpModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/70 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4">
-            <h3 className="font-black text-lg text-gray-900 flex items-center gap-2">
-              <Headphones className="w-5 h-5 text-[#ed0718]" />
-              Atención y Soporte RODO
-            </h3>
+        <div
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setShowHelpModal(false);
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/70 backdrop-blur-xs"
+        >
+          <div className="bg-white rounded-2xl w-full max-w-md p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-black text-base text-gray-900 flex items-center gap-2">
+                <Headphones className="w-5 h-5 text-[#ed0718]" />
+                Soporte RODO
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowHelpModal(false)}
+                aria-label="Cerrar ayuda"
+                className="text-gray-400 hover:text-gray-700 p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
             <p className="text-xs text-gray-600 leading-relaxed">
-              ¿Tienes alguna duda con la recolección, entrega o verificación de tu pago? Puedes comunicarte directamente con el despachador de guardia de RODO Moto Mandados.
+              ¿Tienes dudas con tu recolección, entrega o pago? Escríbenos por WhatsApp con tu folio.
             </p>
-            <div className="bg-gray-50 p-3 rounded-xl text-xs space-y-1">
-              <div>📍 <b>Zona de cobertura:</b> San Miguel y alrededores.</div>
-              <div>🏍️ <b>Tiempo promedio de reparto:</b> 20 a 35 minutos.</div>
-              <div>💳 <b>Pagos:</b> Efectivo en entrega y Transferencia SPEI auditada.</div>
+            <div className="bg-gray-50 p-3 rounded-xl text-xs space-y-1.5 text-gray-700">
+              <div><b>Cobertura:</b> San Miguel de Allende y alrededores.</div>
+              <div><b>Tiempo promedio:</b> 20 a 35 min.</div>
+              <div><b>Pagos:</b> Efectivo y Transferencia SPEI.</div>
             </div>
             <button
               onClick={() => setShowHelpModal(false)}
-              className="w-full bg-[#101b29] text-white py-2.5 rounded-xl font-black text-xs"
+              className="w-full bg-[#101b29] text-white py-2.5 rounded-xl font-black text-xs cursor-pointer"
             >
               Cerrar
             </button>
