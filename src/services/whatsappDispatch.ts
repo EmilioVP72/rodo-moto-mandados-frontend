@@ -153,5 +153,9 @@ _RODO Moto Mandados · Despacho Central_`;
 export function generateWhatsAppLink(phone: string, message: string): string {
   const cleanPhone = phone.replace(/[^0-9]/g, '');
   const encodedText = encodeURIComponent(message);
-  return `https://wa.me/${cleanPhone}?text=${encodedText}`;
+  // Usar api.whatsapp.com/send evita el bug de redirección de wa.me que corrompe emojis UTF-8 de 4 bytes ()
+  if (!cleanPhone) {
+    return `https://api.whatsapp.com/send/?text=${encodedText}`;
+  }
+  return `https://api.whatsapp.com/send/?phone=${cleanPhone}&text=${encodedText}`;
 }

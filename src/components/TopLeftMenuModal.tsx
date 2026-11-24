@@ -396,7 +396,7 @@ export const TopLeftMenuModal: React.FC<TopLeftMenuModalProps> = ({
                     Comunícate directamente con la central de soporte por WhatsApp. Te atendemos de inmediato para cualquier duda sobre tu pedido o entrega.
                   </p>
                   <a
-                    href="https://wa.me/524151019920?text=Hola%20RODO%20Moto%20Mandados,%20necesito%20ayuda%20con%20mi%20pedido."
+                    href="https://api.whatsapp.com/send/?phone=524151019920&text=Hola%20RODO%20Moto%20Mandados,%20necesito%20ayuda%20con%20mi%20pedido."
                     target="_blank"
                     rel="noreferrer"
                     className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-md transition cursor-pointer mt-2"

@@ -475,7 +475,7 @@ export function getWhatsAppOtpDispatchUrl(phone: string, challenge: SecurityOtpA
 ⏱️ *Válido por:* ${expSeconds} segundos
 ℹ️ _Uso exclusivo para verificación interna del sistema RODO._`;
 
-  return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
+  return `https://api.whatsapp.com/send/?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
 }
 
 export function getSmsOtpDispatchUrl(phone: string, challenge: SecurityOtpAction): string {

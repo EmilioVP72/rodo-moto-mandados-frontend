@@ -251,7 +251,7 @@ export const LiveTrackingModal: React.FC<LiveTrackingModalProps> = ({
 
             <div className="flex items-center gap-2">
               <a
-                href={`https://wa.me/${(order.assignedRiderPhone || '524151019920').replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hola, sigo mi pedido RODO Folio ${order.folio}`)}`}
+                href={`https://api.whatsapp.com/send/?phone=${(order.assignedRiderPhone || '524151019920').replace(/[^0-9]/g, '')}&text=${encodeURIComponent(`Hola, sigo mi pedido RODO Folio ${order.folio}`)}`}
                 target="_blank"
                 rel="noreferrer"
                 className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-3 py-2 rounded-xl flex items-center gap-1.5 shadow-xs transition"

@@ -164,7 +164,7 @@ ${googleMapsNavUrl}
 
 _Despacho Central RODO Moto Mandados_`;
 
-    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+    window.open(`https://api.whatsapp.com/send/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
   };
 
   const markers = [

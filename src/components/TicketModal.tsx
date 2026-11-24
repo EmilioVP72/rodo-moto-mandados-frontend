@@ -520,7 +520,7 @@ _RODO Moto Mandados · Despacho San Miguel_`;
             <span className="text-[11px] text-emerald-800 font-medium">Soporte por WhatsApp</span>
           </div>
           <a
-            href={`https://wa.me/524151019920?text=${encodeURIComponent(`Hola RODO Moto Mandados, necesito ayuda con mi pedido Folio: ${order.folio}`)}`}
+            href={`https://api.whatsapp.com/send/?phone=524151019920&text=${encodeURIComponent(`Hola RODO Moto Mandados, necesito ayuda con mi pedido Folio: ${order.folio}`)}`}
             target="_blank"
             rel="noreferrer"
             className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2 px-3.5 rounded-xl shadow-xs transition flex items-center gap-1.5 shrink-0"

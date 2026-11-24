@@ -167,8 +167,11 @@ describe('Frontend Catalog Seeds & WhatsApp Dispatch Formatter Unit Tests', () =
       assert.ok(localMsg.includes('Código: 101'));
       assert.ok(localMsg.includes('2 Repartidores'));
 
-      const waUrl = generateWhatsAppLink('+52 (415) 101-9920', 'Hola RODO');
-      assert.equal(waUrl, 'https://wa.me/524151019920?text=Hola%20RODO');
+      const waUrl = generateWhatsAppLink('+52 (415) 101-9920', 'Hola RODO 🏍️');
+      assert.equal(
+        waUrl,
+        'https://api.whatsapp.com/send/?phone=524151019920&text=Hola%20RODO%20%F0%9F%8F%8D%EF%B8%8F'
+      );
     });
   });
 
