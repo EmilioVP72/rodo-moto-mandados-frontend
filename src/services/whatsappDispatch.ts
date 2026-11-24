@@ -78,7 +78,7 @@ ${order.deliveryNotes ? `📝 *Referencias / Vehículo:* ${order.deliveryNotes}\
 • *Tipo:* Gasolina ${order.fuelDetails.fuelType.toUpperCase()}
 • *Costo Gasolina:* $${order.fuelDetails.fuelTotal.toFixed(2)} MXN
 🏍️ *Tarifa de Viaje Auxilio:* $${order.fuelDetails.serviceTravelFee.toFixed(2)} MXN
-${order.tipAmount ? `❤️ *Propina Repartidor:* $${order.tipAmount.toFixed(2)} MXN\n` : ''}━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━
 💰 *TOTAL A LIQUIDAR:* $${order.total.toFixed(2)} MXN
 ${paymentInstructionForRider(order)}
 
@@ -101,11 +101,6 @@ _RODO Moto Mandados · Auxilio Vial Rápido_`;
       : order.deliveryType === 'programada'
       ? `🕒 Entrega Programada (${order.scheduledDeliveryTime || 'Programado'})`
       : `🛵 Entrega Normal`;
-
-  const tipText =
-    order.tipAmount && order.tipAmount > 0
-      ? `❤️ *Propina Repartidor (${order.tipPercentage || 0}%):* $${order.tipAmount.toFixed(2)} MXN\n`
-      : '';
 
   const storedRestaurants = getStoredRestaurantsSnapshot();
   const matchedRestaurant = storedRestaurants.find(
@@ -140,7 +135,7 @@ ${itemsList}
 ━━━━━━━━━━━━━━━━━━
 💰 *Artículos:* $${order.subtotal.toFixed(2)} MXN
 🏍️ *Envío (${deliveryTypeLabel}):* $${order.deliveryFee.toFixed(2)} MXN
-${tipText}💲 *TOTAL ORDEN:* $${order.total.toFixed(2)} MXN
+💲 *TOTAL ORDEN:* $${order.total.toFixed(2)} MXN
 
 ${paymentInstructionForRider(order)}
 

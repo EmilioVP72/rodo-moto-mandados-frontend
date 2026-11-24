@@ -792,7 +792,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 <Heart className="w-3.5 h-3.5 text-red-500 fill-red-500" /> Propina para el repartidor (Opcional)
               </h4>
               <span className="text-[11px] font-bold text-[#ed0718]">
-                {tipAmount > 0 ? `+$${tipAmount} MXN` : 'Sin propina'}
+                {tipMode === 'custom'
+                  ? tipAmount > 0
+                    ? 'Personalizada'
+                    : 'Sin propina'
+                  : tipPercentage > 0
+                  ? `${tipPercentage}%`
+                  : 'Sin propina'}
               </span>
             </div>
 
@@ -846,7 +852,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             )}
 
             <p className="text-[10px] text-gray-500 text-center">
-              Propina total: <b>${tipAmount.toFixed(2)} MXN</b> · El 100% llega íntegro a manos del repartidor en moto.
+              El 100% llega íntegro al repartidor y se suma directo al total.
             </p>
           </div>
 
@@ -1002,12 +1008,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   )}
                 </span>
               </div>
-              {tipAmount > 0 && (
-                <div className="flex justify-between text-emerald-800">
-                  <span>Propina del repartidor ({tipPercentage}%):</span>
-                  <span className="font-mono font-bold">+${tipAmount.toFixed(2)} MXN</span>
-                </div>
-              )}
             </div>
 
             <div className="pt-2 border-t border-gray-300 flex justify-between font-black text-sm text-[#ed0718]">

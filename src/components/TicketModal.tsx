@@ -1343,13 +1343,6 @@ _RODO Moto Mandados · Despacho San Miguel_`;
                 <span className="font-mono font-bold">${order.deliveryFee.toFixed(2)} MXN</span>
               </div>
 
-              {order.tipAmount && order.tipAmount > 0 && (
-                <div className="flex justify-between text-emerald-800">
-                  <span>Propina del repartidor ({order.tipPercentage || 0}%):</span>
-                  <span className="font-mono font-bold">+${order.tipAmount.toFixed(2)} MXN</span>
-                </div>
-              )}
-
               {order.fuelDetails && (
                 <div className="bg-amber-50 p-2 rounded-lg border border-amber-200 text-xs text-amber-900 space-y-0.5">
                   <div className="font-bold">⛽ Auxilio Gasolina:</div>

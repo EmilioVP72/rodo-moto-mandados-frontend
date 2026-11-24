@@ -95,6 +95,7 @@ describe('Frontend Catalog Seeds & WhatsApp Dispatch Formatter Unit Tests', () =
       assert.ok(msg.includes('2x Orden de 4 Tacos de Bistec'));
       assert.ok(msg.includes('COBRAR EN EFECTIVO AL ENTREGAR'));
       assert.ok(msg.includes('$255.00 MXN'));
+      assert.ok(!msg.includes('Propina Repartidor'));
       assert.ok(msg.includes('https://rodomotomandados.com?ticket=RD-261118-ABCDE'));
     });
 
