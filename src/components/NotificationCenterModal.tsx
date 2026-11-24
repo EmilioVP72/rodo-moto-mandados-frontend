@@ -26,6 +26,7 @@ import {
   playNotificationChime,
   requestBrowserNotificationPermission,
 } from '../services/notifications';
+import { useBackdropClose } from '../utils/modalBackdrop';
 
 interface NotificationCenterModalProps {
   isOpen: boolean;
@@ -48,6 +49,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
   const [history, setHistory] = useState<RodoNotification[]>([]);
   const [browserPermission, setBrowserPermission] = useState<string>('default');
   const [testedSound, setTestedSound] = useState(false);
+  const backdropHandlers = useBackdropClose(isOpen, onClose);
 
   useEffect(() => {
     if (isOpen) {
@@ -117,7 +119,10 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-200">
+    <div
+      {...backdropHandlers}
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-200"
+    >
       <div className="bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl w-full max-w-lg max-h-[92dvh] sm:max-h-[86dvh] shadow-2xl overflow-hidden flex flex-col border border-gray-200 dark:border-slate-800 transition-colors">
         {/* Cabecera */}
         <div className="bg-[#101b29] text-white p-4 sm:p-5 flex items-center justify-between border-b border-gray-800 shrink-0">
@@ -152,7 +157,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
                 Preferencias de Alertas
               </span>
               <span className="text-[11px] text-gray-500 dark:text-gray-400 font-medium">
-                {browserPermission === 'granted' ? '🟢 Push activo' : '⚪ Permiso no concedido'}
+                {browserPermission === 'granted' ? 'Push activo' : 'Permiso pendiente'}
               </span>
             </div>
 

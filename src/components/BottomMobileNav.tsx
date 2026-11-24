@@ -52,7 +52,7 @@ export const BottomMobileNav: React.FC<BottomMobileNavProps> = ({
                 transition={{ type: 'spring', stiffness: 450, damping: 20 }}
                 className="bg-white/20 px-2 py-0.5 rounded-full text-[11px] font-mono"
               >
-                🛒 {cartItemCount} {cartItemCount === 1 ? 'artículo' : 'artículos'}
+                {cartItemCount} {cartItemCount === 1 ? 'artículo' : 'artículos'}
               </motion.span>
               <span className="text-[11px] font-bold">Ver pedido</span>
             </div>

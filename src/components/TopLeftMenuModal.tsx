@@ -24,6 +24,7 @@ import {
   Globe,
 } from 'lucide-react';
 import { useLanguage } from '../utils/i18n';
+import { useBackdropClose } from '../utils/modalBackdrop';
 
 interface TopLeftMenuModalProps {
   isOpen: boolean;
@@ -63,15 +64,20 @@ export const TopLeftMenuModal: React.FC<TopLeftMenuModalProps> = ({
   const { lang, toggleLang } = useLanguage();
   const [activeSection, setActiveSection] = useState<MenuSection>('menu');
 
-  if (!isOpen) return null;
-
   const handleClose = () => {
     setActiveSection('menu');
     onClose();
   };
 
+  const backdropHandlers = useBackdropClose(isOpen, handleClose);
+
+  if (!isOpen) return null;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:justify-start p-0 sm:p-5 bg-black/75 backdrop-blur-xs overflow-y-auto">
+    <div
+      {...backdropHandlers}
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:justify-start p-0 sm:p-5 bg-black/75 backdrop-blur-xs overflow-y-auto"
+    >
       <div className="bg-white dark:bg-slate-900 text-gray-900 dark:text-gray-100 rounded-t-3xl sm:rounded-3xl w-full sm:max-w-lg shadow-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 sm:zoom-in-95 duration-150 border border-gray-100 dark:border-slate-800 flex flex-col max-h-[92dvh] transition-colors">
         {/* Cabecera del Recuadro con el Logo Oficial */}
         <div className="bg-[#101b29] text-white p-4 sm:p-5 flex items-center justify-between border-b border-gray-800 shrink-0">
@@ -260,10 +266,10 @@ export const TopLeftMenuModal: React.FC<TopLeftMenuModalProps> = ({
                     </div>
                     <div>
                       <span className="font-extrabold text-sm text-blue-950 block group-hover:text-blue-700">
-                        💡 Cómo Funciona (Tutorial)
+                        Cómo funciona
                       </span>
                       <span className="text-xs text-blue-700">
-                        Pide, filtra y rastrea tu pedido paso a paso
+                        Guía rápida para pedir
                       </span>
                     </div>
                   </div>
@@ -321,7 +327,7 @@ export const TopLeftMenuModal: React.FC<TopLeftMenuModalProps> = ({
                     </div>
                   </div>
                   <span className="text-xs font-black font-mono px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-gray-800 dark:text-gray-200">
-                    {isDarkMode ? '🌙 Obscuro' : '☀️ Claro'}
+                    {isDarkMode ? 'Obscuro' : 'Claro'}
                   </span>
                 </button>
               )}
