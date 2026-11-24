@@ -1,5 +1,6 @@
 import { apiFetch } from '../api/httpClient';
 import { Order, RiderAccount } from '../types';
+import { applyConfirmedOrderUpdate } from './db';
 
 export function getRiderAccounts(): Promise<RiderAccount[]> {
   return apiFetch<RiderAccount[]>('/api/admin/riders');
@@ -46,9 +47,32 @@ export function updateAssignedRiderOrder(
   });
 }
 
-export function assignRiderToOrder(orderId: string, riderUserId: string | null): Promise<Order> {
-  return apiFetch<Order>(`/api/orders/${encodeURIComponent(orderId)}`, {
+export async function assignRiderToOrder(
+  orderId: string,
+  riderSelection: string | null | { riderId?: string | null; riderUserId?: string | null }
+): Promise<Order> {
+  const body =
+    typeof riderSelection === 'object' && riderSelection !== null
+      ? {
+          ...(riderSelection.riderId !== undefined ? { assignedRiderId: riderSelection.riderId } : {}),
+          ...(riderSelection.riderUserId !== undefined && riderSelection.riderId === undefined
+            ? { assignedRiderUserId: riderSelection.riderUserId }
+            : {}),
+        }
+      : { assignedRiderId: riderSelection };
+
+  const updated = await apiFetch<Order>(`/api/orders/${encodeURIComponent(orderId)}`, {
     method: 'PATCH',
-    body: { assignedRiderUserId: riderUserId },
+    body,
   });
+  applyConfirmedOrderUpdate(updated);
+  return updated;
+}
+
+export async function notifyCustomerArrival(orderId: string): Promise<Order> {
+  const updated = await apiFetch<Order>(`/api/orders/${encodeURIComponent(orderId)}/notify-arrival`, {
+    method: 'POST',
+  });
+  applyConfirmedOrderUpdate(updated);
+  return updated;
 }

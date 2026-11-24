@@ -109,11 +109,21 @@ test('CLIENTE solo recibe notificaciones de cambios de estado de SUS PROPIOS ped
   const outside = buildOrderNotificationForViewer({
     viewerRole: 'customer',
     viewerUserId: 'user-a',
-    order: { ...myOrder, status: 'afuera_del_domicilio' },
+    order: { ...myOrder, status: 'afuera_del_domicilio', arrivalNotifiedAt: '2026-11-24T12:00:00.000Z' },
     prevStatus: 'en_camino',
   });
   assert.ok(outside);
   assert.equal(outside.type, 'urgent');
+
+  const outsideResent = buildOrderNotificationForViewer({
+    viewerRole: 'customer',
+    viewerUserId: 'user-a',
+    order: { ...myOrder, status: 'afuera_del_domicilio', arrivalNotifiedAt: '2026-11-24T12:03:00.000Z' },
+    prevStatus: 'afuera_del_domicilio',
+    lastNotifiedArrivalAt: '2026-11-24T12:00:00.000Z',
+  });
+  assert.ok(outsideResent);
+  assert.equal(outsideResent.type, 'urgent');
 
   const delivered = buildOrderNotificationForViewer({
     viewerRole: 'customer',

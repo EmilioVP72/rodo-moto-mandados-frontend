@@ -311,6 +311,12 @@ export function notifyOrderSubscribers(): void {
   });
 }
 
+export function applyConfirmedOrderUpdate(order: Order): void {
+  saveLocalStoredOrder(order);
+  upsertOrderToIDB(order);
+  notifyOrderSubscribers();
+}
+
 export async function createOrderInDb(order: Order): Promise<Order> {
   const saved = await persistOnlyAfterConfirmation(
     () => apiFetch<Order>('/api/orders', { method: 'POST', body: order }),

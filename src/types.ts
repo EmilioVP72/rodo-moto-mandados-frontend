@@ -239,6 +239,7 @@ export interface Order {
 
   cancellationDebtAmount?: number;
   cancellationReason?: string;
+  assignedRiderId?: string;
   assignedRiderName?: string;
   assignedRiderPhone?: string;
   assignedRiderUserId?: string;
