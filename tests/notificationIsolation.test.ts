@@ -157,6 +157,20 @@ test('ADMIN recibe notificaciones de nuevos pedidos y actualizaciones de cualqui
   assert.match(statusUpdateNotif.message, /En preparación/i);
 });
 
+test('avisa al titular por cada versión de la cotización aunque el pedido conserve el mismo estado', () => {
+  const order = { id: 'order-1', folio: 'RD-185', customerId: 'cliente', total: 185,
+    status: 'pendiente_cotizacion', quoteOfferedAt: '2026-11-24T12:00:00.000Z' };
+  const viewer = { viewerRole: 'customer' as const, viewerUserId: 'cliente', order, prevStatus: order.status };
+  const notice = buildOrderNotificationForViewer(viewer);
+  assert.equal(notice?.quoteOfferedAt, order.quoteOfferedAt);
+  assert.match(notice!.message, /185\.00 MXN/);
+  assert.equal(notice?.folio, order.folio);
+  assert.equal(buildOrderNotificationForViewer({ ...viewer, lastNotifiedQuote: order.quoteOfferedAt }), null);
+  assert.ok(buildOrderNotificationForViewer({ ...viewer, lastNotifiedQuote: '2026-11-24T11:59:00.000Z' }));
+  assert.equal(buildOrderNotificationForViewer({ ...viewer, viewerUserId: 'otro' }), null);
+  assert.equal(buildOrderNotificationForViewer({ ...viewer, order: { ...order, quoteOfferedAt: undefined } }), null);
+});
+
 test('El historial de notificaciones en localStorage está aislado entre Admin y cada Cliente', () => {
   const storage = createMemoryStorage();
   const adminKey = resolveNotificationScopeKey({ isAdmin: true });

@@ -627,64 +627,64 @@ export default function App() {
     previousOrderStatusesRef.current = {};
     knownOrderIdsRef.current = new Set();
     let hasReceivedInitialSnapshot = false;
+    const notifiedQuotes = new Map<string, string>();
+    for (const notice of getNotificationHistory(notificationScopeKey)) {
+      if (notice.orderId && notice.quoteOfferedAt && !notifiedQuotes.has(notice.orderId)) {
+        notifiedQuotes.set(notice.orderId, notice.quoteOfferedAt);
+      }
+    }
 
     const unsubscribe = subscribeToOrders((liveOrders) => {
       setOrders(liveOrders);
       setViewingTicketOrder(open => refreshOpenTicket(open, liveOrders));
 
-      // En el primer snapshot de la sesión solo memorizamos estados actuales sin disparar notificaciones retroactivas
-      if (!hasReceivedInitialSnapshot) {
-        liveOrders.forEach((order) => {
-          knownOrderIdsRef.current.add(order.id);
-          previousOrderStatusesRef.current[order.id] = order.status;
-        });
-        hasReceivedInitialSnapshot = true;
-      } else {
-        // Detectar pedidos nuevos (solo Admin) y cambios de estado (Admin global / Cliente solo SUS pedidos)
-        liveOrders.forEach((order) => {
-          const isNewOrder = !knownOrderIdsRef.current.has(order.id);
-          const prevStatus = previousOrderStatusesRef.current[order.id];
+      liveOrders.forEach((order) => {
+        const isNewOrder = hasReceivedInitialSnapshot && !knownOrderIdsRef.current.has(order.id);
+        const prevStatus = previousOrderStatusesRef.current[order.id];
 
-          const notifPayload = buildOrderNotificationForViewer({
-            viewerRole,
-            viewerUserId: currentUser?.id,
-            order,
-            prevStatus,
-            isNewOrder,
+        const notifPayload = buildOrderNotificationForViewer({
+          viewerRole,
+          viewerUserId: currentUser?.id,
+          order,
+          prevStatus,
+          lastNotifiedQuote: notifiedQuotes.get(order.id),
+          isNewOrder,
+        });
+
+        if (notifPayload) {
+          if (notifPayload.quoteOfferedAt) notifiedQuotes.set(order.id, notifPayload.quoteOfferedAt);
+          dispatchRodoNotification(notifPayload.title, notifPayload.message, {
+            scopeKey: notificationScopeKey,
+            audience: notifPayload.audience,
+            orderId: notifPayload.orderId,
+            folio: notifPayload.folio,
+            quoteOfferedAt: notifPayload.quoteOfferedAt,
+            type: notifPayload.type,
+            playSound: true,
           });
+          setUnreadNotifsCount((prev) => prev + 1);
+        }
 
-          if (notifPayload) {
-            dispatchRodoNotification(notifPayload.title, notifPayload.message, {
-              scopeKey: notificationScopeKey,
-              audience: notifPayload.audience,
-              orderId: notifPayload.orderId,
-              folio: notifPayload.folio,
-              type: notifPayload.type,
-              playSound: true,
-            });
-            setUnreadNotifsCount((prev) => prev + 1);
+        // Modales automáticos exclusivos del cliente propietario de la orden
+        const isMyOrder = viewerRole === 'customer' && currentUser && order.customerId === currentUser.id;
+        if (isMyOrder && prevStatus && prevStatus !== order.status) {
+          if (order.status === 'en_camino') {
+            setLiveTrackingOrder(order);
+          } else if (
+            order.status === 'entregado' &&
+            !order.rating &&
+            !order.riderRating &&
+            !dismissedRatingIdsRef.current.has(order.id)
+          ) {
+            setLiveTrackingOrder(null);
+            setRatingModalOrder(order);
           }
+        }
 
-          // Modales automáticos exclusivos del cliente propietario de la orden
-          const isMyOrder = viewerRole === 'customer' && currentUser && order.customerId === currentUser.id;
-          if (isMyOrder && prevStatus && prevStatus !== order.status) {
-            if (order.status === 'en_camino') {
-              setLiveTrackingOrder(order);
-            } else if (
-              order.status === 'entregado' &&
-              !order.rating &&
-              !order.riderRating &&
-              !dismissedRatingIdsRef.current.has(order.id)
-            ) {
-              setLiveTrackingOrder(null);
-              setRatingModalOrder(order);
-            }
-          }
-
-          knownOrderIdsRef.current.add(order.id);
-          previousOrderStatusesRef.current[order.id] = order.status;
-        });
-      }
+        knownOrderIdsRef.current.add(order.id);
+        previousOrderStatusesRef.current[order.id] = order.status;
+      });
+      hasReceivedInitialSnapshot = true;
 
       const urlParams = new URLSearchParams(window.location.search);
       const ticketParam = urlParams.get('ticket');
@@ -2233,6 +2233,7 @@ export default function App() {
             isOpen={showNotificationCenter}
             onClose={() => setShowNotificationCenter(false)}
             scopeKey={notificationScopeKey}
+            unreadCount={unreadNotifsCount}
             isAdmin={isAdminLoggedIn}
             onSelectOrderFolio={(folio) => {
               const ord = myOrders.find((o) => o.folio.toUpperCase() === folio.toUpperCase());

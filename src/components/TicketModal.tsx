@@ -77,8 +77,10 @@ export const TicketModal: React.FC<TicketModalProps> = ({
   });
 
   // Campos para cotización de pedidos personalizados
-  const [quoteFoodPrice, setQuoteFoodPrice] = useState<number>(order?.subtotal || 0);
-  const [quoteDeliveryFee, setQuoteDeliveryFee] = useState<number>(order?.deliveryFee || 35);
+  const [quoteFoodPrice, setQuoteFoodPrice] = useState(String(order?.subtotal ?? 0));
+  const [quoteDeliveryFee, setQuoteDeliveryFee] = useState(String(order?.quoteOfferedAt ? order.deliveryFee : order?.deliveryFee || 35));
+  const [sendingQuote, setSendingQuote] = useState(false);
+  const [quoteError, setQuoteError] = useState('');
 
   // Calificaciones detalladas post-entrega (Repartidor y Comida)
   const [riderRating, setRiderRating] = useState<number>(order?.riderRating || order?.rating || 0);
@@ -384,7 +386,13 @@ _RODO Moto Mandados · Despacho San Miguel_`;
   };
 
   // Administrador envía cotización al cliente para su aprobación
-  const handleConfirmQuote = async () => {
+  const quoteUnchanged = Boolean(order.quoteOfferedAt) &&
+    Number(quoteFoodPrice) === order.subtotal && Number(quoteDeliveryFee) === order.deliveryFee;
+  const handleConfirmQuote = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (sendingQuote || quoteUnchanged) return;
+    setQuoteError('');
+    setSendingQuote(true);
     const totalQuote = Number(quoteFoodPrice) + Number(quoteDeliveryFee);
     const updates: Partial<Order> = {
       subtotal: Number(quoteFoodPrice),
@@ -401,7 +409,13 @@ _RODO Moto Mandados · Despacho San Miguel_`;
         },
       ],
     };
-    await updateOrderInDb(order.id, updates);
+    try {
+      await updateOrderInDb(order.id, updates);
+    } catch (error) {
+      setQuoteError(error instanceof Error ? error.message : 'No se pudo enviar la cotización. Intenta de nuevo.');
+    } finally {
+      setSendingQuote(false);
+    }
   };
 
   // El cliente acepta la cotización propuesta
@@ -679,7 +693,7 @@ _RODO Moto Mandados · Despacho San Miguel_`;
 
         {/* Panel de Cotización para pedidos personalizados */}
         {order.status === 'pendiente_cotizacion' && isAdmin && (
-          <div className="bg-blue-50 border-b border-blue-200 p-4 space-y-3">
+          <form onSubmit={handleConfirmQuote} className="bg-blue-50 border-b border-blue-200 p-4 space-y-3">
             <div className="flex items-center gap-2 text-blue-900 font-extrabold text-xs uppercase tracking-wide">
               <Sparkles className="w-4 h-4 text-blue-600" />
               <span>Cotizar Pedido Personalizado</span>
@@ -692,9 +706,10 @@ _RODO Moto Mandados · Despacho San Miguel_`;
                 <label className="block text-[11px] font-bold text-gray-700 mb-0.5">{order.orderType === 'auxilio_gasolina' ? 'Combustible' : 'Artículos'} ($ MXN)</label>
                 <input
                   type="number"
-                  disabled={order.orderType === 'auxilio_gasolina'}
+                  min="0" step="0.01" required
+                  disabled={sendingQuote || order.orderType === 'auxilio_gasolina'}
                   value={quoteFoodPrice}
-                  onChange={(e) => setQuoteFoodPrice(Number(e.target.value))}
+                  onChange={(e) => setQuoteFoodPrice(e.target.value)}
                   className="w-full border border-blue-300 rounded-lg p-2 text-xs font-bold bg-white"
                   placeholder="Ej. 180"
                 />
@@ -704,19 +719,27 @@ _RODO Moto Mandados · Despacho San Miguel_`;
                 <input
                   type="number"
                   value={quoteDeliveryFee}
-                  onChange={(e) => setQuoteDeliveryFee(Number(e.target.value))}
+                  min="0" step="0.01" required disabled={sendingQuote}
+                  onChange={(e) => setQuoteDeliveryFee(e.target.value)}
                   className="w-full border border-blue-300 rounded-lg p-2 text-xs font-bold bg-white"
                   placeholder="Ej. 35"
                 />
               </div>
             </div>
+            {order.quoteOfferedAt && (
+              <p role="status" className="text-sm font-bold text-emerald-800">
+                Cotización enviada por ${order.total.toFixed(2)} MXN. Pendiente de respuesta del cliente.
+              </p>
+            )}
+            {quoteError && <p role="alert" className="text-sm font-bold text-red-700">{quoteError}</p>}
             <button
-              onClick={() => handleConfirmQuote().catch(err => onShowToast?.(err.message))}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs py-2.5 rounded-xl shadow-xs transition"
+              type="submit" disabled={sendingQuote || quoteUnchanged}
+              className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-extrabold text-xs py-2.5 rounded-xl shadow-xs transition"
             >
-              ✓ Enviar Cotización al Cliente (${(Number(quoteFoodPrice) + Number(quoteDeliveryFee)).toFixed(2)} MXN)
+              {sendingQuote ? 'Enviando cotización…' : quoteUnchanged ? 'Cotización enviada' :
+                `${order.quoteOfferedAt ? 'Actualizar cotización' : 'Enviar Cotización al Cliente'} ($${(Number(quoteFoodPrice) + Number(quoteDeliveryFee)).toFixed(2)} MXN)`}
             </button>
-          </div>
+          </form>
         )}
 
         {/* Cuerpo del Ticket térmico */}
@@ -772,7 +795,7 @@ _RODO Moto Mandados · Despacho San Miguel_`;
                         <span className="text-[#ed0718]">${(order.total || 0).toFixed(2)} MXN</span>
                       </div>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                    {!isAdmin && <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
                       <button
                         type="button"
                         onClick={() => handleCustomerAcceptQuote().catch(err => onShowToast?.(err.message))}
@@ -789,7 +812,7 @@ _RODO Moto Mandados · Despacho San Miguel_`;
                         <XCircle className="w-4 h-4" />
                         <span>No lo quiero / Cancelar</span>
                       </button>
-                    </div>
+                    </div>}
                   </div>
                 ) : (
                   <div className="bg-yellow-50 border border-yellow-300 text-yellow-900 rounded-xl p-3 text-center">

@@ -31,6 +31,7 @@ interface NotificationCenterModalProps {
   isOpen: boolean;
   onClose: () => void;
   scopeKey: string;
+  unreadCount: number;
   isAdmin?: boolean;
   onSelectOrderFolio?: (folio: string) => void;
 }
@@ -39,6 +40,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
   isOpen,
   onClose,
   scopeKey,
+  unreadCount,
   isAdmin = false,
   onSelectOrderFolio,
 }) => {
@@ -50,14 +52,16 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
   useEffect(() => {
     if (isOpen) {
       setSettings(getNotificationSettings());
-      const currentList = getNotificationHistory(scopeKey);
-      setHistory(currentList);
       markAllNotificationsAsRead(scopeKey);
       if ('Notification' in window) {
         setBrowserPermission(Notification.permission);
       }
     }
   }, [isOpen, scopeKey]);
+
+  useEffect(() => {
+    if (isOpen) setHistory(getNotificationHistory(scopeKey));
+  }, [isOpen, scopeKey, unreadCount]);
 
   if (!isOpen) return null;
 

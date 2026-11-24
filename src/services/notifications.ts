@@ -11,6 +11,7 @@ export interface RodoNotification {
   message: string;
   orderId?: string;
   folio?: string;
+  quoteOfferedAt?: string;
   audience?: NotificationAudience;
   type: 'info' | 'success' | 'warning' | 'urgent';
   timestamp: string;
@@ -188,6 +189,7 @@ export interface OrderNotificationPayload {
   audience: 'admin' | 'customer';
   orderId: string;
   folio: string;
+  quoteOfferedAt?: string;
 }
 
 const STATUS_LABELS_ES: Record<string, string> = {
@@ -223,8 +225,10 @@ export function buildOrderNotificationForViewer(params: {
     restaurantName?: string;
     status: string;
     total?: number;
+    quoteOfferedAt?: string;
   };
   prevStatus?: string;
+  lastNotifiedQuote?: string;
   isNewOrder?: boolean;
 }): OrderNotificationPayload | null {
   const { viewerRole, viewerUserId, order, prevStatus, isNewOrder } = params;
@@ -271,6 +275,19 @@ export function buildOrderNotificationForViewer(params: {
   // Regla estricta para CLIENTE: únicamente SUS PROPIOS pedidos (jamás de otros clientes)
   if (!viewerUserId || order.customerId !== viewerUserId) {
     return null;
+  }
+
+  if (order.status === 'pendiente_cotizacion' && order.quoteOfferedAt &&
+      (!params.lastNotifiedQuote || order.quoteOfferedAt > params.lastNotifiedQuote)) {
+    return {
+      title: 'Cotización lista para revisar',
+      message: `Tu pedido #${order.folio} fue cotizado en $${Number(order.total).toFixed(2)} MXN. Abre el ticket para aceptar o rechazar.`,
+      type: 'info',
+      audience: 'customer',
+      orderId: order.id,
+      folio: order.folio,
+      quoteOfferedAt: order.quoteOfferedAt,
+    };
   }
 
   // Para clientes solo notificamos cambios de estado relevantes de su propio pedido
@@ -432,6 +449,7 @@ export const dispatchRodoNotification = (
   options?: {
     scopeKey?: string;
     audience?: NotificationAudience;
+    quoteOfferedAt?: string;
     orderId?: string;
     folio?: string;
     type?: 'info' | 'success' | 'warning' | 'urgent';
@@ -447,6 +465,7 @@ export const dispatchRodoNotification = (
       orderId: options?.orderId,
       folio: options?.folio,
       audience: options?.audience,
+      quoteOfferedAt: options?.quoteOfferedAt,
       type,
     },
     scopeKey
