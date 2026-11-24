@@ -635,11 +635,74 @@ export default function App() {
     let hasReceivedInitialSnapshot = false;
     const notifiedQuotes = new Map<string, string>();
     const notifiedArrivals = new Map<string, string>();
+    const notifiedAdminNewOrderIds = new Set<string>();
+    const notifiedAdminDeliveredOrderIds = new Set<string>();
     for (const notice of getNotificationHistory(notificationScopeKey)) {
       if (notice.orderId && notice.quoteOfferedAt && !notifiedQuotes.has(notice.orderId)) {
         notifiedQuotes.set(notice.orderId, notice.quoteOfferedAt);
       }
     }
+
+    const triggerAdminNewOrderAlert = (payload: {
+      id: string;
+      folio: string;
+      customerName?: string;
+      restaurantName?: string;
+      total?: number;
+    }) => {
+      if (viewerRole !== 'admin' || !payload?.id) return;
+      if (notifiedAdminNewOrderIds.has(payload.id)) return;
+      notifiedAdminNewOrderIds.add(payload.id);
+
+      const title = `Nuevo Pedido #${payload.folio}`;
+      const message = `${payload.customerName || 'Cliente'} solicitó en ${payload.restaurantName || 'RODO'} ($${Number(payload.total || 0).toFixed(2)} MXN).`;
+      dispatchRodoNotification(title, message, {
+        scopeKey: notificationScopeKey,
+        audience: 'admin',
+        orderId: payload.id,
+        folio: payload.folio,
+        tag: `rodo-admin-new-${payload.id}`,
+        type: 'urgent',
+        playSound: true,
+      });
+      setUnreadNotifsCount((prev) => prev + 1);
+      showSystemToast({
+        message: `${title} · ${payload.restaurantName || 'RODO'} ($${Number(payload.total || 0).toFixed(2)})`,
+        tone: 'warning',
+        durationMs: 6500,
+      });
+    };
+
+    const triggerAdminDeliveredAlert = (payload: {
+      id: string;
+      folio: string;
+      customerName?: string;
+      restaurantName?: string;
+      assignedRiderName?: string;
+    }) => {
+      if (viewerRole !== 'admin' || !payload?.id) return;
+      if (notifiedAdminDeliveredOrderIds.has(payload.id)) return;
+      notifiedAdminDeliveredOrderIds.add(payload.id);
+
+      const title = `Pedido entregado #${payload.folio}`;
+      const riderPart = payload.assignedRiderName ? ` por ${payload.assignedRiderName}` : '';
+      const message = `${payload.restaurantName || 'RODO'} (${payload.customerName || 'Cliente'}) fue entregado${riderPart}.`;
+      dispatchRodoNotification(title, message, {
+        scopeKey: notificationScopeKey,
+        audience: 'admin',
+        orderId: payload.id,
+        folio: payload.folio,
+        tag: `rodo-admin-delivered-${payload.id}`,
+        type: 'success',
+        playSound: true,
+      });
+      setUnreadNotifsCount((prev) => prev + 1);
+      showSystemToast({
+        message: `${title} · ${payload.customerName || 'Cliente'}`,
+        tone: 'success',
+        durationMs: 5500,
+      });
+    };
 
     const triggerCustomerArrivalAlert = (payload: {
       id: string;
@@ -676,6 +739,22 @@ export default function App() {
       });
     };
 
+    const unsubAdminNewOrder = onSocketEvent<{
+      id: string;
+      folio: string;
+      customerName?: string;
+      restaurantName?: string;
+      total?: number;
+    }>('admin:order-requested', triggerAdminNewOrderAlert);
+
+    const unsubAdminDelivered = onSocketEvent<{
+      id: string;
+      folio: string;
+      customerName?: string;
+      restaurantName?: string;
+      assignedRiderName?: string;
+    }>('admin:order-delivered', triggerAdminDeliveredAlert);
+
     const unsubArrivalAlert = onSocketEvent<{
       id: string;
       folio: string;
@@ -707,6 +786,23 @@ export default function App() {
         });
 
         if (notifPayload) {
+          if (viewerRole === 'admin') {
+            if (isNewOrder) {
+              if (notifiedAdminNewOrderIds.has(order.id)) {
+                knownOrderIdsRef.current.add(order.id);
+                previousOrderStatusesRef.current[order.id] = order.status;
+                return;
+              }
+              notifiedAdminNewOrderIds.add(order.id);
+            } else if (order.status === 'entregado') {
+              if (notifiedAdminDeliveredOrderIds.has(order.id)) {
+                knownOrderIdsRef.current.add(order.id);
+                previousOrderStatusesRef.current[order.id] = order.status;
+                return;
+              }
+              notifiedAdminDeliveredOrderIds.add(order.id);
+            }
+          }
           if (notifPayload.quoteOfferedAt) notifiedQuotes.set(order.id, notifPayload.quoteOfferedAt);
           if (notifPayload.arrivalNotifiedAt) {
             if (notifiedArrivals.get(order.id) === notifPayload.arrivalNotifiedAt) {
@@ -722,7 +818,11 @@ export default function App() {
             orderId: notifPayload.orderId,
             folio: notifPayload.folio,
             quoteOfferedAt: notifPayload.quoteOfferedAt,
-            tag: notifPayload.arrivalNotifiedAt ? `rodo-arrival-${order.id}-${notifPayload.arrivalNotifiedAt}` : undefined,
+            tag: notifPayload.arrivalNotifiedAt
+              ? `rodo-arrival-${order.id}-${notifPayload.arrivalNotifiedAt}`
+              : viewerRole === 'admin'
+              ? `rodo-admin-${isNewOrder ? 'new' : 'delivered'}-${order.id}`
+              : undefined,
             type: notifPayload.type,
             playSound: true,
           });
@@ -761,6 +861,8 @@ export default function App() {
     }, isAuthed, scope);
 
     return () => {
+      unsubAdminNewOrder();
+      unsubAdminDelivered();
       unsubArrivalAlert();
       unsubscribe();
     };

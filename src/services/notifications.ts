@@ -240,12 +240,12 @@ export function buildOrderNotificationForViewer(params: {
     return null;
   }
 
-  // Regla exclusiva para ADMINISTRADOR: recibe pedidos entrantes y actualizaciones globales de despacho
+  // Regla exclusiva para ADMINISTRADOR: únicamente pedidos nuevos solicitados y pedidos entregados
   if (viewerRole === 'admin') {
     if (isNewOrder) {
       return {
         title: `Nuevo Pedido #${order.folio}`,
-        message: `${order.customerName || 'Cliente'} pidió en ${order.restaurantName || 'RODO'} ($${Number(order.total || 0).toFixed(2)} MXN).`,
+        message: `${order.customerName || 'Cliente'} solicitó en ${order.restaurantName || 'RODO'} ($${Number(order.total || 0).toFixed(2)} MXN).`,
         type: 'urgent',
         audience: 'admin',
         orderId: order.id,
@@ -253,19 +253,11 @@ export function buildOrderNotificationForViewer(params: {
       };
     }
 
-    if (prevStatus && prevStatus !== order.status) {
-      const label = STATUS_LABELS_ES[order.status] || order.status.replace(/_/g, ' ');
+    if (prevStatus && prevStatus !== 'entregado' && order.status === 'entregado') {
       return {
-        title: `Pedido #${order.folio} · ${label}`,
-        message: `${order.restaurantName || 'Establecimiento'} (${order.customerName || 'Cliente'}) cambió a "${label}".`,
-        type:
-          order.status === 'entregado'
-            ? 'success'
-            : order.status === 'afuera_del_domicilio'
-            ? 'urgent'
-            : order.status === 'cancelado' || order.status === 'cancelado_con_deuda'
-            ? 'warning'
-            : 'info',
+        title: `Pedido entregado #${order.folio}`,
+        message: `${order.restaurantName || 'Establecimiento'} (${order.customerName || 'Cliente'}) fue entregado.`,
+        type: 'success',
         audience: 'admin',
         orderId: order.id,
         folio: order.folio,
@@ -546,7 +538,12 @@ async function showSystemBrowserNotification(
           tag,
           requireInteraction: options.type === 'urgent',
           renotify: true,
-          vibrate: options.type === 'urgent' ? [300, 120, 300, 120, 420] : [140, 80, 140],
+          vibrate:
+            options.type === 'urgent'
+              ? [300, 120, 300, 120, 420]
+              : options.type === 'success'
+              ? [200, 100, 200]
+              : [140, 80, 140],
           data: { url: targetUrl, folio: options.folio },
         } as NotificationOptions);
         return;

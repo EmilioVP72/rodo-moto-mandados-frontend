@@ -37,6 +37,13 @@ import { RiderDirectory } from './RiderDirectory';
 import { useRiderDirectory } from '../hooks/useRiderDirectory';
 import { availableDispatchRiders } from '../utils/riderDirectory';
 import { assignRiderToOrder, notifyCustomerArrival } from '../services/riders';
+import {
+  dispatchRodoNotification,
+  getNotificationSettings,
+  requestBrowserNotificationPermission,
+  resolveNotificationScopeKey,
+  saveNotificationSettings,
+} from '../services/notifications';
 import { useBackdropClose } from '../utils/modalBackdrop';
 import { InteractiveMapPicker } from './InteractiveMapPicker';
 import {
@@ -167,6 +174,41 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [recoveryRequests, setRecoveryRequests] = useState<AccountRecoveryRequest[]>([]);
   const [recoveryNotesMap, setRecoveryNotesMap] = useState<Record<string, string>>({});
   const [isTogglingRain, setIsTogglingRain] = useState(false);
+  const [adminPushPerm, setAdminPushPerm] = useState<string>(() =>
+    typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported'
+  );
+
+  const handleToggleAdminMobileAlerts = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      showFeedback('Este navegador no soporta notificaciones push.', 'warning');
+      return;
+    }
+    const granted = await requestBrowserNotificationPermission();
+    setAdminPushPerm(Notification.permission);
+    if (!granted) {
+      showFeedback('Permiso bloqueado. Actívalo en configuración de Chrome para este sitio.', 'warning');
+      return;
+    }
+    const current = getNotificationSettings();
+    saveNotificationSettings({
+      ...current,
+      browserNotificationsEnabled: true,
+      soundEnabled: true,
+      urgentAlertsEnabled: true,
+    });
+    dispatchRodoNotification(
+      'Alertas de Admin activadas',
+      'Recibirás notificaciones en tu móvil al entrar un nuevo pedido y cuando sea entregado.',
+      {
+        scopeKey: resolveNotificationScopeKey({ isAdmin: true }),
+        audience: 'admin',
+        tag: 'rodo-admin-alerts-ready',
+        type: 'info',
+        playSound: true,
+      }
+    );
+    showFeedback('Alertas móviles activas para nuevos pedidos y entregas.');
+  };
 
   // Estados para Cambio de Contraseña de Administrador (Requiere Código 1999)
   const [authMasterCodeInput, setAuthMasterCodeInput] = useState('');
@@ -1019,6 +1061,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
 
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              {adminPushPerm !== 'unsupported' && (
+                <button
+                  type="button"
+                  onClick={() => void handleToggleAdminMobileAlerts()}
+                  title={
+                    adminPushPerm === 'granted'
+                      ? 'Alertas móviles activas (toca para probar sonido y notificación)'
+                      : 'Activar notificaciones en Chrome móvil para nuevos pedidos y entregas'
+                  }
+                  className={`flex items-center gap-1.5 text-xs px-2.5 sm:px-3 h-9 rounded-xl transition font-black border cursor-pointer shrink-0 whitespace-nowrap ${
+                    adminPushPerm === 'granted'
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800 hover:bg-emerald-100'
+                      : 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600 shadow-xs animate-pulse'
+                  }`}
+                >
+                  <Bell className="w-4 h-4 shrink-0" />
+                  <span className="hidden sm:inline">
+                    {adminPushPerm === 'granted' ? 'Alertas ON' : 'Activar Alertas'}
+                  </span>
+                </button>
+              )}
+
               <button
                 type="button"
                 disabled={isTogglingRain}

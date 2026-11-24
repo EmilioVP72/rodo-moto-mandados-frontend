@@ -135,7 +135,7 @@ test('CLIENTE solo recibe notificaciones de cambios de estado de SUS PROPIOS ped
   assert.equal(delivered.type, 'success');
 });
 
-test('ADMIN recibe notificaciones de nuevos pedidos y actualizaciones de cualquier pedido', () => {
+test('ADMIN recibe notificaciones únicamente de nuevos pedidos y pedidos entregados', () => {
   const anyOrder = {
     id: 'ord-200',
     folio: 'RD-261120-ADM',
@@ -156,15 +156,30 @@ test('ADMIN recibe notificaciones de nuevos pedidos y actualizaciones de cualqui
   assert.equal(newOrderNotif.type, 'urgent');
   assert.match(newOrderNotif.title, /Nuevo Pedido/i);
 
-  const statusUpdateNotif = buildOrderNotificationForViewer({
+  // Estados intermedios no deben notificar al administrador
+  for (const intermediate of ['en_preparacion', 'asignado', 'recolectado', 'en_camino', 'afuera_del_domicilio', 'cancelado']) {
+    assert.equal(
+      buildOrderNotificationForViewer({
+        viewerRole: 'admin',
+        order: { ...anyOrder, status: intermediate },
+        prevStatus: 'nuevo',
+        isNewOrder: false,
+      }),
+      null
+    );
+  }
+
+  // Pedido entregado sí notifica al administrador
+  const deliveredNotif = buildOrderNotificationForViewer({
     viewerRole: 'admin',
-    order: { ...anyOrder, status: 'en_preparacion' },
-    prevStatus: 'nuevo',
+    order: { ...anyOrder, status: 'entregado' },
+    prevStatus: 'afuera_del_domicilio',
     isNewOrder: false,
   });
-  assert.ok(statusUpdateNotif);
-  assert.equal(statusUpdateNotif.audience, 'admin');
-  assert.match(statusUpdateNotif.message, /En preparación/i);
+  assert.ok(deliveredNotif);
+  assert.equal(deliveredNotif.audience, 'admin');
+  assert.equal(deliveredNotif.type, 'success');
+  assert.match(deliveredNotif.title, /Pedido entregado/i);
 });
 
 test('avisa al titular por cada versión de la cotización aunque el pedido conserve el mismo estado', () => {
