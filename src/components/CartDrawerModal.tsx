@@ -283,14 +283,17 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
               </div>
             </div>
 
+            {!restaurant && (
+              <p role="status" className="text-sm text-amber-900">
+                El establecimiento de esta canasta no está disponible en el catálogo. Puedes volver a elegir dónde pedir.
+              </p>
+            )}
             <button
-              onClick={() => {
-                onClose();
-                onProceedToCheckout();
-              }}
+              type="button"
+              onClick={restaurant ? onProceedToCheckout : onClose}
               className="w-full bg-[#ed0718] hover:bg-[#d60615] active:scale-[0.99] text-white font-extrabold text-sm py-3.5 px-4 rounded-2xl shadow-md hover:shadow-lg transition flex items-center justify-center gap-2"
             >
-              <span>Continuar al Pago y Datos</span>
+              <span>{restaurant ? 'Continuar al Pago y Datos' : 'Volver al catálogo'}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>

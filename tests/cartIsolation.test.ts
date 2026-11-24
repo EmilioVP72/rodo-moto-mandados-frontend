@@ -132,4 +132,13 @@ describe('Per-User Cart Isolation & Checkout Restaurant Resolution Unit Tests', 
     );
     assert.equal(resolvedFallback?.id, firstRest.id);
   });
+
+  it('conserva el vínculo del carrito si el establecimiento sale del catálogo y otro ofrece el mismo platillo', () => {
+    const restaurant = DEFAULT_RESTAURANTS[0];
+    const { id, name, price } = restaurant.menu[0];
+    const item = { id, name, price, quantity: 1 };
+    const otherRestaurant = { ...restaurant, id: 'otro-local' };
+    assert.equal(resolveCartRestaurant(restaurant.id, [item], [otherRestaurant]), null);
+    assert.equal(resolveCartRestaurant(restaurant.id, [item], [otherRestaurant, restaurant]), restaurant);
+  });
 });

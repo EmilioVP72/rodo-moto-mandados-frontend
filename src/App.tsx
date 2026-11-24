@@ -259,15 +259,14 @@ export default function App() {
     }
   }, [favorites]);
 
-  // Restaurante actualmente abierto en modal de menú (separado del restaurante dueño del carrito)
-  const [selectedRestaurant, setSelectedRestaurant] = useState<Restaurant | null>(null);
+  const [catalogOverlay, setCatalogOverlay] = useState<Restaurant | 'cart' | null>(null);
+  const selectedRestaurant = catalogOverlay === 'cart' ? null : catalogOverlay;
   const cartRestaurant = useMemo(
-    () => resolveCartRestaurant(cartRestaurantId, cart, restaurants) || selectedRestaurant,
-    [cartRestaurantId, cart, restaurants, selectedRestaurant]
+    () => resolveCartRestaurant(cartRestaurantId, cart, restaurants),
+    [cartRestaurantId, cart, restaurants]
   );
   const [reorderError, setReorderError] = useState<string | null>(null);
   const [showPushNotificationPrompt, setShowPushNotificationPrompt] = useState<boolean>(false);
-  const [showCartDrawer, setShowCartDrawer] = useState(false);
 
   // Modales
   const [showCheckout, setShowCheckout] = useState(false);
@@ -700,12 +699,17 @@ export default function App() {
     return () => unsubscribe();
   }, [currentUser, isAdminLoggedIn, notificationScopeKey]);
 
+  const openCart = () => {
+    setCartToastState((prev) => ({ ...prev, visible: false }));
+    setCatalogOverlay('cart');
+  };
+
   // Abrir checkout: El cliente puede llenar el carrito libremente como visitante,
   // y antes de pagar se le solicita iniciar sesión con su INE.
   const handleProceedToCheckout = () => {
     if (cart.length === 0) return;
     if (!currentUser || !currentUser.id || currentUser.id.startsWith('guest')) {
-      setShowCartDrawer(false);
+      setCatalogOverlay(null);
       setShowAuthModal(true);
       return;
     }
@@ -713,8 +717,7 @@ export default function App() {
       showSuccessToast('Selecciona un establecimiento para continuar con tu pedido.');
       return;
     }
-    setShowCartDrawer(false);
-    setSelectedRestaurant(null);
+    setCatalogOverlay(null);
     setShowCheckout(true);
   };
 
@@ -752,8 +755,7 @@ export default function App() {
     setCustomerCoords(undefined);
     setOrders([]);
     setShowCheckout(false);
-    setShowCartDrawer(false);
-    setSelectedRestaurant(null);
+    setCatalogOverlay(null);
     setShowAdminPanel(false);
     setShowProfileModal(false);
     setReturnToAdminAfterTicket(false);
@@ -781,7 +783,7 @@ export default function App() {
   const handleOrderSuccess = (newOrder: Order) => {
     setShowCheckout(false);
     setShowCustomOrderModal(false);
-    setSelectedRestaurant(null);
+    setCatalogOverlay(null);
     clearCart();
 
     dispatchRodoNotification(
@@ -959,7 +961,7 @@ export default function App() {
 
   // Manejador del Teclado Inferior Móvil: Retroceder (Evita salirse del sitio en el teléfono)
   const handleNavBack = () => {
-    if (showCartDrawer) { setShowCartDrawer(false); return; }
+    if (catalogOverlay === 'cart') { setCatalogOverlay(null); return; }
     if (showCheckout) { setShowCheckout(false); return; }
     if (viewingTicketOrder) { setViewingTicketOrder(null); return; }
     if (showAdminPanel) { setShowAdminPanel(false); return; }
@@ -972,7 +974,7 @@ export default function App() {
     if (showPhonePermissionsModal) { setShowPhonePermissionsModal(false); return; }
     if (showMicroLocationModal) { setShowMicroLocationModal(false); return; }
     if (showCustomOrderModal) { setShowCustomOrderModal(false); return; }
-    if (selectedRestaurant) { setSelectedRestaurant(null); return; }
+    if (selectedRestaurant) { setCatalogOverlay(null); return; }
     if (activeSection === 'envios') { setActiveSection('restaurantes'); return; }
     if (selectedCategory !== 'Todos') { setSelectedCategory('Todos'); return; }
     if (searchQuery) { setSearchQuery(''); return; }
@@ -981,7 +983,6 @@ export default function App() {
 
   // Manejador del Teclado Inferior Móvil: Ir a Inicio
   const handleNavHome = () => {
-    setShowCartDrawer(false);
     setShowCheckout(false);
     setViewingTicketOrder(null);
     setShowAdminPanel(false);
@@ -994,7 +995,7 @@ export default function App() {
     setShowPhonePermissionsModal(false);
     setShowMicroLocationModal(false);
     setShowCustomOrderModal(false);
-    setSelectedRestaurant(null);
+    setCatalogOverlay(null);
     setActiveSection('restaurantes');
     setSelectedCategory('Todos');
     setSearchQuery('');
@@ -1119,7 +1120,7 @@ export default function App() {
             setCustomOrderInitialLocal(rest.name);
             setShowCustomOrderModal(true);
           } else {
-            setSelectedRestaurant(rest);
+            setCatalogOverlay(rest);
           }
         }}
         onSelectSuggestionCategory={(category, section) => {
@@ -1482,7 +1483,7 @@ export default function App() {
                             setCustomOrderInitialLocal(restaurant.name);
                             setShowCustomOrderModal(true);
                           } else {
-                            setSelectedRestaurant(restaurant);
+                            setCatalogOverlay(restaurant);
                           }
                         }}
                         className={`bg-white text-[#101b29] rounded-2xl overflow-hidden shadow-md flex flex-col justify-between transition-all duration-200 hover:scale-[1.02] hover:-translate-y-1 border cursor-pointer select-none ${
@@ -1624,7 +1625,7 @@ export default function App() {
                           ) : (
                             <button
                               onClick={() => {
-                                setSelectedRestaurant(restaurant);
+                                setCatalogOverlay(restaurant);
                               }}
                               className={`w-full font-extrabold text-xs py-2.5 px-4 rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 ${
                                 restaurant.isOpen === false
@@ -1743,8 +1744,8 @@ export default function App() {
 
       {/* 2.5 Modal Canasta / Carrito Lateral */}
       <CartDrawerModal
-        isOpen={showCartDrawer}
-        onClose={() => setShowCartDrawer(false)}
+        isOpen={catalogOverlay === 'cart'}
+        onClose={() => setCatalogOverlay(null)}
         cart={cart}
         restaurant={cartRestaurant}
         onAddToCart={(item) => handleAddToCart(item, cartRestaurant?.id || null)}
@@ -1767,7 +1768,7 @@ export default function App() {
         onRemoveFromCart={handleRemoveFromCart}
         onProceedToCheckout={handleProceedToCheckout}
         onClose={() => {
-          setSelectedRestaurant(null);
+          setCatalogOverlay(null);
         }}
       />
 
@@ -2063,7 +2064,7 @@ export default function App() {
                           }
                           // Cargar productos del ticket previo al carrito y redirigir al checkout
                           setCart(o.items, rest.id);
-                          setSelectedRestaurant(null);
+                          setCatalogOverlay(null);
                           setShowOrdersHistory(false);
                           setShowCheckout(true);
                         }}
@@ -2210,7 +2211,7 @@ export default function App() {
             restaurants={restaurants}
             onSelectRestaurant={(rest) => {
               setShowCoverageModal(false);
-              setSelectedRestaurant(rest);
+              setCatalogOverlay(rest);
             }}
             onConfirmLocation={(address, coords) => {
               setCustomerDeliveryAddress(address);
@@ -2247,10 +2248,7 @@ export default function App() {
         itemName={cartToastState.itemName}
         itemCount={cart.reduce((sum, item) => sum + item.quantity, 0)}
         cartTotal={cart.reduce((sum, item) => sum + item.price * item.quantity, 0)}
-        onOpenCart={() => {
-          setCartToastState((prev) => ({ ...prev, visible: false }));
-          setShowCartDrawer(true);
-        }}
+        onOpenCart={openCart}
         onDismiss={() => setCartToastState((prev) => ({ ...prev, visible: false }))}
       />
 
@@ -2295,7 +2293,7 @@ export default function App() {
         cartTotal={cart.reduce((sum, item) => sum + item.price * item.quantity, 0)}
         onBack={handleNavBack}
         onHome={handleNavHome}
-        onOpenCart={() => setShowCartDrawer(true)}
+        onOpenCart={openCart}
         onOpenExpress={() => {
           setActiveSection('envios');
           window.scrollTo({ top: 0, behavior: 'smooth' });

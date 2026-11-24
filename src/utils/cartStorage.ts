@@ -146,8 +146,7 @@ export function resolveCartRestaurant(
   restaurants: Restaurant[]
 ): Restaurant | null {
   if (cartRestaurantId) {
-    const exact = restaurants.find((r) => r.id === cartRestaurantId);
-    if (exact) return exact;
+    return restaurants.find((r) => r.id === cartRestaurantId) ?? null;
   }
 
   if (items.length === 0) return null;
