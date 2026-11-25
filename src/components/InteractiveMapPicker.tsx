@@ -10,8 +10,6 @@ import {
   Loader2,
   MapPin,
   X,
-  ChevronDown,
-  ChevronUp,
 } from 'lucide-react';
 import {
   ALL_SAN_MIGUEL_COLONIAS,
@@ -30,15 +28,6 @@ export const DEFAULT_SAN_MIGUEL = {
   lat: 20.9144,
   lng: -100.7437,
 };
-
-const QUICK_COLONIA_IDS = new Set([
-  'sma-centro',
-  'sma-san-antonio',
-  'sma-aurora',
-  'sma-guadalupe',
-  'sma-frailes',
-  'sma-malanquin',
-]);
 
 export interface LocationSelectResult {
   lat: number;
@@ -139,7 +128,6 @@ export const InteractiveMapPicker: React.FC<InteractiveMapPickerProps> = ({
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [showDropdown, setShowDropdown] = useState<boolean>(false);
   const [searchNotice, setSearchNotice] = useState<string>('');
-  const [showAllColonias, setShowAllColonias] = useState<boolean>(false);
 
   const searchContainerRef = useRef<HTMLDivElement | null>(null);
   const onLocationSelectRef = useRef(onLocationSelect);
@@ -482,35 +470,6 @@ export const InteractiveMapPicker: React.FC<InteractiveMapPickerProps> = ({
     );
   };
 
-  const handleSelectColonia = (colonia: SmaNeighborhood) => {
-    suppressExternalUntilRef.current = Date.now() + 1400;
-    setCurrentLat(colonia.lat);
-    setCurrentLng(colonia.lng);
-    setTargetCenter({ lat: colonia.lat, lng: colonia.lng });
-    setMapZoom(15);
-    setSearchInput(colonia.name);
-    setShowDropdown(false);
-    setSearchNotice('');
-    setResolvedAddress(`Col. ${colonia.name}, San Miguel de Allende`);
-
-    const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${colonia.lat},${colonia.lng}`;
-    onLocationSelectRef.current({
-      lat: colonia.lat,
-      lng: colonia.lng,
-      mapsUrl,
-      address: `Col. ${colonia.name}, San Miguel de Allende`,
-      street: '',
-      streetNumber: '',
-      neighborhood: colonia.name,
-      preserveAddressFields: false,
-    });
-  };
-
-  const quickColonias = useMemo(
-    () => ALL_SAN_MIGUEL_COLONIAS.filter((c) => QUICK_COLONIA_IDS.has(c.id)),
-    []
-  );
-
   return (
     <div className="w-full space-y-2.5 font-sans">
       {/* Buscador unificado de dirección + controles compactos */}
@@ -602,36 +561,21 @@ export const InteractiveMapPicker: React.FC<InteractiveMapPickerProps> = ({
           </div>
         )}
 
-        {/* Barra compacta de utilidades: Mi GPS, Satélite, Maps y Zonas */}
+        {/* Barra compacta de utilidades: Mi GPS, Satélite y Maps */}
         <div className="flex flex-wrap items-center justify-between gap-1.5">
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={handleGetLiveLocation}
-              disabled={isGettingGps}
-              className="flex items-center gap-1.5 text-[11px] font-bold bg-[#ed0718] hover:bg-[#c90012] active:scale-95 text-white px-3 py-1.5 rounded-lg shadow-2xs transition cursor-pointer disabled:opacity-50"
-            >
-              {isGettingGps ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Crosshair className="w-3.5 h-3.5" />
-              )}
-              <span>{isGettingGps ? 'Ubicando...' : 'Mi GPS'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setShowAllColonias((v) => !v)}
-              className="flex items-center gap-1 text-[11px] font-semibold bg-white dark:bg-[#151821] hover:bg-gray-100 dark:hover:bg-[#1d222e] border border-gray-300 dark:border-neutral-700 text-gray-700 dark:text-gray-200 px-2.5 py-1.5 rounded-lg transition cursor-pointer"
-            >
-              <span>Zonas</span>
-              {showAllColonias ? (
-                <ChevronUp className="w-3.5 h-3.5" />
-              ) : (
-                <ChevronDown className="w-3.5 h-3.5" />
-              )}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleGetLiveLocation}
+            disabled={isGettingGps}
+            className="flex items-center gap-1.5 text-[11px] font-bold bg-[#ed0718] hover:bg-[#c90012] active:scale-95 text-white px-3 py-1.5 rounded-lg shadow-2xs transition cursor-pointer disabled:opacity-50"
+          >
+            {isGettingGps ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Crosshair className="w-3.5 h-3.5" />
+            )}
+            <span>{isGettingGps ? 'Ubicando...' : 'Mi GPS'}</span>
+          </button>
 
           <div className="flex items-center gap-1.5">
             <button
@@ -656,36 +600,6 @@ export const InteractiveMapPicker: React.FC<InteractiveMapPickerProps> = ({
             </a>
           </div>
         </div>
-
-        {/* Selector rápido de zonas (desplegable para mantener la vista limpia) */}
-        {showAllColonias && (
-          <div className="p-2 bg-gray-50 dark:bg-[#0c0e14] rounded-xl border border-gray-200 dark:border-neutral-800 space-y-1.5">
-            <div className="flex flex-wrap gap-1">
-              {quickColonias.map((col) => (
-                <button
-                  key={col.id}
-                  type="button"
-                  onClick={() => handleSelectColonia(col)}
-                  className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-red-50 dark:bg-red-950/30 text-[#ed0718] border border-red-200 dark:border-red-900/50 hover:bg-[#ed0718] hover:text-white transition cursor-pointer"
-                >
-                  {col.name}
-                </button>
-              ))}
-            </div>
-            <div className="flex flex-wrap gap-1 max-h-28 overflow-y-auto pt-1 border-t border-gray-200 dark:border-neutral-800">
-              {ALL_SAN_MIGUEL_COLONIAS.filter((c) => !QUICK_COLONIA_IDS.has(c.id)).map((col) => (
-                <button
-                  key={col.id}
-                  type="button"
-                  onClick={() => handleSelectColonia(col)}
-                  className="text-[11px] font-medium px-2 py-1 rounded-lg bg-white dark:bg-[#151821] hover:bg-gray-100 dark:hover:bg-[#1f2430] text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-neutral-700 transition cursor-pointer"
-                >
-                  {col.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
       {(gpsError || searchNotice) && (

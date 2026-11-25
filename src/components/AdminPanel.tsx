@@ -2190,7 +2190,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     )}
                   </div>
 
-                  {/* Ubicación del Local (Buscador + Mapa + Campos sincronizados) */}
+                  {/* Ubicación del Local (Campos arriba + Mapa sincronizado abajo) */}
                   <div className="bg-gray-50 p-3.5 sm:p-4 rounded-xl border border-gray-200 space-y-3">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-black uppercase text-gray-800 tracking-wider flex items-center gap-1.5">
@@ -2204,53 +2204,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       )}
                     </div>
 
-                    {/* Mapa interactivo con buscador integrado y sincronización automática */}
-                    <InteractiveMapPicker
-                      key={editingRestaurant.id || 'new-restaurant-map'}
-                      initialLat={editingRestaurant.coordinates?.lat || 20.9144}
-                      initialLng={editingRestaurant.coordinates?.lng || -100.7437}
-                      localName={editingRestaurant.name || 'Local'}
-                      heightClass="h-64 sm:h-72"
-                      searchPlaceholder="Buscar dirección del local, colonia o pegar enlace de Google Maps..."
-                      searchQuery={[
-                        editingRestaurant.address?.calle,
-                        editingRestaurant.address?.numero,
-                        editingRestaurant.address?.colonia,
-                      ]
-                        .filter((v) => Boolean(v && v.trim()))
-                        .join(', ')}
-                      autoLocateOnMount={!editingRestaurant.coordinates}
-                      onLocationSelect={(loc) => {
-                        const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lng}`;
-                        setEditingRestaurant((prev) => {
-                          if (!prev) return prev;
-                          const keepTyped = Boolean(loc.preserveAddressFields);
-                          return {
-                            ...prev,
-                            coordinates: { lat: loc.lat, lng: loc.lng },
-                            mapsUrl,
-                            address: {
-                              calle: keepTyped
-                                ? prev.address?.calle || ''
-                                : loc.street || prev.address?.calle || '',
-                              numero: keepTyped
-                                ? prev.address?.numero || ''
-                                : loc.streetNumber || prev.address?.numero || '',
-                              colonia: keepTyped
-                                ? prev.address?.colonia || ''
-                                : loc.neighborhood || prev.address?.colonia || '',
-                              referencias: prev.address?.referencias || '',
-                              lat: loc.lat,
-                              lng: loc.lng,
-                              mapsUrl,
-                            },
-                          };
-                        });
-                      }}
-                    />
-
-                    {/* Campos editables sincronizados con el mapa */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                    {/* Campos de dirección arriba del mapa (sincronizados automáticamente) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                       <div className="sm:col-span-2">
                         <label className="block text-[11px] font-bold text-gray-700 mb-1">Calle</label>
                         <input
@@ -2300,29 +2255,100 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       </div>
                     </div>
 
-                    <div>
-                      <label className="block text-[11px] font-bold text-gray-700 mb-1">Referencias (opcional)</label>
-                      <input
-                        type="text"
-                        value={editingRestaurant.address?.referencias || ''}
-                        onChange={(e) =>
-                          setEditingRestaurant({
-                            ...editingRestaurant,
-                            address: {
-                              calle: editingRestaurant.address?.calle || '',
-                              numero: editingRestaurant.address?.numero || '',
-                              colonia: editingRestaurant.address?.colonia || '',
-                              referencias: e.target.value,
-                              lat: editingRestaurant.coordinates?.lat,
-                              lng: editingRestaurant.coordinates?.lng,
-                              mapsUrl: editingRestaurant.mapsUrl,
-                            },
-                          })
-                        }
-                        placeholder="Frente al templo, portón negro..."
-                        className="w-full bg-white border border-gray-300 rounded-lg px-2.5 py-2 text-xs outline-none focus:border-[#ed0718]"
-                      />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-[11px] font-bold text-gray-700 mb-1">Colonia</label>
+                        <input
+                          type="text"
+                          value={editingRestaurant.address?.colonia || ''}
+                          onChange={(e) =>
+                            setEditingRestaurant({
+                              ...editingRestaurant,
+                              address: {
+                                calle: editingRestaurant.address?.calle || '',
+                                numero: editingRestaurant.address?.numero || '',
+                                colonia: e.target.value,
+                                referencias: editingRestaurant.address?.referencias || '',
+                                lat: editingRestaurant.coordinates?.lat,
+                                lng: editingRestaurant.coordinates?.lng,
+                                mapsUrl: editingRestaurant.mapsUrl,
+                              },
+                            })
+                          }
+                          placeholder="Ej. Centro, San Antonio..."
+                          className="w-full bg-white border border-gray-300 rounded-lg px-2.5 py-2 text-xs font-semibold outline-none focus:border-[#ed0718]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-gray-700 mb-1">Referencias (opcional)</label>
+                        <input
+                          type="text"
+                          value={editingRestaurant.address?.referencias || ''}
+                          onChange={(e) =>
+                            setEditingRestaurant({
+                              ...editingRestaurant,
+                              address: {
+                                calle: editingRestaurant.address?.calle || '',
+                                numero: editingRestaurant.address?.numero || '',
+                                colonia: editingRestaurant.address?.colonia || '',
+                                referencias: e.target.value,
+                                lat: editingRestaurant.coordinates?.lat,
+                                lng: editingRestaurant.coordinates?.lng,
+                                mapsUrl: editingRestaurant.mapsUrl,
+                              },
+                            })
+                          }
+                          placeholder="Frente al templo, portón negro..."
+                          className="w-full bg-white border border-gray-300 rounded-lg px-2.5 py-2 text-xs outline-none focus:border-[#ed0718]"
+                        />
+                      </div>
                     </div>
+
+                    {/* Mapa interactivo con buscador integrado y sincronización automática */}
+                    <InteractiveMapPicker
+                      key={editingRestaurant.id || 'new-restaurant-map'}
+                      initialLat={editingRestaurant.coordinates?.lat || 20.9144}
+                      initialLng={editingRestaurant.coordinates?.lng || -100.7437}
+                      localName={editingRestaurant.name || 'Local'}
+                      heightClass="h-64 sm:h-72"
+                      searchPlaceholder="Buscar dirección o pegar enlace de Google Maps..."
+                      searchQuery={[
+                        editingRestaurant.address?.calle,
+                        editingRestaurant.address?.numero,
+                        editingRestaurant.address?.colonia,
+                      ]
+                        .filter((v) => Boolean(v && v.trim()))
+                        .join(', ')}
+                      autoLocateOnMount={!editingRestaurant.coordinates}
+                      onLocationSelect={(loc) => {
+                        const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lng}`;
+                        setEditingRestaurant((prev) => {
+                          if (!prev) return prev;
+                          const keepTyped = Boolean(loc.preserveAddressFields);
+                          return {
+                            ...prev,
+                            coordinates: { lat: loc.lat, lng: loc.lng },
+                            mapsUrl,
+                            address: {
+                              calle: keepTyped
+                                ? prev.address?.calle || ''
+                                : loc.street || prev.address?.calle || '',
+                              numero: keepTyped
+                                ? prev.address?.numero || ''
+                                : loc.streetNumber || prev.address?.numero || '',
+                              colonia: keepTyped
+                                ? prev.address?.colonia || ''
+                                : loc.neighborhood || prev.address?.colonia || '',
+                              referencias: prev.address?.referencias || '',
+                              lat: loc.lat,
+                              lng: loc.lng,
+                              mapsUrl,
+                            },
+                          };
+                        });
+                      }}
+                    />
                   </div>
 
                   {/* Foto del Restaurante / Portada */}
