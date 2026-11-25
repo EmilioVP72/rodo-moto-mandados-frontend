@@ -8,6 +8,7 @@ import {
   estimateMotoDeliveryTime,
   computeOrderRoute,
   extractOsrmRoutePoints,
+  isGoogleMapsLink,
   normalizeSearchText,
   parseCoordinatesOrMapsUrl,
 } from '../src/services/routing.ts';
@@ -207,6 +208,15 @@ describe('Frontend Routing, Tariffs & San Miguel de Allende Geolocation Unit Tes
     it('normaliza acentos, mayúsculas y espacios repetidos para búsqueda rápida de colonias', () => {
       assert.equal(normalizeSearchText('  Malanquín   Club de Golf '), 'malanquin club de golf');
       assert.equal(normalizeSearchText('San Antonio'), 'san antonio');
+    });
+
+    it('identifica enlaces cortos y completos de Google Maps y rechaza otros dominios', () => {
+      assert.equal(isGoogleMapsLink('https://maps.app.goo.gl/abc123XYZ'), true);
+      assert.equal(isGoogleMapsLink('https://goo.gl/maps/abc123XYZ'), true);
+      assert.equal(isGoogleMapsLink('https://www.google.com/maps/place/Centro/@20.9144,-100.7437,17z'), true);
+      assert.equal(isGoogleMapsLink('https://maps.google.com/?q=20.9144,-100.7437'), true);
+      assert.equal(isGoogleMapsLink('https://example.com/maps'), false);
+      assert.equal(isGoogleMapsLink('Calle Correo 18'), false);
     });
   });
 });

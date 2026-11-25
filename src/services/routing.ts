@@ -134,6 +134,121 @@ export interface DetailedReverseGeocode {
   displayName: string;
 }
 
+export interface ResolvedMapsLinkResult {
+  lat: number;
+  lng: number;
+  mapsUrl: string;
+  resolvedUrl: string;
+  placeName: string;
+  street: string;
+  streetNumber: string;
+  neighborhood: string;
+  address: string;
+}
+
+/**
+ * Detecta si el texto ingresado es un enlace de Google Maps, Apple Maps u OpenStreetMap
+ * (incluyendo enlaces cortos compartidos desde móvil como maps.app.goo.gl).
+ */
+export function isGoogleMapsLink(rawInput: string): boolean {
+  const input = rawInput.trim();
+  if (!/^https?:\/\//i.test(input)) return false;
+  try {
+    const parsed = new URL(input);
+    const host = parsed.hostname.toLowerCase();
+    if (
+      host === 'maps.app.goo.gl' ||
+      host === 'maps.google.com' ||
+      host === 'maps.google.com.mx' ||
+      host === 'maps.apple.com' ||
+      host === 'openstreetmap.org' ||
+      host === 'www.openstreetmap.org' ||
+      host === 'osm.org'
+    ) {
+      return true;
+    }
+    if (host === 'goo.gl' && parsed.pathname.toLowerCase().startsWith('/maps')) {
+      return true;
+    }
+    if (
+      (host === 'google.com' ||
+        host === 'www.google.com' ||
+        host === 'google.com.mx' ||
+        host === 'www.google.com.mx') &&
+      parsed.pathname.toLowerCase().startsWith('/maps')
+    ) {
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resuelve un enlace de Google Maps (incluyendo enlaces cortos maps.app.goo.gl)
+ * para obtener coordenadas exactas y rellenar calle, número y colonia automáticamente.
+ */
+export async function resolveGoogleMapsUrl(rawUrl: string): Promise<ResolvedMapsLinkResult | null> {
+  const cleaned = rawUrl.trim();
+  if (!cleaned) return null;
+
+  try {
+    const res = await fetch('/api/routing/resolve-maps-url', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ url: cleaned }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && Number.isFinite(Number(data.lat)) && Number.isFinite(Number(data.lng))) {
+        return {
+          lat: Number(data.lat),
+          lng: Number(data.lng),
+          mapsUrl: String(data.mapsUrl || cleaned),
+          resolvedUrl: String(data.resolvedUrl || cleaned),
+          placeName: String(data.placeName || ''),
+          street: String(data.street || ''),
+          streetNumber: String(data.streetNumber || ''),
+          neighborhood: String(data.neighborhood || ''),
+          address: String(data.address || ''),
+        };
+      }
+    }
+  } catch {
+    // Fallback local si el backend no responde
+  }
+
+  const localCoords = parseCoordinatesOrMapsUrl(cleaned);
+  if (!localCoords) return null;
+
+  const rev = await reverseGeocodeDetailed(localCoords.lat, localCoords.lng);
+  const street = rev?.street || '';
+  const streetNumber = rev?.streetNumber || '';
+  const neighborhood = rev?.neighborhood || '';
+  const address = [
+    street ? `${street}${streetNumber ? ` ${streetNumber}` : ''}` : '',
+    neighborhood ? `Col. ${neighborhood}` : '',
+  ]
+    .filter(Boolean)
+    .join(', ');
+
+  return {
+    lat: localCoords.lat,
+    lng: localCoords.lng,
+    mapsUrl: `https://www.google.com/maps/search/?api=1&query=${localCoords.lat},${localCoords.lng}`,
+    resolvedUrl: cleaned,
+    placeName: '',
+    street,
+    streetNumber,
+    neighborhood,
+    address: address || `Ubicación (${localCoords.lat.toFixed(5)}, ${localCoords.lng.toFixed(5)})`,
+  };
+}
+
 /**
  * Normaliza texto para búsqueda insensible a acentos y mayúsculas.
  */

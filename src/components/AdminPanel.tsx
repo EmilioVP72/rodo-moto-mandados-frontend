@@ -47,6 +47,7 @@ import {
 } from '../services/notifications';
 import { useBackdropClose } from '../utils/modalBackdrop';
 import { InteractiveMapPicker } from './InteractiveMapPicker';
+import { isGoogleMapsLink, resolveGoogleMapsUrl } from '../services/routing';
 import {
   X,
   Bike,
@@ -100,6 +101,8 @@ import {
   Menu,
   Copy,
   Search,
+  Link2,
+  Loader2,
 } from 'lucide-react';
 import { AdminOrderHistoryView } from './AdminOrderHistoryView';
 import {
@@ -315,6 +318,60 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   // Estados para edición de restaurantes (incluye tarifa, menú, dirección GPS y código PIN único automático)
   const [editingRestaurant, setEditingRestaurant] = useState<Restaurant | null>(null);
   const [isCreatingRestaurant, setIsCreatingRestaurant] = useState(false);
+  const [mapsLinkInput, setMapsLinkInput] = useState('');
+  const [isResolvingMapsLink, setIsResolvingMapsLink] = useState(false);
+  const [mapsLinkStatus, setMapsLinkStatus] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    setMapsLinkInput(editingRestaurant?.mapsUrl || '');
+    setMapsLinkStatus(null);
+  }, [editingRestaurant?.id]);
+
+  const handleAutoFillFromMapsLink = async (rawUrl?: string) => {
+    const candidate = (rawUrl ?? mapsLinkInput).trim();
+    if (!candidate) {
+      setMapsLinkStatus({ tone: 'error', text: 'Pega primero un enlace de Google Maps.' });
+      return;
+    }
+
+    setIsResolvingMapsLink(true);
+    setMapsLinkStatus(null);
+    try {
+      const resolved = await resolveGoogleMapsUrl(candidate);
+      if (!resolved) {
+        setMapsLinkStatus({
+          tone: 'error',
+          text: 'No se pudo leer la ubicación del enlace. Copia el enlace desde "Compartir" en Google Maps.',
+        });
+        return;
+      }
+
+      setMapsLinkInput(resolved.mapsUrl);
+      setEditingRestaurant((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          coordinates: { lat: resolved.lat, lng: resolved.lng },
+          mapsUrl: resolved.mapsUrl,
+          address: {
+            calle: resolved.street || prev.address?.calle || '',
+            numero: resolved.streetNumber || prev.address?.numero || '',
+            colonia: resolved.neighborhood || prev.address?.colonia || '',
+            referencias: prev.address?.referencias || '',
+            lat: resolved.lat,
+            lng: resolved.lng,
+            mapsUrl: resolved.mapsUrl,
+          },
+        };
+      });
+      setMapsLinkStatus({
+        tone: 'success',
+        text: `Ubicación y dirección rellenadas automáticamente${resolved.address ? `: ${resolved.address}` : ''}.`,
+      });
+    } finally {
+      setIsResolvingMapsLink(false);
+    }
+  };
 
   // Estados para ajustes
   const [currentSettings, setCurrentSettings] = useState<DispatchSettings>(settings);
@@ -2204,6 +2261,68 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       )}
                     </div>
 
+                    {/* Enlace directo de Google Maps con auto-relleno */}
+                    <div className="bg-white p-2.5 rounded-xl border border-gray-200 space-y-1.5">
+                      <label className="block text-[11px] font-bold text-gray-700 flex items-center gap-1.5">
+                        <Link2 className="w-3.5 h-3.5 text-[#ed0718]" />
+                        <span>Enlace de Google Maps (auto-rellena calle, colonia y pin)</span>
+                      </label>
+                      <div className="flex items-stretch gap-1.5">
+                        <input
+                          type="text"
+                          value={mapsLinkInput}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setMapsLinkInput(val);
+                            setMapsLinkStatus(null);
+                            setEditingRestaurant({
+                              ...editingRestaurant,
+                              mapsUrl: val,
+                            });
+                          }}
+                          onPaste={(e) => {
+                            const pasted = e.clipboardData.getData('text').trim();
+                            if (pasted && (isGoogleMapsLink(pasted) || /^-?\d+\.\d+\s*,\s*-?\d+\.\d+$/.test(pasted))) {
+                              e.preventDefault();
+                              setMapsLinkInput(pasted);
+                              void handleAutoFillFromMapsLink(pasted);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              void handleAutoFillFromMapsLink();
+                            }
+                          }}
+                          placeholder="Pega aquí https://maps.app.goo.gl/... o https://www.google.com/maps/..."
+                          className="flex-1 bg-gray-50 border border-gray-300 rounded-lg px-2.5 py-2 text-xs outline-none focus:border-[#ed0718] focus:bg-white transition"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void handleAutoFillFromMapsLink()}
+                          disabled={isResolvingMapsLink}
+                          className="shrink-0 bg-[#ed0718] hover:bg-[#c90012] text-white text-xs font-bold px-3 rounded-lg transition flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                        >
+                          {isResolvingMapsLink ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Sparkles className="w-3.5 h-3.5" />
+                          )}
+                          <span>{isResolvingMapsLink ? 'Leyendo...' : 'Auto-rellenar'}</span>
+                        </button>
+                      </div>
+                      {mapsLinkStatus && (
+                        <p
+                          className={`text-[11px] font-semibold ${
+                            mapsLinkStatus.tone === 'success' ? 'text-emerald-700' : 'text-amber-700'
+                          }`}
+                        >
+                          {mapsLinkStatus.text}
+                        </p>
+                      )}
+                    </div>
+
                     {/* Campos de dirección arriba del mapa (sincronizados automáticamente) */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                       <div className="sm:col-span-2">
@@ -2323,6 +2442,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       autoLocateOnMount={!editingRestaurant.coordinates}
                       onLocationSelect={(loc) => {
                         const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lng}`;
+                        setMapsLinkInput(mapsUrl);
                         setEditingRestaurant((prev) => {
                           if (!prev) return prev;
                           const keepTyped = Boolean(loc.preserveAddressFields);

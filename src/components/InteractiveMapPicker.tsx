@@ -18,8 +18,10 @@ import {
 } from '../services/sanMiguelLocations';
 import {
   AddressSearchSuggestion,
+  isGoogleMapsLink,
   normalizeSearchText,
   parseCoordinatesOrMapsUrl,
+  resolveGoogleMapsUrl,
   reverseGeocodeDetailed,
   searchSmaAddresses,
 } from '../services/routing';
@@ -206,9 +208,16 @@ export const InteractiveMapPicker: React.FC<InteractiveMapPickerProps> = ({
 
   useEffect(() => {
     if (initialLat && initialLng) {
+      const changed =
+        Math.abs(initialLat - currentLat) > 0.00001 ||
+        Math.abs(initialLng - currentLng) > 0.00001;
       setCurrentLat(initialLat);
       setCurrentLng(initialLng);
       setTargetCenter({ lat: initialLat, lng: initialLng });
+      if (changed) {
+        suppressExternalUntilRef.current = Date.now() + 1400;
+        setMapZoom(16);
+      }
     }
   }, [initialLat, initialLng]);
 
@@ -378,10 +387,53 @@ export const InteractiveMapPicker: React.FC<InteractiveMapPickerProps> = ({
     };
   }, [searchQuery, buildMergedSuggestions, applySuggestion]);
 
+  const applyResolvedMapsLink = useCallback(
+    async (rawUrl: string): Promise<boolean> => {
+      setIsSearching(true);
+      setSearchNotice('');
+      try {
+        const resolved = await resolveGoogleMapsUrl(rawUrl);
+        if (!resolved) {
+          setSearchNotice('No se pudo leer ese enlace de Google Maps. Verifica que esté completo.');
+          return false;
+        }
+        const lat = Number(resolved.lat.toFixed(5));
+        const lng = Number(resolved.lng.toFixed(5));
+        suppressExternalUntilRef.current = Date.now() + 1400;
+        setCurrentLat(lat);
+        setCurrentLng(lng);
+        setTargetCenter({ lat, lng });
+        setMapZoom(16);
+        setShowDropdown(false);
+        setResolvedAddress(resolved.address);
+        setSearchInput(resolved.address);
+        onLocationSelectRef.current({
+          lat,
+          lng,
+          mapsUrl: resolved.mapsUrl,
+          address: resolved.address,
+          street: resolved.street,
+          streetNumber: resolved.streetNumber,
+          neighborhood: resolved.neighborhood,
+          preserveAddressFields: false,
+        });
+        return true;
+      } finally {
+        setIsSearching(false);
+      }
+    },
+    []
+  );
+
   const handleManualSearch = async () => {
     const queryToUse = searchInput.trim() || (searchQuery || '').trim();
     if (queryToUse.length < 2) {
       setSearchNotice('Escribe una calle, colonia o pega un enlace de Google Maps.');
+      return;
+    }
+
+    if (isGoogleMapsLink(queryToUse)) {
+      await applyResolvedMapsLink(queryToUse);
       return;
     }
 
@@ -485,6 +537,14 @@ export const InteractiveMapPicker: React.FC<InteractiveMapPickerProps> = ({
                 setSearchInput(e.target.value);
                 setShowDropdown(true);
                 setSearchNotice('');
+              }}
+              onPaste={(e) => {
+                const pasted = e.clipboardData.getData('text').trim();
+                if (pasted && isGoogleMapsLink(pasted)) {
+                  e.preventDefault();
+                  setSearchInput(pasted);
+                  void applyResolvedMapsLink(pasted);
+                }
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
