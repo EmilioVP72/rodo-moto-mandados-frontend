@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { FreeOsmMap } from './FreeOsmMap';
 import {
   ExternalLink,
@@ -8,18 +8,37 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
-  Sparkles,
+  MapPin,
+  X,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import {
   ALL_SAN_MIGUEL_COLONIAS,
   parseSmaAddress,
   SmaNeighborhood,
 } from '../services/sanMiguelLocations';
+import {
+  AddressSearchSuggestion,
+  normalizeSearchText,
+  parseCoordinatesOrMapsUrl,
+  reverseGeocodeDetailed,
+  searchSmaAddresses,
+} from '../services/routing';
 
 export const DEFAULT_SAN_MIGUEL = {
   lat: 20.9144,
   lng: -100.7437,
 };
+
+const QUICK_COLONIA_IDS = new Set([
+  'sma-centro',
+  'sma-san-antonio',
+  'sma-aurora',
+  'sma-guadalupe',
+  'sma-frailes',
+  'sma-malanquin',
+]);
 
 export interface LocationSelectResult {
   lat: number;
@@ -29,6 +48,8 @@ export interface LocationSelectResult {
   street?: string;
   streetNumber?: string;
   neighborhood?: string;
+  /** True cuando el pin se movió automáticamente al escribir en campos externos */
+  preserveAddressFields?: boolean;
 }
 
 export interface InteractiveMapPickerProps {
@@ -41,17 +62,62 @@ export interface InteractiveMapPickerProps {
   coveragePolygon?: { lat: number; lng: number }[];
   isDrawingPolygon?: boolean;
   onPolygonPointAdd?: (point: { lat: number; lng: number }) => void;
+  /** Dirección externa (ej. Calle + Número + Colonia) para ubicar automáticamente en el mapa */
+  searchQuery?: string;
+  /** Si es true y existe searchQuery al montar, busca esa dirección inmediatamente */
+  autoLocateOnMount?: boolean;
+  /** Placeholder del buscador principal */
+  searchPlaceholder?: string;
+}
+
+function matchLocalColonias(query: string, limit: number = 4): AddressSearchSuggestion[] {
+  const norm = normalizeSearchText(query);
+  if (norm.length < 2) return [];
+
+  const tokens = norm.split(' ').filter((t) => t.length >= 2);
+  const scored: { col: SmaNeighborhood; score: number }[] = [];
+
+  for (const col of ALL_SAN_MIGUEL_COLONIAS) {
+    const colNorm = normalizeSearchText(col.name);
+    if (colNorm === norm) {
+      scored.push({ col, score: 100 });
+    } else if (colNorm.startsWith(norm)) {
+      scored.push({ col, score: 80 });
+    } else if (colNorm.includes(norm) || norm.includes(colNorm)) {
+      scored.push({ col, score: 60 });
+    } else if (tokens.length > 0 && tokens.some((tok) => colNorm.includes(tok))) {
+      scored.push({ col, score: 35 });
+    }
+  }
+
+  return scored
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map(({ col }) => ({
+      id: `col-${col.id}`,
+      label: `Col. ${col.name}`,
+      subtitle: `${col.zone} · San Miguel de Allende`,
+      street: '',
+      streetNumber: '',
+      neighborhood: col.name,
+      lat: col.lat,
+      lng: col.lng,
+      source: 'colonia',
+    }));
 }
 
 export const InteractiveMapPicker: React.FC<InteractiveMapPickerProps> = ({
   initialLat = DEFAULT_SAN_MIGUEL.lat,
   initialLng = DEFAULT_SAN_MIGUEL.lng,
-  localName = 'Tu Ubicación',
+  localName = 'Ubicación',
   onLocationSelect,
-  heightClass = 'h-80 sm:h-96',
+  heightClass = 'h-72 sm:h-80',
   coveragePolygon,
   isDrawingPolygon = false,
   onPolygonPointAdd,
+  searchQuery,
+  autoLocateOnMount = false,
+  searchPlaceholder = 'Buscar calle, colonia o pegar enlace de Google Maps...',
 }) => {
   const [currentLat, setCurrentLat] = useState<number>(initialLat);
   const [currentLng, setCurrentLng] = useState<number>(initialLng);
@@ -59,72 +125,96 @@ export const InteractiveMapPicker: React.FC<InteractiveMapPickerProps> = ({
     lat: initialLat,
     lng: initialLng,
   });
+  const [mapZoom, setMapZoom] = useState<number>(15);
 
   const [resolvedAddress, setResolvedAddress] = useState<string>('San Miguel de Allende, Gto.');
-  const [detectedStreet, setDetectedStreet] = useState<string>('');
   const [isGeocoding, setIsGeocoding] = useState<boolean>(false);
   const [isGettingGps, setIsGettingGps] = useState<boolean>(false);
   const [gpsError, setGpsError] = useState<string>('');
   const [mapTypeId, setMapTypeId] = useState<'roadmap' | 'hybrid'>('roadmap');
 
-  // Filtro de búsqueda rápida entre todas las colonias de San Miguel
-  const [coloniaSearch, setColoniaSearch] = useState<string>('');
+  // Buscador unificado de direcciones / lugares / colonias / links de Maps
+  const [searchInput, setSearchInput] = useState<string>('');
+  const [suggestions, setSuggestions] = useState<AddressSearchSuggestion[]>([]);
+  const [isSearching, setIsSearching] = useState<boolean>(false);
+  const [showDropdown, setShowDropdown] = useState<boolean>(false);
+  const [searchNotice, setSearchNotice] = useState<string>('');
+  const [showAllColonias, setShowAllColonias] = useState<boolean>(false);
 
-  // Reverse geocoding 100% gratuito usando OpenStreetMap Nominatim + catálogo local SMA
-  const reverseGeocode = useCallback(
-    (lat: number, lng: number) => {
-      setIsGeocoding(true);
-      const mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
-
-      fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`
-      )
-        .then((res) => res.json())
-        .then((data) => {
-          setIsGeocoding(false);
-          const road = data.address?.road || data.address?.pedestrian || '';
-          const house = data.address?.house_number ? `#${data.address.house_number}` : '';
-          const sub = data.address?.suburb || data.address?.neighbourhood || '';
-          const parsed = parseSmaAddress(data.display_name || '', lat, lng);
-
-          const finalStreet = road || parsed.street;
-          const finalColonia = sub || parsed.neighborhood;
-
-          const detectedFullAddress = finalStreet
-            ? `Calle ${finalStreet}${house ? ' ' + house : ''}, Col. ${finalColonia || 'Centro'}, San Miguel de Allende`
-            : '';
-
-          setResolvedAddress(detectedFullAddress || 'Ubicación sin nombre de calle');
-          setDetectedStreet(finalStreet);
-
-          onLocationSelect({
-            lat,
-            lng,
-            mapsUrl,
-            address: detectedFullAddress,
-            street: finalStreet,
-            streetNumber: house,
-            neighborhood: finalColonia,
-          });
-        })
-        .catch(() => {
-          setIsGeocoding(false);
-          setResolvedAddress('Ubicación sin nombre de calle');
-          setDetectedStreet('');
-
-          onLocationSelect({
-            lat,
-            lng,
-            mapsUrl,
-            address: '',
-            street: '',
-            streetNumber: '',
-            neighborhood: '',
-          });
-        });
-    },
-    [onLocationSelect]
+  const searchContainerRef = useRef<HTMLDivElement | null>(null);
+  const onLocationSelectRef = useRef(onLocationSelect);
+  const suppressExternalUntilRef = useRef<number>(0);
+  const lastExternalQueryRef = useRef<string>(
+    autoLocateOnMount ? '' : normalizeSearchText(searchQuery || '')
   );
+
+  useEffect(() => {
+    onLocationSelectRef.current = onLocationSelect;
+  }, [onLocationSelect]);
+
+  // Cerrar dropdown de sugerencias al hacer clic fuera
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (
+        searchContainerRef.current &&
+        !searchContainerRef.current.contains(event.target as Node)
+      ) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  // Geocodificación inversa vía proxy backend (caché Redis) + catálogo SMA
+  const reverseGeocode = useCallback((lat: number, lng: number) => {
+    setIsGeocoding(true);
+    setSearchNotice('');
+    const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+    suppressExternalUntilRef.current = Date.now() + 1400;
+
+    reverseGeocodeDetailed(lat, lng)
+      .then((data) => {
+        setIsGeocoding(false);
+        const parsed = parseSmaAddress(data?.displayName || '', lat, lng);
+        const finalStreet = data?.street || parsed.street;
+        const finalNumber = data?.streetNumber || parsed.streetNumber || '';
+        const finalColonia = data?.neighborhood || parsed.neighborhood;
+
+        const detectedFullAddress = finalStreet
+          ? `${finalStreet}${finalNumber ? ' ' + finalNumber : ''}${finalColonia ? ', Col. ' + finalColonia : ''}`
+          : finalColonia
+            ? `Col. ${finalColonia}, San Miguel de Allende`
+            : 'Punto fijado en el mapa';
+
+        setResolvedAddress(detectedFullAddress);
+
+        onLocationSelectRef.current({
+          lat,
+          lng,
+          mapsUrl,
+          address: detectedFullAddress,
+          street: finalStreet,
+          streetNumber: finalNumber,
+          neighborhood: finalColonia,
+          preserveAddressFields: false,
+        });
+      })
+      .catch(() => {
+        setIsGeocoding(false);
+        setResolvedAddress('Punto fijado en el mapa');
+        onLocationSelectRef.current({
+          lat,
+          lng,
+          mapsUrl,
+          address: '',
+          street: '',
+          streetNumber: '',
+          neighborhood: '',
+          preserveAddressFields: false,
+        });
+      });
+  }, []);
 
   useEffect(() => {
     if (initialLat && initialLng) {
@@ -133,6 +223,195 @@ export const InteractiveMapPicker: React.FC<InteractiveMapPickerProps> = ({
       setTargetCenter({ lat: initialLat, lng: initialLng });
     }
   }, [initialLat, initialLng]);
+
+  const applySuggestion = useCallback(
+    (item: AddressSearchSuggestion, fromExternalSync: boolean = false) => {
+      const lat = Number(item.lat.toFixed(5));
+      const lng = Number(item.lng.toFixed(5));
+      const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+
+      setCurrentLat(lat);
+      setCurrentLng(lng);
+      setTargetCenter({ lat, lng });
+      setMapZoom(item.source === 'colonia' ? 15 : 16);
+      setShowDropdown(false);
+      setSearchNotice('');
+
+      if (!fromExternalSync) {
+        suppressExternalUntilRef.current = Date.now() + 1400;
+        setSearchInput(item.label);
+      }
+
+      // Si pegó link o coordenadas directas, detectamos automáticamente calle y colonia
+      if (item.source === 'coords') {
+        reverseGeocode(lat, lng);
+        return;
+      }
+
+      const displayAddr = item.street
+        ? `${item.street}${item.streetNumber ? ' ' + item.streetNumber : ''}${
+            item.neighborhood ? ', Col. ' + item.neighborhood : ''
+          }`
+        : item.label;
+
+      setResolvedAddress(displayAddr);
+
+      onLocationSelectRef.current({
+        lat,
+        lng,
+        mapsUrl,
+        address: displayAddr,
+        street: item.street,
+        streetNumber: item.streetNumber,
+        neighborhood: item.neighborhood,
+        preserveAddressFields: fromExternalSync,
+      });
+    },
+    [reverseGeocode]
+  );
+
+  // Combina resultados de OSM/Backend con colonias locales de SMA
+  const buildMergedSuggestions = useCallback(
+    async (query: string, signal?: AbortSignal): Promise<AddressSearchSuggestion[]> => {
+      const trimmed = query.trim();
+      if (trimmed.length < 2) return [];
+
+      const coords = parseCoordinatesOrMapsUrl(trimmed);
+      if (coords) {
+        return [
+          {
+            id: `coords-${coords.lat}-${coords.lng}`,
+            label: `Ir a coordenadas (${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)})`,
+            subtitle: 'Enlace de mapa detectado',
+            street: '',
+            streetNumber: '',
+            neighborhood: '',
+            lat: coords.lat,
+            lng: coords.lng,
+            source: 'coords',
+          },
+        ];
+      }
+
+      const localMatches = matchLocalColonias(trimmed, 3);
+      const remoteMatches = await searchSmaAddresses(trimmed, signal);
+
+      const merged: AddressSearchSuggestion[] = [...remoteMatches];
+      for (const local of localMatches) {
+        const duplicate = merged.some(
+          (m) =>
+            normalizeSearchText(m.label) === normalizeSearchText(local.label) ||
+            (Math.abs(m.lat - local.lat) < 0.0012 && Math.abs(m.lng - local.lng) < 0.0012)
+        );
+        if (!duplicate) {
+          merged.push(local);
+        }
+      }
+      return merged.slice(0, 6);
+    },
+    []
+  );
+
+  // Autocompletado en vivo mientras el usuario escribe en el buscador del mapa
+  useEffect(() => {
+    const trimmed = searchInput.trim();
+    if (trimmed.length < 2) {
+      setSuggestions([]);
+      setIsSearching(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setIsSearching(true);
+      setSearchNotice('');
+      try {
+        const results = await buildMergedSuggestions(trimmed, controller.signal);
+        if (!controller.signal.aborted) {
+          setSuggestions(results);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsSearching(false);
+        }
+      }
+    }, 320);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [searchInput, buildMergedSuggestions]);
+
+  // Sincronización automática cuando el usuario escribe en campos externos (Calle / Número / Colonia)
+  useEffect(() => {
+    if (typeof searchQuery !== 'string') return;
+    const cleaned = searchQuery.trim();
+    const norm = normalizeSearchText(cleaned);
+
+    if (!norm || norm.length < 3) {
+      lastExternalQueryRef.current = norm;
+      return;
+    }
+
+    if (Date.now() < suppressExternalUntilRef.current) {
+      lastExternalQueryRef.current = norm;
+      return;
+    }
+
+    if (norm === lastExternalQueryRef.current) return;
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      if (Date.now() < suppressExternalUntilRef.current) return;
+      lastExternalQueryRef.current = norm;
+      setIsSearching(true);
+      setSearchNotice('');
+
+      try {
+        const results = await buildMergedSuggestions(cleaned, controller.signal);
+        if (controller.signal.aborted) return;
+
+        if (results.length > 0) {
+          applySuggestion(results[0], true);
+        } else {
+          setSearchNotice('No encontramos esa calle exacta; toca el mapa para ajustar el pin.');
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsSearching(false);
+        }
+      }
+    }, 750);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [searchQuery, buildMergedSuggestions, applySuggestion]);
+
+  const handleManualSearch = async () => {
+    const queryToUse = searchInput.trim() || (searchQuery || '').trim();
+    if (queryToUse.length < 2) {
+      setSearchNotice('Escribe una calle, colonia o pega un enlace de Google Maps.');
+      return;
+    }
+
+    setIsSearching(true);
+    setSearchNotice('');
+    try {
+      const results = await buildMergedSuggestions(queryToUse);
+      setSuggestions(results);
+      if (results.length > 0) {
+        applySuggestion(results[0], !searchInput.trim() && Boolean(searchQuery?.trim()));
+      } else {
+        setShowDropdown(false);
+        setSearchNotice('No encontramos esa dirección. Intenta con otra calle o toca el mapa.');
+      }
+    } finally {
+      setIsSearching(false);
+    }
+  };
 
   const handleMapClick = useCallback(
     (lat: number, lng: number) => {
@@ -144,6 +423,7 @@ export const InteractiveMapPicker: React.FC<InteractiveMapPickerProps> = ({
       setCurrentLat(lat);
       setCurrentLng(lng);
       setTargetCenter({ lat, lng });
+      setMapZoom((z) => Math.max(z, 16));
       reverseGeocode(lat, lng);
     },
     [isDrawingPolygon, onPolygonPointAdd, reverseGeocode]
@@ -175,11 +455,10 @@ export const InteractiveMapPicker: React.FC<InteractiveMapPickerProps> = ({
     [currentLat, currentLng, localName, handleMarkerDragEnd]
   );
 
-  // Obtener ubicación GPS real del cliente
   const handleGetLiveLocation = () => {
     setGpsError('');
     if (!navigator.geolocation) {
-      setGpsError('Tu dispositivo no soporta geolocalización.');
+      setGpsError('Tu navegador no soporta geolocalización.');
       return;
     }
 
@@ -191,90 +470,238 @@ export const InteractiveMapPicker: React.FC<InteractiveMapPickerProps> = ({
         setCurrentLat(lat);
         setCurrentLng(lng);
         setTargetCenter({ lat, lng });
+        setMapZoom(16);
         reverseGeocode(lat, lng);
         setIsGettingGps(false);
       },
       () => {
         setIsGettingGps(false);
-        setGpsError('No se pudo obtener el GPS. Verifica los permisos de ubicación de tu navegador.');
+        setGpsError('No se pudo obtener tu GPS. Revisa los permisos de ubicación.');
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
     );
   };
 
-  // Seleccionar colonia de la lista de San Miguel
   const handleSelectColonia = (colonia: SmaNeighborhood) => {
+    suppressExternalUntilRef.current = Date.now() + 1400;
     setCurrentLat(colonia.lat);
     setCurrentLng(colonia.lng);
     setTargetCenter({ lat: colonia.lat, lng: colonia.lng });
-    reverseGeocode(colonia.lat, colonia.lng);
+    setMapZoom(15);
+    setSearchInput(colonia.name);
+    setShowDropdown(false);
+    setSearchNotice('');
+    setResolvedAddress(`Col. ${colonia.name}, San Miguel de Allende`);
+
+    const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${colonia.lat},${colonia.lng}`;
+    onLocationSelectRef.current({
+      lat: colonia.lat,
+      lng: colonia.lng,
+      mapsUrl,
+      address: `Col. ${colonia.name}, San Miguel de Allende`,
+      street: '',
+      streetNumber: '',
+      neighborhood: colonia.name,
+      preserveAddressFields: false,
+    });
   };
 
-  const filteredColonias = ALL_SAN_MIGUEL_COLONIAS.filter((c) =>
-    c.name.toLowerCase().includes(coloniaSearch.toLowerCase().trim())
+  const quickColonias = useMemo(
+    () => ALL_SAN_MIGUEL_COLONIAS.filter((c) => QUICK_COLONIA_IDS.has(c.id)),
+    []
   );
 
   return (
-    <div className="w-full space-y-3 font-sans">
-      {/* Barra de Acciones Superiores: GPS y Vista */}
-      <div className="flex flex-wrap items-center justify-between gap-2 bg-gray-50 dark:bg-[#0d0f14] p-2.5 rounded-2xl border border-gray-200 dark:border-red-950/40">
-        <button
-          type="button"
-          onClick={handleGetLiveLocation}
-          disabled={isGettingGps}
-          className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 text-xs font-black bg-[#ed0718] hover:bg-[#c90012] active:scale-95 text-white px-3.5 py-2 rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
-        >
-          {isGettingGps ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Localizando GPS...</span>
-            </>
-          ) : (
-            <>
-              <Crosshair className="w-4 h-4" />
-              <span>📍 Mi GPS en San Miguel</span>
-            </>
-          )}
-        </button>
+    <div className="w-full space-y-2.5 font-sans">
+      {/* Buscador unificado de dirección + controles compactos */}
+      <div ref={searchContainerRef} className="relative space-y-2">
+        <div className="flex items-stretch gap-1.5">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={searchInput}
+              onFocus={() => setShowDropdown(true)}
+              onChange={(e) => {
+                setSearchInput(e.target.value);
+                setShowDropdown(true);
+                setSearchNotice('');
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleManualSearch();
+                } else if (e.key === 'Escape') {
+                  setShowDropdown(false);
+                }
+              }}
+              placeholder={searchPlaceholder}
+              className="w-full bg-white dark:bg-[#12151c] border border-gray-300 dark:border-neutral-700 rounded-xl pl-9 pr-8 py-2 text-xs font-medium text-gray-900 dark:text-white outline-none focus:border-[#ed0718] focus:ring-2 focus:ring-[#ed0718]/15 transition"
+            />
+            {searchInput && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchInput('');
+                  setSuggestions([]);
+                  setSearchNotice('');
+                }}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 cursor-pointer"
+                aria-label="Limpiar búsqueda"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
 
-        <div className="flex items-center gap-1.5">
-          {/* Alternar mapa calles / satélite */}
           <button
             type="button"
-            onClick={() => setMapTypeId(mapTypeId === 'roadmap' ? 'hybrid' : 'roadmap')}
-            className="flex items-center gap-1 text-[11px] font-bold bg-white dark:bg-[#151821] hover:bg-gray-100 dark:hover:bg-[#1d222e] border border-gray-300 dark:border-neutral-700 text-gray-800 dark:text-gray-200 px-2.5 py-2 rounded-xl transition cursor-pointer"
-            title="Cambiar entre vista de calles o satélite"
+            onClick={handleManualSearch}
+            disabled={isSearching}
+            className="shrink-0 bg-[#101b29] hover:bg-black text-white text-xs font-bold px-3.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
           >
-            <Layers className="w-3.5 h-3.5 text-[#ed0718]" />
-            <span className="hidden sm:inline">{mapTypeId === 'roadmap' ? 'Satélite' : 'Calles'}</span>
+            {isSearching ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Search className="w-3.5 h-3.5" />
+            )}
+            <span className="hidden sm:inline">Buscar</span>
           </button>
-
-          {/* Enlace gratuito a Google Maps Externo */}
-          <a
-            href={`https://www.google.com/maps?q=${currentLat},${currentLng}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1 text-[11px] font-bold bg-white dark:bg-[#151821] hover:bg-gray-100 dark:hover:bg-[#1d222e] border border-gray-300 dark:border-neutral-700 text-gray-700 dark:text-gray-300 px-2.5 py-2 rounded-xl transition cursor-pointer"
-            title="Abrir en app externa de mapas"
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Abrir Mapa</span>
-          </a>
         </div>
+
+        {/* Lista desplegable de sugerencias */}
+        {showDropdown && (suggestions.length > 0 || isSearching) && (
+          <div className="absolute left-0 right-0 top-[42px] z-[600] bg-white dark:bg-[#151821] border border-gray-200 dark:border-neutral-700 rounded-xl shadow-xl overflow-hidden max-h-60 overflow-y-auto">
+            {isSearching && suggestions.length === 0 ? (
+              <div className="px-3 py-2.5 text-xs text-gray-500 flex items-center gap-2">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-[#ed0718]" />
+                <span>Buscando en San Miguel de Allende...</span>
+              </div>
+            ) : (
+              suggestions.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => applySuggestion(item, false)}
+                  className="w-full text-left px-3 py-2 hover:bg-red-50 dark:hover:bg-red-950/30 border-b last:border-b-0 border-gray-100 dark:border-neutral-800 flex items-start gap-2.5 transition cursor-pointer"
+                >
+                  <MapPin className="w-4 h-4 text-[#ed0718] shrink-0 mt-0.5" />
+                  <div className="min-w-0 flex-1">
+                    <span className="block text-xs font-bold text-gray-900 dark:text-white truncate">
+                      {item.label}
+                    </span>
+                    <span className="block text-[11px] text-gray-500 dark:text-gray-400 truncate">
+                      {item.subtitle}
+                    </span>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        )}
+
+        {/* Barra compacta de utilidades: Mi GPS, Satélite, Maps y Zonas */}
+        <div className="flex flex-wrap items-center justify-between gap-1.5">
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={handleGetLiveLocation}
+              disabled={isGettingGps}
+              className="flex items-center gap-1.5 text-[11px] font-bold bg-[#ed0718] hover:bg-[#c90012] active:scale-95 text-white px-3 py-1.5 rounded-lg shadow-2xs transition cursor-pointer disabled:opacity-50"
+            >
+              {isGettingGps ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Crosshair className="w-3.5 h-3.5" />
+              )}
+              <span>{isGettingGps ? 'Ubicando...' : 'Mi GPS'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowAllColonias((v) => !v)}
+              className="flex items-center gap-1 text-[11px] font-semibold bg-white dark:bg-[#151821] hover:bg-gray-100 dark:hover:bg-[#1d222e] border border-gray-300 dark:border-neutral-700 text-gray-700 dark:text-gray-200 px-2.5 py-1.5 rounded-lg transition cursor-pointer"
+            >
+              <span>Zonas</span>
+              {showAllColonias ? (
+                <ChevronUp className="w-3.5 h-3.5" />
+              ) : (
+                <ChevronDown className="w-3.5 h-3.5" />
+              )}
+            </button>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setMapTypeId(mapTypeId === 'roadmap' ? 'hybrid' : 'roadmap')}
+              className="flex items-center gap-1 text-[11px] font-semibold bg-white dark:bg-[#151821] hover:bg-gray-100 dark:hover:bg-[#1d222e] border border-gray-300 dark:border-neutral-700 text-gray-700 dark:text-gray-200 px-2.5 py-1.5 rounded-lg transition cursor-pointer"
+              title="Cambiar entre vista de calles o satélite"
+            >
+              <Layers className="w-3.5 h-3.5 text-[#ed0718]" />
+              <span>{mapTypeId === 'roadmap' ? 'Satélite' : 'Calles'}</span>
+            </button>
+
+            <a
+              href={`https://www.google.com/maps/search/?api=1&query=${currentLat},${currentLng}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-[11px] font-semibold bg-white dark:bg-[#151821] hover:bg-gray-100 dark:hover:bg-[#1d222e] border border-gray-300 dark:border-neutral-700 text-gray-700 dark:text-gray-200 px-2.5 py-1.5 rounded-lg transition cursor-pointer"
+              title="Abrir en Google Maps"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Maps</span>
+            </a>
+          </div>
+        </div>
+
+        {/* Selector rápido de zonas (desplegable para mantener la vista limpia) */}
+        {showAllColonias && (
+          <div className="p-2 bg-gray-50 dark:bg-[#0c0e14] rounded-xl border border-gray-200 dark:border-neutral-800 space-y-1.5">
+            <div className="flex flex-wrap gap-1">
+              {quickColonias.map((col) => (
+                <button
+                  key={col.id}
+                  type="button"
+                  onClick={() => handleSelectColonia(col)}
+                  className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-red-50 dark:bg-red-950/30 text-[#ed0718] border border-red-200 dark:border-red-900/50 hover:bg-[#ed0718] hover:text-white transition cursor-pointer"
+                >
+                  {col.name}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-1 max-h-28 overflow-y-auto pt-1 border-t border-gray-200 dark:border-neutral-800">
+              {ALL_SAN_MIGUEL_COLONIAS.filter((c) => !QUICK_COLONIA_IDS.has(c.id)).map((col) => (
+                <button
+                  key={col.id}
+                  type="button"
+                  onClick={() => handleSelectColonia(col)}
+                  className="text-[11px] font-medium px-2 py-1 rounded-lg bg-white dark:bg-[#151821] hover:bg-gray-100 dark:hover:bg-[#1f2430] text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-neutral-700 transition cursor-pointer"
+                >
+                  {col.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
-      {gpsError && (
-        <div className="p-2.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-900/50 rounded-xl text-xs text-amber-900 dark:text-amber-200 flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-          <span>{gpsError}</span>
+      {(gpsError || searchNotice) && (
+        <div className="px-3 py-2 bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-900/50 rounded-xl text-[11px] text-amber-900 dark:text-amber-200 flex items-center gap-2">
+          <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+          <span>{gpsError || searchNotice}</span>
         </div>
       )}
 
-      {/* Contenedor del Mapa 100% Gratuito OpenStreetMap + Leaflet */}
-      <div className={`relative w-full ${heightClass} rounded-2xl overflow-hidden border-2 border-gray-300 dark:border-red-950/60 shadow-md z-0`}>
+      {/* Mapa interactivo */}
+      <div
+        className={`relative w-full ${heightClass} rounded-2xl overflow-hidden border border-gray-300 dark:border-red-950/60 shadow-xs z-0`}
+      >
         <FreeOsmMap
           center={targetCenter}
-          zoom={15}
+          zoom={mapZoom}
           markers={mapMarkers}
           polygonPaths={coveragePolygon}
           polylinePaths={coveragePolygon}
@@ -283,100 +710,32 @@ export const InteractiveMapPicker: React.FC<InteractiveMapPickerProps> = ({
           className="w-full h-full"
         />
 
-        {/* Instrucción flotante semitransparente */}
-        <div className="absolute top-2.5 left-12 right-2.5 sm:right-auto z-[400] bg-black/85 backdrop-blur-md text-white px-3 py-1.5 rounded-xl text-[11px] font-black flex items-center gap-2 pointer-events-none shadow-md border border-red-900/30">
-          <span className="text-[#ed0718] animate-ping">●</span>
-          <span>Toca cualquier calle o arrastra el pin: se autocompleta la dirección</span>
+        <div className="absolute bottom-2 left-2 z-[400] bg-black/75 backdrop-blur-xs text-white px-2.5 py-1 rounded-lg text-[10px] font-semibold pointer-events-none">
+          Toca el mapa o arrastra el pin para ajustar
         </div>
       </div>
 
-      {/* Tarjeta de Dirección Resuelta y Coordenadas */}
-      <div className="bg-white dark:bg-[#0d0f14] p-3.5 rounded-2xl border border-gray-200 dark:border-red-950/40 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-        <div className="min-w-0 flex-1">
-          <span className="text-[10px] uppercase font-black tracking-wider text-gray-500 dark:text-gray-400 block">
-            Punto seleccionado en San Miguel:
-          </span>
-          <div className="flex items-center gap-1.5 mt-0.5">
-            {isGeocoding ? (
-              <span className="text-gray-500 dark:text-gray-400 flex items-center gap-1">
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-[#ed0718]" /> Detectando calle y colonia...
-              </span>
-            ) : (
-              <strong className="text-gray-900 dark:text-white font-extrabold truncate block text-xs sm:text-sm">
-                {resolvedAddress}
-              </strong>
-            )}
-          </div>
-          {detectedStreet ? (
-            <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold block mt-0.5">
-              ✓ Calle detectada: <u>{detectedStreet}</u> (Se escribirá en automático)
-            </span>
+      {/* Resumen compacto del punto fijado */}
+      <div className="bg-white dark:bg-[#0d0f14] px-3 py-2 rounded-xl border border-gray-200 dark:border-red-950/40 flex items-center justify-between gap-2 text-xs">
+        <div className="min-w-0 flex-1 flex items-center gap-2">
+          {isGeocoding || isSearching ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-[#ed0718] shrink-0" />
           ) : (
-            <span className="text-[11px] text-gray-400 block mt-0.5">
-              Calle no especificada en el punto (podrás ingresarla manualmente).
-            </span>
+            <MapPin className="w-3.5 h-3.5 text-[#ed0718] shrink-0" />
           )}
-          <span className="text-[10px] font-mono text-gray-400 dark:text-gray-500 block mt-0.5">
-            Lat: {currentLat.toFixed(5)} · Lng: {currentLng.toFixed(5)}
+          <span className="truncate font-semibold text-gray-800 dark:text-gray-100">
+            {isGeocoding
+              ? 'Detectando dirección...'
+              : isSearching
+                ? 'Buscando en el mapa...'
+                : resolvedAddress}
           </span>
         </div>
 
-        <div className="shrink-0 flex items-center gap-1.5 bg-red-50 dark:bg-red-950/30 text-[#ed0718] dark:text-red-400 px-3 py-1.5 rounded-xl border border-red-200 dark:border-red-900/40 font-black text-xs">
-          <CheckCircle2 className="w-4 h-4 text-[#ed0718]" />
-          <span>Fijado</span>
-        </div>
-      </div>
-
-      {/* Catálogo de Todas las Colonias de San Miguel de Allende con Buscador */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <label className="text-[11px] font-black text-gray-700 dark:text-gray-300 uppercase tracking-wider flex items-center gap-1">
-            <Sparkles className="w-3.5 h-3.5 text-[#ed0718]" />
-            Colonias de San Miguel de Allende ({ALL_SAN_MIGUEL_COLONIAS.length} en catálogo):
-          </label>
-          <span className="text-[10px] text-gray-400">Clic para centrar</span>
-        </div>
-
-        {/* Buscador de colonia */}
-        <div className="relative">
-          <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={coloniaSearch}
-            onChange={(e) => setColoniaSearch(e.target.value)}
-            placeholder="Buscar colonia (ej. San Antonio, Aurora, Malanquín, Frailes, Olimpo...)"
-            className="w-full bg-gray-50 dark:bg-[#12151c] border border-gray-200 dark:border-neutral-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-gray-800 dark:text-white outline-none focus:border-[#ed0718]"
-          />
-        </div>
-
-        {/* Chips de colonias con scroll */}
-        <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1.5 bg-gray-50 dark:bg-[#0c0e14] rounded-xl border border-gray-200 dark:border-neutral-800">
-          {filteredColonias.map((col) => {
-            const isNear =
-              Math.abs(currentLat - col.lat) < 0.003 && Math.abs(currentLng - col.lng) < 0.003;
-            return (
-              <button
-                key={col.id}
-                type="button"
-                onClick={() => handleSelectColonia(col)}
-                className={`text-[11px] font-extrabold px-2.5 py-1.5 rounded-xl border transition flex items-center gap-1 cursor-pointer ${
-                  isNear
-                    ? 'bg-[#ed0718] text-white border-[#ed0718] shadow-xs'
-                    : 'bg-white dark:bg-[#151821] hover:bg-gray-100 dark:hover:bg-[#1f2430] text-gray-800 dark:text-gray-200 border-gray-300 dark:border-neutral-700'
-                }`}
-                title={`Zona: ${col.zone} · Cobertura ${col.coverage}`}
-              >
-                <span>📍</span>
-                <span>{col.name}</span>
-                {col.coverage === 'extendida' && (
-                  <span className="text-[9px] bg-amber-500/20 text-amber-600 dark:text-amber-400 px-1 rounded">
-                    Periferia
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
+        <span className="shrink-0 inline-flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 px-2 py-0.5 rounded-lg border border-emerald-200 dark:border-emerald-900/40 font-bold text-[11px]">
+          <CheckCircle2 className="w-3 h-3" />
+          Listo
+        </span>
       </div>
     </div>
   );
