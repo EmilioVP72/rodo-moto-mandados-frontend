@@ -120,7 +120,7 @@ export const INITIAL_SETTINGS: DispatchSettings = {
   clabeRodo: '012180015678901234',
   bancoRodo: 'BBVA Bancomer',
   titularRodo: 'RODO Moto Mandados Oficial',
-  adminPasscode: 'RODO2026',
+  adminPasscode: '',
   supportPhone: '415-101-9920',
   expressDeliverySurcharge: 25, // $25 MXN extra por entrega exprés urgente
   expressDeliveryEnabled: true,

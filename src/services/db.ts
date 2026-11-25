@@ -42,14 +42,16 @@ export function generateUniqueTicketFolio(): string {
   return `RD-${yy}${mm}${dd}-${rand}`;
 }
 
-// Inicialización controlada (Sincroniza catálogo semilla con PostgreSQL en el Backend)
-export async function ensureDatabaseSeeded(_isAdminUser = false): Promise<void> {
+// Inicialización controlada (Solo sesión autenticada de Administrador puede invocar /api/seed)
+export async function ensureDatabaseSeeded(isAdminUser = false): Promise<void> {
+  if (!isAdminUser || !getAuthToken()) return;
   try {
+    const { adminPasscode: _omitPasscode, ...safeSettings } = INITIAL_SETTINGS;
     await apiFetch('/api/seed', {
       method: 'POST',
       body: {
         restaurants: DEFAULT_RESTAURANTS,
-        settings: INITIAL_SETTINGS,
+        settings: safeSettings,
       },
     });
   } catch {
@@ -275,12 +277,20 @@ export async function deletePartnerLocal(id: string): Promise<void> {
 
 export async function findPartnerLocalByCode(code: string): Promise<PartnerLocal | null> {
   const cleanCode = code.trim();
+  if (!/^\d{3,4}$/.test(cleanCode)) return null;
   try {
-    const remote = await apiFetch<PartnerLocal>(`/api/partner-locals/code/${encodeURIComponent(cleanCode)}`);
+    const remote = await apiFetch<PartnerLocal>(
+      `/api/partner-locals/code/${encodeURIComponent(cleanCode)}`
+    );
     if (remote && remote.isActive) return remote;
-  } catch {}
-  const locals = await getPartnerLocals();
-  return locals.find((l) => l.code === cleanCode && l.isActive) || null;
+    return null;
+  } catch (err) {
+    if (err instanceof ApiHttpError) {
+      if (err.status === 404) return null;
+      throw err;
+    }
+    return null;
+  }
 }
 
 // PEDIDOS Y TICKETS (CON SINCRONIZACIÓN EN TIEMPO REAL VÍA SOCKET.IO + POSTGRESQL)

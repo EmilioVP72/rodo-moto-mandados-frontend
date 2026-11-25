@@ -543,37 +543,49 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setAdminPassError('');
     setAdminPassSuccess('');
 
-    if (authMasterCodeInput.trim() !== '1999') {
-      setAdminPassError('Código de autorización incorrecto. Se requiere estrictamente el código maestro 1999 para autorizar el cambio de contraseña de administrador.');
+    const currentPassword = authMasterCodeInput.trim();
+    const newPassword = newAdminPassInput.trim();
+    const confirmPassword = confirmAdminPassInput.trim();
+
+    if (!currentPassword) {
+      setAdminPassError('Ingresa tu contraseña actual de Administrador para autorizar el cambio.');
       return;
     }
 
-    if (!newAdminPassInput.trim() || newAdminPassInput.trim().length < 4) {
-      setAdminPassError('La nueva contraseña debe tener al menos 4 caracteres.');
+    if (newPassword.length < 8) {
+      setAdminPassError('La nueva contraseña debe tener al menos 8 caracteres.');
       return;
     }
 
-    if (newAdminPassInput.trim() !== confirmAdminPassInput.trim()) {
-      setAdminPassError('Las contraseñas no coinciden. Por favor verifica que sean exactamente iguales.');
+    if (newPassword !== confirmPassword) {
+      setAdminPassError('Las contraseñas nuevas no coinciden. Verifica que sean exactamente iguales.');
       return;
     }
 
-    const updatedSettings = {
-      ...currentSettings,
-      adminPasscode: newAdminPassInput.trim(),
-    };
-    if (!await commitSettings(updatedSettings)) return;
-    logAdminAction(
-      'ajuste_tarifa',
-      'Contraseña maestra de Administrador actualizada exitosamente con código de autorización 1999',
-      'edsoncruz14999@gmail.com',
-      undefined,
-      'Seguridad de Acceso RODO'
-    );
-    setAdminPassSuccess('¡Contraseña de Administrador actualizada con éxito! A partir de ahora ingresa con tu nueva clave.');
-    setAuthMasterCodeInput('');
-    setNewAdminPassInput('');
-    setConfirmAdminPassInput('');
+    try {
+      await apiFetch('/api/auth/me', {
+        method: 'PATCH',
+        body: {
+          currentPassword,
+          newPassword,
+        },
+      });
+      logAdminAction(
+        'ajuste_tarifa',
+        'Contraseña de Administrador actualizada mediante verificación criptográfica bcrypt',
+        'edsoncruz14999@gmail.com',
+        undefined,
+        'Seguridad de Acceso RODO'
+      );
+      setAdminPassSuccess(
+        '¡Contraseña de Administrador actualizada con éxito! Las sesiones en otros dispositivos fueron revocadas.'
+      );
+      setAuthMasterCodeInput('');
+      setNewAdminPassInput('');
+      setConfirmAdminPassInput('');
+    } catch (err: any) {
+      setAdminPassError(err?.message || 'No se pudo actualizar la contraseña. Verifica tu clave actual.');
+    }
   };
 
   // Selector y Guardado de Temática Festiva (Navidad, Año Nuevo, 14 Feb, Día de las Madres, Día del Padre, Día del Grito, RODO)
@@ -4260,10 +4272,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </div>
                   <div>
                     <h4 className="text-xs font-black text-gray-900 uppercase tracking-wider">
-                      Cambio de Contraseña de Administrador (Requiere Código 1999)
+                      Cambio de Contraseña de Administrador
                     </h4>
                     <p className="text-[11px] text-gray-600">
-                      Para cambiar la clave de acceso al panel se requiere estrictamente ingresar el código de autorización maestro 1999.
+                      Por seguridad, confirma tu contraseña actual para actualizar tu clave cifrada en el servidor.
                     </p>
                   </div>
                 </div>
@@ -4285,17 +4297,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <label className="block text-xs font-bold text-gray-800 mb-1">
-                      Código de Autorización Maestro:
+                      Contraseña Actual:
                     </label>
                     <input
                       type="password"
-                      maxLength={6}
                       value={authMasterCodeInput}
                       onChange={(e) => setAuthMasterCodeInput(e.target.value)}
-                      placeholder="Ingresa 1999"
+                      placeholder="Tu contraseña actual"
                       className="w-full border border-gray-300 rounded-lg p-2 text-xs font-mono font-bold bg-white focus:ring-1 focus:ring-red-500"
                     />
-                    <span className="text-[10px] text-gray-500 block mt-0.5">Código oficial: 1999</span>
                   </div>
 
                   <div>
@@ -4307,7 +4317,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         type={showNewPassText ? 'text' : 'password'}
                         value={newAdminPassInput}
                         onChange={(e) => setNewAdminPassInput(e.target.value)}
-                        placeholder="Mínimo 4 caracteres"
+                        placeholder="Mínimo 8 caracteres"
                         className="w-full border border-gray-300 rounded-lg p-2 pr-8 text-xs font-mono font-bold bg-white"
                       />
                       <button
@@ -4340,7 +4350,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     onClick={handleChangeAdminPasscode}
                     className="bg-[#ed0718] hover:bg-red-700 text-white text-xs font-black py-2 px-4 rounded-xl shadow-xs transition cursor-pointer"
                   >
-                    Actualizar Contraseña con Código 1999
+                    Actualizar Contraseña
                   </button>
                 </div>
               </div>
