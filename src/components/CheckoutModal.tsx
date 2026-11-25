@@ -1409,7 +1409,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           {...mapBackdropHandlers}
           className="fixed inset-0 z-80 bg-black/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in"
         >
-          <div className="bg-white rounded-3xl w-full max-w-lg p-5 sm:p-6 space-y-4 shadow-2xl border border-gray-200 my-auto">
+          <div className="bg-white rounded-3xl w-full max-w-lg max-h-[92dvh] overflow-y-auto p-5 sm:p-6 space-y-4 shadow-2xl border border-gray-200 my-auto">
             <div className="flex items-center justify-between border-b pb-3">
               <div>
                 <span className="text-[10px] font-black uppercase text-[#ed0718] bg-red-50 px-2 py-0.5 rounded-full">
@@ -1435,18 +1435,24 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               initialLat={deliveryPinCoords?.lat || 20.9144}
               initialLng={deliveryPinCoords?.lng || -100.7437}
               localName={deliveryCalle || 'Tu Domicilio'}
+              searchQuery={[deliveryCalle, deliveryNumero, deliveryColonia]
+                .filter((v) => Boolean(v && v.trim()))
+                .join(', ')}
+              autoLocateOnMount={!deliveryPinCoords}
               onLocationSelect={(loc) => {
                 setDeliveryPinCoords({ lat: loc.lat, lng: loc.lng });
 
-                if (loc.street && loc.street.trim()) {
-                  setActiveSavedAddressId(null);
-                  setDeliveryCalle(loc.street.trim());
-                }
-                if (loc.streetNumber && loc.streetNumber.trim()) {
-                  setDeliveryNumero(cleanStreetNumber(loc.streetNumber));
-                }
-                if (loc.neighborhood && loc.neighborhood.trim()) {
-                  setDeliveryColonia(resolveOfficialColoniaLabel(loc.neighborhood));
+                if (!loc.preserveAddressFields) {
+                  if (loc.street && loc.street.trim()) {
+                    setActiveSavedAddressId(null);
+                    setDeliveryCalle(loc.street.trim());
+                  }
+                  if (loc.streetNumber && loc.streetNumber.trim()) {
+                    setDeliveryNumero(cleanStreetNumber(loc.streetNumber));
+                  }
+                  if (loc.neighborhood && loc.neighborhood.trim()) {
+                    setDeliveryColonia(resolveOfficialColoniaLabel(loc.neighborhood));
+                  }
                 }
 
                 // Detección automática de cuadrante para evitar fraudes/errores entre colonias

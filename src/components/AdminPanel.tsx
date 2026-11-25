@@ -2190,26 +2190,69 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     )}
                   </div>
 
-                  {/* Ubicación Fija del Local en San Miguel de Allende (Dirección & Coordenadas GPS en Mapa) */}
+                  {/* Ubicación del Local (Buscador + Mapa + Campos sincronizados) */}
                   <div className="bg-gray-50 p-3.5 sm:p-4 rounded-xl border border-gray-200 space-y-3">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-black uppercase text-gray-800 tracking-wider flex items-center gap-1.5">
                         <MapPin className="w-4 h-4 text-[#ed0718]" />
-                        Ubicación Fija del Local para Repartidores (Solo Administrador)
+                        Ubicación del Local
                       </span>
                       {editingRestaurant.coordinates && (
-                        <span className="text-[10px] bg-emerald-100 text-emerald-800 font-mono font-bold px-2 py-0.5 rounded-md">
-                          GPS: {editingRestaurant.coordinates.lat.toFixed(4)}, {editingRestaurant.coordinates.lng.toFixed(4)}
+                        <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-md">
+                          Pin GPS listo
                         </span>
                       )}
                     </div>
-                    <p className="text-[11px] text-gray-500">
-                      Fija la dirección y el punto GPS exacto del restaurante para que el repartidor al recibir el ticket pueda presionar el botón de Google Maps y llegar directo sin perderse.
-                    </p>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* Mapa interactivo con buscador integrado y sincronización automática */}
+                    <InteractiveMapPicker
+                      key={editingRestaurant.id || 'new-restaurant-map'}
+                      initialLat={editingRestaurant.coordinates?.lat || 20.9144}
+                      initialLng={editingRestaurant.coordinates?.lng || -100.7437}
+                      localName={editingRestaurant.name || 'Local'}
+                      heightClass="h-64 sm:h-72"
+                      searchPlaceholder="Buscar dirección del local, colonia o pegar enlace de Google Maps..."
+                      searchQuery={[
+                        editingRestaurant.address?.calle,
+                        editingRestaurant.address?.numero,
+                        editingRestaurant.address?.colonia,
+                      ]
+                        .filter((v) => Boolean(v && v.trim()))
+                        .join(', ')}
+                      autoLocateOnMount={!editingRestaurant.coordinates}
+                      onLocationSelect={(loc) => {
+                        const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lng}`;
+                        setEditingRestaurant((prev) => {
+                          if (!prev) return prev;
+                          const keepTyped = Boolean(loc.preserveAddressFields);
+                          return {
+                            ...prev,
+                            coordinates: { lat: loc.lat, lng: loc.lng },
+                            mapsUrl,
+                            address: {
+                              calle: keepTyped
+                                ? prev.address?.calle || ''
+                                : loc.street || prev.address?.calle || '',
+                              numero: keepTyped
+                                ? prev.address?.numero || ''
+                                : loc.streetNumber || prev.address?.numero || '',
+                              colonia: keepTyped
+                                ? prev.address?.colonia || ''
+                                : loc.neighborhood || prev.address?.colonia || '',
+                              referencias: prev.address?.referencias || '',
+                              lat: loc.lat,
+                              lng: loc.lng,
+                              mapsUrl,
+                            },
+                          };
+                        });
+                      }}
+                    />
+
+                    {/* Campos editables sincronizados con el mapa */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
                       <div className="sm:col-span-2">
-                        <label className="block text-[11px] font-bold text-gray-700 mb-1">Calle:</label>
+                        <label className="block text-[11px] font-bold text-gray-700 mb-1">Calle</label>
                         <input
                           type="text"
                           value={editingRestaurant.address?.calle || ''}
@@ -2227,13 +2270,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                               },
                             })
                           }
-                          placeholder="Ej. Calle Correo, Ancha de San Antonio..."
-                          className="w-full bg-white border border-gray-300 rounded-lg p-2 text-xs font-semibold outline-none focus:border-[#ed0718]"
+                          placeholder="Ej. Ancha de San Antonio"
+                          className="w-full bg-white border border-gray-300 rounded-lg px-2.5 py-2 text-xs font-semibold outline-none focus:border-[#ed0718]"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-[11px] font-bold text-gray-700 mb-1">Número Ext / Int:</label>
+                        <label className="block text-[11px] font-bold text-gray-700 mb-1">Número</label>
                         <input
                           type="text"
                           value={editingRestaurant.address?.numero || ''}
@@ -2252,89 +2295,32 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             })
                           }
                           placeholder="Ej. #24-A"
-                          className="w-full bg-white border border-gray-300 rounded-lg p-2 text-xs font-semibold outline-none focus:border-[#ed0718]"
+                          className="w-full bg-white border border-gray-300 rounded-lg px-2.5 py-2 text-xs font-semibold outline-none focus:border-[#ed0718]"
                         />
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[11px] font-bold text-gray-700 mb-1">Colonia:</label>
-                        <input
-                          type="text"
-                          value={editingRestaurant.address?.colonia || ''}
-                          onChange={(e) =>
-                            setEditingRestaurant({
-                              ...editingRestaurant,
-                              address: {
-                                calle: editingRestaurant.address?.calle || '',
-                                numero: editingRestaurant.address?.numero || '',
-                                colonia: e.target.value,
-                                referencias: editingRestaurant.address?.referencias || '',
-                                lat: editingRestaurant.coordinates?.lat,
-                                lng: editingRestaurant.coordinates?.lng,
-                                mapsUrl: editingRestaurant.mapsUrl,
-                              },
-                            })
-                          }
-                          placeholder="Ej. Centro / San Antonio / La Aurora"
-                          className="w-full bg-white border border-gray-300 rounded-lg p-2 text-xs font-semibold outline-none focus:border-[#ed0718]"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-bold text-gray-700 mb-1">Referencias de Ubicación:</label>
-                        <input
-                          type="text"
-                          value={editingRestaurant.address?.referencias || ''}
-                          onChange={(e) =>
-                            setEditingRestaurant({
-                              ...editingRestaurant,
-                              address: {
-                                calle: editingRestaurant.address?.calle || '',
-                                numero: editingRestaurant.address?.numero || '',
-                                colonia: editingRestaurant.address?.colonia || '',
-                                referencias: e.target.value,
-                                lat: editingRestaurant.coordinates?.lat,
-                                lng: editingRestaurant.coordinates?.lng,
-                                mapsUrl: editingRestaurant.mapsUrl,
-                              },
-                            })
-                          }
-                          placeholder="Frente al templo, puerta de madera..."
-                          className="w-full bg-white border border-gray-300 rounded-lg p-2 text-xs outline-none focus:border-[#ed0718]"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Selector de Mapa Interactivo para fijar GPS del local */}
-                    <div className="pt-2 border-t border-gray-200">
-                      <span className="block text-xs font-bold text-gray-700 mb-1.5 flex items-center gap-1.5">
-                        <Navigation className="w-3.5 h-3.5 text-[#ed0718]" />
-                        Fijar Punto en Mapa de San Miguel de Allende para el Repartidor:
-                      </span>
-                      <InteractiveMapPicker
-                        initialLat={editingRestaurant.coordinates?.lat || 20.9144}
-                        initialLng={editingRestaurant.coordinates?.lng || -100.7437}
-                        localName={editingRestaurant.name}
-                        heightClass="h-72 sm:h-80"
-                        onLocationSelect={(loc) => {
-                          const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lng}`;
+                    <div>
+                      <label className="block text-[11px] font-bold text-gray-700 mb-1">Referencias (opcional)</label>
+                      <input
+                        type="text"
+                        value={editingRestaurant.address?.referencias || ''}
+                        onChange={(e) =>
                           setEditingRestaurant({
                             ...editingRestaurant,
-                            coordinates: { lat: loc.lat, lng: loc.lng },
-                            mapsUrl,
                             address: {
-                              calle: loc.street || editingRestaurant.address?.calle || '',
-                              numero: loc.streetNumber || editingRestaurant.address?.numero || '',
-                              colonia: loc.neighborhood || editingRestaurant.address?.colonia || '',
-                              referencias: editingRestaurant.address?.referencias || '',
-                              lat: loc.lat,
-                              lng: loc.lng,
-                              mapsUrl,
+                              calle: editingRestaurant.address?.calle || '',
+                              numero: editingRestaurant.address?.numero || '',
+                              colonia: editingRestaurant.address?.colonia || '',
+                              referencias: e.target.value,
+                              lat: editingRestaurant.coordinates?.lat,
+                              lng: editingRestaurant.coordinates?.lng,
+                              mapsUrl: editingRestaurant.mapsUrl,
                             },
-                          });
-                        }}
+                          })
+                        }
+                        placeholder="Frente al templo, portón negro..."
+                        className="w-full bg-white border border-gray-300 rounded-lg px-2.5 py-2 text-xs outline-none focus:border-[#ed0718]"
                       />
                     </div>
                   </div>

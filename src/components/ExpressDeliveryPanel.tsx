@@ -935,6 +935,7 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
 
               <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-5 space-y-4">
                 <InteractiveMapPicker
+                  key={activeMapPickerTarget}
                   initialLat={
                     activeMapPickerTarget === 'pickup'
                       ? (pickupCoords?.lat || 20.9144)
@@ -945,28 +946,44 @@ export const ExpressDeliveryPanel: React.FC<ExpressDeliveryPanelProps> = ({
                       ? (pickupCoords?.lng || -100.7437)
                       : (deliveryCoords?.lng || -100.738)
                   }
+                  searchQuery={
+                    activeMapPickerTarget === 'pickup'
+                      ? [pickupCalle, pickupNumero, pickupColonia]
+                          .filter((v) => Boolean(v && v.trim()))
+                          .join(', ')
+                      : [deliveryCalle, deliveryNumero, deliveryColonia]
+                          .filter((v) => Boolean(v && v.trim()))
+                          .join(', ')
+                  }
+                  autoLocateOnMount={
+                    activeMapPickerTarget === 'pickup' ? !pickupCoords : !deliveryCoords
+                  }
                   onLocationSelect={(loc) => {
                     if (activeMapPickerTarget === 'pickup') {
                       setPickupCoords({ lat: loc.lat, lng: loc.lng });
-                      if (loc.street && loc.street.trim()) {
-                        setPickupCalle(loc.street.trim());
-                      }
-                      if (loc.streetNumber && loc.streetNumber.trim()) {
-                        setPickupNumero(cleanStreetNumber(loc.streetNumber));
-                      }
-                      if (loc.neighborhood && loc.neighborhood.trim()) {
-                        setPickupColonia(resolveOfficialColonia(loc.neighborhood));
+                      if (!loc.preserveAddressFields) {
+                        if (loc.street && loc.street.trim()) {
+                          setPickupCalle(loc.street.trim());
+                        }
+                        if (loc.streetNumber && loc.streetNumber.trim()) {
+                          setPickupNumero(cleanStreetNumber(loc.streetNumber));
+                        }
+                        if (loc.neighborhood && loc.neighborhood.trim()) {
+                          setPickupColonia(resolveOfficialColonia(loc.neighborhood));
+                        }
                       }
                     } else {
                       setDeliveryCoords({ lat: loc.lat, lng: loc.lng });
-                      if (loc.street && loc.street.trim()) {
-                        setDeliveryCalle(loc.street.trim());
-                      }
-                      if (loc.streetNumber && loc.streetNumber.trim()) {
-                        setDeliveryNumero(cleanStreetNumber(loc.streetNumber));
-                      }
-                      if (loc.neighborhood && loc.neighborhood.trim()) {
-                        setDeliveryColonia(resolveOfficialColonia(loc.neighborhood));
+                      if (!loc.preserveAddressFields) {
+                        if (loc.street && loc.street.trim()) {
+                          setDeliveryCalle(loc.street.trim());
+                        }
+                        if (loc.streetNumber && loc.streetNumber.trim()) {
+                          setDeliveryNumero(cleanStreetNumber(loc.streetNumber));
+                        }
+                        if (loc.neighborhood && loc.neighborhood.trim()) {
+                          setDeliveryColonia(resolveOfficialColonia(loc.neighborhood));
+                        }
                       }
                     }
                   }}
