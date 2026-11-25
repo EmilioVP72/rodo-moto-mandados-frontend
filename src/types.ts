@@ -246,6 +246,7 @@ export interface Order {
 
   cancellationDebtAmount?: number;
   cancellationReason?: string;
+  stepUpToken?: string;
   assignedRiderId?: string;
   assignedRiderName?: string;
   assignedRiderPhone?: string;

@@ -167,12 +167,6 @@ export function verifyOtpCode(challengeId: string, inputCode: string): { success
   try {
     const cleanInput = inputCode.trim();
 
-    // Verificación contra token TOTP interno activo de RODO
-    const currentTotp = getRodoInternalTotpToken();
-    if (cleanInput === currentTotp.code) {
-      return { success: true, message: 'Código verificado con éxito mediante sincronización TOTP activa de RODO.' };
-    }
-
     const stored = safeGetItem('rodo_active_otp_' + challengeId);
     if (!stored) {
       logTechnicalError('Validación', 'Intento de validación sobre desafío inexistente o expirado');

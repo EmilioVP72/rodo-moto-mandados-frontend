@@ -1067,16 +1067,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setActiveChallenge(challenge);
   };
 
-  const handleConfirmCancelAfterOtp = async () => {
+  const handleConfirmCancelAfterOtp = async (stepUpToken?: string) => {
     if (!pendingCancelOrder) return;
-    await updateOrderInDb(pendingCancelOrder.id, {
-      status: 'cancelado_con_deuda',
-      cancellationReason: 'Cliente no salió al domicilio en el lapso de 10 minutos de tolerancia.',
-      cancellationDebtAmount: pendingCancelOrder.total,
-    });
-    setPendingCancelOrder(null);
-    setActiveChallenge(null);
-    await onRefreshData();
+    try {
+      await updateOrderInDb(pendingCancelOrder.id, {
+        status: 'cancelado_con_deuda',
+        cancellationReason: 'Cliente no salió al domicilio en el lapso de 10 minutos de tolerancia.',
+        cancellationDebtAmount: pendingCancelOrder.total,
+        ...(stepUpToken ? { stepUpToken } : {}),
+      });
+      setPendingCancelOrder(null);
+      setActiveChallenge(null);
+      await onRefreshData();
+    } catch (err: any) {
+      showFeedback(err?.message || 'No se pudo autorizar la cancelación con adeudo.', 'error');
+    }
   };
 
   // Botones de navegación para retroceder e ir al inicio dentro del Administrador

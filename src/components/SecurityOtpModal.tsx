@@ -1,18 +1,18 @@
 import React, { useState, useEffect } from 'react';
+import { apiFetch } from '../api/httpClient';
 import { useBackdropClose } from '../utils/modalBackdrop';
 import {
   SecurityOtpAction,
   verifyOtpCode,
   getWhatsAppOtpDispatchUrl,
   getSmsOtpDispatchUrl,
-  getRollingBankToken,
 } from '../utils/securityOtp';
-import { ShieldCheck, MessageSquare, Smartphone, AlertCircle, Key, RefreshCw, X, Check } from 'lucide-react';
+import { ShieldCheck, MessageSquare, Smartphone, AlertCircle, Key, X, Check } from 'lucide-react';
 
 interface SecurityOtpModalProps {
   challenge: SecurityOtpAction;
   adminPhone: string;
-  onSuccess: () => void;
+  onSuccess: (stepUpToken?: string) => void;
   onCancel: () => void;
 }
 
@@ -24,25 +24,75 @@ export const SecurityOtpModal: React.FC<SecurityOtpModalProps> = ({
 }) => {
   const [inputCode, setInputCode] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [serverChallengeId, setServerChallengeId] = useState<string | null>(null);
+  const [activeOtpCode, setActiveOtpCode] = useState<string>(challenge.otpCode);
+  const [expiresAtMs, setExpiresAtMs] = useState<number>(challenge.expiresAt);
+  const [deliveryChannel, setDeliveryChannel] = useState<'email' | 'panel'>('panel');
   const [timeLeft, setTimeLeft] = useState(
     Math.max(0, Math.round((challenge.expiresAt - Date.now()) / 1000))
   );
-  const [rollingToken, setRollingToken] = useState(getRollingBankToken());
+
+  // Solicitar desafío criptográfico real al servidor al abrir el modal
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch<{
+      challengeId: string;
+      expiresAt: number;
+      deliveryChannel: 'email' | 'panel';
+      otpCode?: string;
+    }>('/api/auth/admin/otp-challenge', {
+      method: 'POST',
+      body: { actionType: challenge.actionType },
+    })
+      .then((res) => {
+        if (cancelled || !res?.challengeId) return;
+        setServerChallengeId(res.challengeId);
+        setExpiresAtMs(res.expiresAt);
+        setDeliveryChannel(res.deliveryChannel);
+        setActiveOtpCode(res.otpCode || '');
+        setTimeLeft(Math.max(0, Math.round((res.expiresAt - Date.now()) / 1000)));
+      })
+      .catch(() => {
+        // Fallback diagnóstico local si se ejecuta offline
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [challenge.id, challenge.actionType]);
 
   useEffect(() => {
     const timer = setInterval(() => {
-      const remaining = Math.max(0, Math.round((challenge.expiresAt - Date.now()) / 1000));
+      const remaining = Math.max(0, Math.round((expiresAtMs - Date.now()) / 1000));
       setTimeLeft(remaining);
-      setRollingToken(getRollingBankToken());
     }, 1000);
     return () => clearInterval(timer);
-  }, [challenge]);
+  }, [expiresAtMs]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
     if (!inputCode.trim()) {
       setErrorMsg('Ingresa el código de 6 dígitos.');
+      return;
+    }
+
+    if (serverChallengeId) {
+      setIsVerifying(true);
+      try {
+        const res = await apiFetch<{ ok: boolean; stepUpToken: string }>(
+          '/api/auth/admin/otp-verify',
+          {
+            method: 'POST',
+            body: { challengeId: serverChallengeId, code: inputCode.trim() },
+          }
+        );
+        onSuccess(res.stepUpToken);
+      } catch (err: any) {
+        setErrorMsg(err?.message || 'Código OTP inválido o expirado.');
+      } finally {
+        setIsVerifying(false);
+      }
       return;
     }
 
@@ -55,12 +105,14 @@ export const SecurityOtpModal: React.FC<SecurityOtpModalProps> = ({
   };
 
   const handleUseQuickToken = () => {
-    // Rellenar directamente con el código temporal actual
-    setInputCode(challenge.otpCode);
+    if (activeOtpCode) {
+      setInputCode(activeOtpCode);
+    }
   };
 
-  const waUrl = getWhatsAppOtpDispatchUrl(adminPhone || '5214151234567', challenge);
-  const smsUrl = getSmsOtpDispatchUrl(adminPhone || '5214151234567', challenge);
+  const effectiveChallenge = { ...challenge, otpCode: activeOtpCode || challenge.otpCode };
+  const waUrl = getWhatsAppOtpDispatchUrl(adminPhone || '5214151234567', effectiveChallenge);
+  const smsUrl = getSmsOtpDispatchUrl(adminPhone || '5214151234567', effectiveChallenge);
   const backdropHandlers = useBackdropClose(true, onCancel);
 
   return (
@@ -131,19 +183,21 @@ export const SecurityOtpModal: React.FC<SecurityOtpModalProps> = ({
               Código de Seguridad RODO (Válido para esta acción)
             </div>
             <div className="text-3xl font-black tracking-widest text-emerald-400 font-mono py-1">
-              {challenge.otpCode}
+              {deliveryChannel === 'email' ? 'ENVIADO POR CORREO' : activeOtpCode || '••••••'}
             </div>
             <div className="flex items-center justify-center gap-2 mt-2">
               <span className="text-[11px] text-gray-400">
                 Expira en: <strong className="text-amber-400">{timeLeft}s</strong>
               </span>
-              <button
-                type="button"
-                onClick={handleUseQuickToken}
-                className="text-[10px] bg-emerald-700/60 hover:bg-emerald-600 text-emerald-100 px-2 py-0.5 rounded font-bold cursor-pointer"
-              >
-                Autocompletar
-              </button>
+              {deliveryChannel !== 'email' && activeOtpCode && (
+                <button
+                  type="button"
+                  onClick={handleUseQuickToken}
+                  className="text-[10px] bg-emerald-700/60 hover:bg-emerald-600 text-emerald-100 px-2 py-0.5 rounded font-bold cursor-pointer"
+                >
+                  Autocompletar
+                </button>
+              )}
             </div>
           </div>
 
@@ -180,11 +234,11 @@ export const SecurityOtpModal: React.FC<SecurityOtpModalProps> = ({
               </button>
               <button
                 type="submit"
-                disabled={timeLeft <= 0}
+                disabled={timeLeft <= 0 || isVerifying}
                 className="flex-1 py-2.5 px-4 text-xs font-bold text-white bg-[#ed0718] hover:bg-red-700 rounded-xl transition shadow-md flex items-center justify-center gap-1.5 disabled:opacity-50"
               >
                 <Check className="w-4 h-4" />
-                Confirmar Acción
+                {isVerifying ? 'Verificando...' : 'Confirmar Acción'}
               </button>
             </div>
           </form>

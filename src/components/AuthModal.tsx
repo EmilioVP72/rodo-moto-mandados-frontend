@@ -229,6 +229,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         return;
       }
 
+      if (cleanPass.length < 8) {
+        setErrorMsg('La contraseña debe tener al menos 8 caracteres.');
+        return;
+      }
+
       if (!ine10Digits.trim()) {
         setErrorMsg('⚠️ Para evitar fraudes y cancelaciones falsas, es obligatorio ingresar los 10 dígitos.');
         return;
@@ -403,8 +408,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setErrorMsg('Ingresa el código numérico de 6 dígitos.');
       return;
     }
-    if (!resetNewPassword.trim() || resetNewPassword.trim().length < 6) {
-      setErrorMsg('La nueva contraseña debe tener al menos 6 caracteres.');
+    if (!resetNewPassword.trim() || resetNewPassword.trim().length < 8) {
+      setErrorMsg('La nueva contraseña debe tener al menos 8 caracteres.');
       return;
     }
 
