@@ -115,6 +115,246 @@ export function computeOrderRoute(
   };
 }
 
+export interface AddressSearchSuggestion {
+  id: string;
+  label: string;
+  subtitle: string;
+  street: string;
+  streetNumber: string;
+  neighborhood: string;
+  lat: number;
+  lng: number;
+  source: 'coords' | 'osm' | 'colonia';
+}
+
+export interface DetailedReverseGeocode {
+  street: string;
+  streetNumber: string;
+  neighborhood: string;
+  displayName: string;
+}
+
+/**
+ * Normaliza texto para búsqueda insensible a acentos y mayúsculas.
+ */
+export function normalizeSearchText(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Extrae coordenadas lat/lng de un texto directo ("20.9144, -100.7437")
+ * o de enlaces compartidos de Google Maps, Apple Maps u OpenStreetMap.
+ */
+export function parseCoordinatesOrMapsUrl(rawInput: string): { lat: number; lng: number } | null {
+  const input = rawInput.trim();
+  if (!input) return null;
+
+  const isValidPair = (lat: number, lng: number) =>
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    Math.abs(lat) <= 90 &&
+    Math.abs(lng) <= 180 &&
+    !(lat === 0 && lng === 0);
+
+  const toResult = (latStr: string, lngStr: string) => {
+    const lat = Number(latStr);
+    const lng = Number(lngStr);
+    if (!isValidPair(lat, lng)) return null;
+    return { lat: Number(lat.toFixed(6)), lng: Number(lng.toFixed(6)) };
+  };
+
+  // 1. Coordenadas exactas del pin en URLs de Google Maps (!3dLAT!4dLNG)
+  const bangMatch = input.match(/!3d(-?\d{1,2}\.\d+)!4d(-?\d{1,3}\.\d+)/);
+  if (bangMatch) {
+    return toResult(bangMatch[1], bangMatch[2]);
+  }
+
+  // 2. Parámetros query (?q=lat,lng, ?query=lat,lng, ?ll=lat,lng, destination=lat,lng)
+  const queryMatch = input.match(
+    /[?&](?:q|query|ll|destination|center)=(-?\d{1,2}\.\d+)(?:%2C|,)\s*(-?\d{1,3}\.\d+)/i
+  );
+  if (queryMatch) {
+    return toResult(queryMatch[1], queryMatch[2]);
+  }
+
+  // 3. OpenStreetMap (?mlat=lat&mlon=lng o #map=zoom/lat/lng)
+  const osmParamMatch = input.match(/[?&]mlat=(-?\d{1,2}\.\d+)&mlon=(-?\d{1,3}\.\d+)/i);
+  if (osmParamMatch) {
+    return toResult(osmParamMatch[1], osmParamMatch[2]);
+  }
+  const osmHashMatch = input.match(/#map=\d+\/(-?\d{1,2}\.\d+)\/(-?\d{1,3}\.\d+)/i);
+  if (osmHashMatch) {
+    return toResult(osmHashMatch[1], osmHashMatch[2]);
+  }
+
+  // 4. Viewport de Google Maps (@lat,lng)
+  const atMatch = input.match(/@(-?\d{1,2}\.\d+),(-?\d{1,3}\.\d+)/);
+  if (atMatch) {
+    return toResult(atMatch[1], atMatch[2]);
+  }
+
+  // 5. Coordenadas pegadas directamente ("20.9144, -100.7437" o "20.9144 -100.7437")
+  const directMatch = input.match(/^\s*(-?\d{1,2}\.\d{3,})\s*[,\s]\s*(-?\d{1,3}\.\d{3,})\s*$/);
+  if (directMatch) {
+    return toResult(directMatch[1], directMatch[2]);
+  }
+
+  return null;
+}
+
+/**
+ * Busca direcciones y lugares en San Miguel de Allende usando el proxy con caché Redis
+ * del backend, con respaldo automático a Nominatim y soporte para enlaces de Google Maps.
+ */
+export async function searchSmaAddresses(
+  query: string,
+  signal?: AbortSignal
+): Promise<AddressSearchSuggestion[]> {
+  const cleaned = query.trim();
+  if (cleaned.length < 2) return [];
+
+  const parsedCoords = parseCoordinatesOrMapsUrl(cleaned);
+  if (parsedCoords) {
+    return [
+      {
+        id: `coords-${parsedCoords.lat}-${parsedCoords.lng}`,
+        label: `Ubicación exacta (${parsedCoords.lat.toFixed(5)}, ${parsedCoords.lng.toFixed(5)})`,
+        subtitle: 'Enlace o coordenadas detectadas',
+        street: '',
+        streetNumber: '',
+        neighborhood: '',
+        lat: parsedCoords.lat,
+        lng: parsedCoords.lng,
+        source: 'coords',
+      },
+    ];
+  }
+
+  try {
+    const apiRes = await fetch(
+      `/api/routing/search?q=${encodeURIComponent(cleaned)}&limit=6`,
+      {
+        headers: { Accept: 'application/json' },
+        signal,
+      }
+    );
+    if (apiRes.ok) {
+      const data = await apiRes.json();
+      if (Array.isArray(data?.results)) {
+        return data.results.map((item: any, idx: number) => ({
+          id: String(item.id || `api-${idx}`),
+          label: String(item.label || ''),
+          subtitle: String(item.subtitle || 'San Miguel de Allende'),
+          street: String(item.street || ''),
+          streetNumber: String(item.streetNumber || ''),
+          neighborhood: String(item.neighborhood || ''),
+          lat: Number(item.lat),
+          lng: Number(item.lng),
+          source: 'osm' as const,
+        }));
+      }
+    }
+  } catch (err: any) {
+    if (err?.name === 'AbortError') return [];
+  }
+
+  // Fallback directo a Nominatim (útil si se corre el frontend sin backend proxy)
+  try {
+    const qWithCity = /san\s+miguel/i.test(cleaned)
+      ? cleaned
+      : `${cleaned}, San Miguel de Allende, Guanajuato, Mexico`;
+    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5&countrycodes=mx&viewbox=-100.92,21.05,-100.55,20.76&bounded=1&q=${encodeURIComponent(
+      qWithCity
+    )}`;
+    const res = await fetch(url, {
+      headers: { 'Accept-Language': 'es-MX,es;q=0.9' },
+      signal,
+    });
+    if (!res.ok) return [];
+    const results = (await res.json()) as any[];
+    if (!Array.isArray(results)) return [];
+
+    return results
+      .map((item, idx): AddressSearchSuggestion | null => {
+        const lat = Number(item?.lat);
+        const lng = Number(item?.lon);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+        const addr = item?.address || {};
+        const street = addr.road || addr.pedestrian || addr.street || '';
+        const streetNumber = addr.house_number ? `#${addr.house_number}` : '';
+        const neighborhood = addr.neighbourhood || addr.suburb || addr.quarter || '';
+        const label =
+          street
+            ? `${street}${streetNumber ? ` ${streetNumber}` : ''}`
+            : item?.name || item?.display_name?.split(',')[0] || 'San Miguel de Allende';
+        return {
+          id: String(item?.place_id || `nom-${idx}`),
+          label,
+          subtitle: [neighborhood, 'San Miguel de Allende'].filter(Boolean).join(', '),
+          street: street || String(item?.name || ''),
+          streetNumber,
+          neighborhood,
+          lat: Number(lat.toFixed(6)),
+          lng: Number(lng.toFixed(6)),
+          source: 'osm',
+        };
+      })
+      .filter((x): x is AddressSearchSuggestion => x !== null);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Geocodificación inversa estructurada usando primero el proxy Redis del backend.
+ */
+export async function reverseGeocodeDetailed(
+  lat: number,
+  lng: number
+): Promise<DetailedReverseGeocode | null> {
+  try {
+    let data: any = null;
+    try {
+      const apiRes = await fetch(
+        `/api/routing/reverse-geocode?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}`,
+        { headers: { Accept: 'application/json' } }
+      );
+      if (apiRes.ok) {
+        data = await apiRes.json();
+      }
+    } catch {}
+
+    if (!data) {
+      const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
+      const res = await fetch(url, {
+        headers: { 'Accept-Language': 'es-MX,es;q=0.9' },
+      });
+      if (!res.ok) return null;
+      data = await res.json();
+    }
+
+    const addr = data?.address || {};
+    const street = addr.road || addr.pedestrian || addr.street || addr.path || '';
+    const streetNumber = addr.house_number ? `#${String(addr.house_number).replace(/^#/, '')}` : '';
+    const neighborhood =
+      addr.neighbourhood || addr.suburb || addr.quarter || addr.residential || '';
+
+    return {
+      street,
+      streetNumber,
+      neighborhood,
+      displayName: typeof data?.display_name === 'string' ? data.display_name : '',
+    };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Geocodificación inversa con detección precisa de calle y número
  * Si no aparece nombre en el mapa, no inventa nombres falsos.

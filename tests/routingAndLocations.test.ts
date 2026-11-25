@@ -8,6 +8,8 @@ import {
   estimateMotoDeliveryTime,
   computeOrderRoute,
   extractOsrmRoutePoints,
+  normalizeSearchText,
+  parseCoordinatesOrMapsUrl,
 } from '../src/services/routing.ts';
 import {
   ALL_SAN_MIGUEL_COLONIAS,
@@ -169,6 +171,42 @@ describe('Frontend Routing, Tariffs & San Miguel de Allende Geolocation Unit Tes
       assert.equal(expressTrip.baseCalculatedFee, 35);
       assert.equal(expressTrip.expressSurcharge, 25);
       assert.equal(expressTrip.totalFee, 60);
+    });
+  });
+
+  describe('7. parseCoordinatesOrMapsUrl & normalizeSearchText (Búsqueda Simplificada en Mapa)', () => {
+    it('extrae coordenadas exactas desde enlaces de Google Maps, OpenStreetMap y texto directo', () => {
+      assert.deepEqual(
+        parseCoordinatesOrMapsUrl('https://www.google.com/maps/search/?api=1&query=20.9078,-100.7512'),
+        { lat: 20.9078, lng: -100.7512 }
+      );
+      assert.deepEqual(
+        parseCoordinatesOrMapsUrl('https://www.google.com/maps/place/Parroquia/@20.9144,-100.7437,17z/data=!3m1!4b1!4m6!3m5!1s0x0!8m2!3d20.914123!4d-100.743512'),
+        { lat: 20.914123, lng: -100.743512 }
+      );
+      assert.deepEqual(
+        parseCoordinatesOrMapsUrl('https://www.google.com/maps/@20.915,-100.742,16z'),
+        { lat: 20.915, lng: -100.742 }
+      );
+      assert.deepEqual(
+        parseCoordinatesOrMapsUrl('https://www.openstreetmap.org/#map=17/20.9144/-100.7437'),
+        { lat: 20.9144, lng: -100.7437 }
+      );
+      assert.deepEqual(
+        parseCoordinatesOrMapsUrl('20.9205, -100.7380'),
+        { lat: 20.9205, lng: -100.738 }
+      );
+    });
+
+    it('retorna null para direcciones textuales o coordenadas fuera de rango', () => {
+      assert.equal(parseCoordinatesOrMapsUrl('Ancha de San Antonio #24'), null);
+      assert.equal(parseCoordinatesOrMapsUrl('95.1234, -100.7437'), null);
+      assert.equal(parseCoordinatesOrMapsUrl(''), null);
+    });
+
+    it('normaliza acentos, mayúsculas y espacios repetidos para búsqueda rápida de colonias', () => {
+      assert.equal(normalizeSearchText('  Malanquín   Club de Golf '), 'malanquin club de golf');
+      assert.equal(normalizeSearchText('San Antonio'), 'san antonio');
     });
   });
 });
