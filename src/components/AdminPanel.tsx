@@ -35,7 +35,6 @@ import {
 } from '../utils/localCodeGenerator';
 import { RiderDirectory } from './RiderDirectory';
 import { useRiderDirectory } from '../hooks/useRiderDirectory';
-import { availableDispatchRiders } from '../utils/riderDirectory';
 import { assignRiderToOrder, notifyCustomerArrival } from '../services/riders';
 import {
   dispatchRodoNotification,
@@ -241,7 +240,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [partnerLocals, setPartnerLocals] = useState<PartnerLocal[]>([]);
   const [restaurantSearchQuery, setRestaurantSearchQuery] = useState('');
   const directory = useRiderDirectory(true);
-  const whatsappRiders = availableDispatchRiders(directory.riders).slice(0, 2);
+  const allDirectoryRiders = [...directory.riders].sort((a, b) => {
+    const aAvail = a.available && a.status === 'activo' ? 0 : 1;
+    const bAvail = b.available && b.status === 'activo' ? 0 : 1;
+    if (aAvail !== bAvail) return aAvail - bAvail;
+    return a.name.localeCompare(b.name, 'es');
+  });
+  const [assigningOrderId, setAssigningOrderId] = useState<string | null>(null);
   const [feedbackNotice, setFeedbackNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [editingDishUrlItem, setEditingDishUrlItem] = useState<{ id: string; url: string } | null>(null);
 
@@ -978,25 +983,62 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
-  // Asignar repartidor automáticamente al compartir ticket por WhatsApp
-  const handleShareRiderFromCard = (
+  // Seleccionar o cambiar repartidor directamente desde la lista desplegable del pedido
+  const handleAssignRiderFromCard = async (order: Order, riderId: string): Promise<Order | null> => {
+    const rider = allDirectoryRiders.find((r) => r.id === riderId || r.userId === riderId) || null;
+    setAssigningOrderId(order.id);
+    try {
+      const updated = await assignRiderToOrder(order.id, { riderId: rider ? rider.id : null });
+      showFeedback(
+        rider
+          ? `Pedido ${order.folio} asignado a ${rider.name}.`
+          : `Se retiró el repartidor del pedido ${order.folio}.`
+      );
+      await onRefreshData();
+      return updated;
+    } catch (err: any) {
+      showFeedback(err?.message || 'No se pudo actualizar el repartidor.', 'error');
+      return null;
+    } finally {
+      setAssigningOrderId(null);
+    }
+  };
+
+  // Compartir ticket por WhatsApp al repartidor seleccionado (con enlace exclusivo firmado)
+  const handleShareRiderFromCard = async (
     order: Order,
     rider: { id: string; userId?: string | null; name: string; phone: string }
   ) => {
-    const link = generateWhatsAppLink(rider.phone, buildWhatsAppDispatchMessage(order, rider.name));
+    let activeOrder = order;
+    const alreadyAssigned =
+      (order.assignedRiderId && order.assignedRiderId === rider.id) ||
+      (order.assignedRiderUserId && order.assignedRiderUserId === rider.userId) ||
+      (order.assignedRiderName && order.assignedRiderName === rider.name);
+
+    if (!alreadyAssigned || !order.riderDispatchToken) {
+      const updated = await handleAssignRiderFromCard(order, rider.id);
+      if (updated) activeOrder = updated;
+    }
+
+    const msg = buildWhatsAppDispatchMessage(
+      activeOrder,
+      rider.name,
+      window.location.origin,
+      activeOrder.riderDispatchToken
+    );
+    const link = generateWhatsAppLink(rider.phone, msg);
     window.open(link, '_blank', 'noopener,noreferrer');
-    assignRiderToOrder(order.id, { riderId: rider.id })
-      .then(() => {
-        showFeedback(`Pedido ${order.folio} asignado a ${rider.name}.`);
-        return onRefreshData();
-      })
-      .catch((err: any) => {
-        showFeedback(err?.message || 'No se pudo asignar el repartidor.', 'error');
-      });
   };
 
   // Notificar al cliente que el repartidor está afuera (+10 minutos, push + timbre + vibración)
   const handleNotifyArrivalOutside = async (order: Order) => {
+    const hasRider = Boolean(
+      order.assignedRiderId || order.assignedRiderUserId || order.assignedRiderName
+    );
+    if (!hasRider) {
+      showFeedback('Primero asigna un repartidor al pedido antes de avisar que está afuera.', 'warning');
+      return;
+    }
     await notifyCustomerArrival(order.id);
     showFeedback(`Aviso de llegada enviado al cliente (${order.folio}).`);
     await onRefreshData();
@@ -1652,84 +1694,134 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         </div>
 
                         {/* Barra de Acciones Organizada y Clara */}
-                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={`text-xs font-black px-3 py-1.5 rounded-xl border ${
-                                order.assignedRiderName
-                                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
-                                  : 'bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 border-amber-200 dark:border-amber-800'
-                              }`}
-                            >
-                              {order.assignedRiderName ? `Asignado: ${order.assignedRiderName}` : 'Sin asignar'}
-                            </span>
-                          </div>
+                        {(() => {
+                          const matchedCardRider =
+                            allDirectoryRiders.find(
+                              (r) =>
+                                (order.assignedRiderId && r.id === order.assignedRiderId) ||
+                                (order.assignedRiderUserId && r.userId === order.assignedRiderUserId) ||
+                                (order.assignedRiderName && r.name === order.assignedRiderName)
+                            ) || null;
+                          const hasAssignedRider = Boolean(
+                            matchedCardRider ||
+                              order.assignedRiderId ||
+                              order.assignedRiderUserId ||
+                              order.assignedRiderName
+                          );
+                          const isOrderClosed = ['entregado', 'cancelado', 'cancelado_con_deuda'].includes(
+                            order.status
+                          );
+                          const isBusyAssigning = assigningOrderId === order.id;
 
-                          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                            {/* Acciones de Comunicación WhatsApp (asigna automáticamente al compartir) */}
-                            {whatsappRiders.map(rider => (
-                              <button
-                                key={rider.id}
-                                type="button"
-                                onClick={() => handleShareRiderFromCard(order, rider)}
-                                className={`rounded-xl border px-3 py-2 text-xs font-bold transition cursor-pointer ${
-                                  order.assignedRiderName === rider.name
-                                    ? 'bg-emerald-600 text-white border-emerald-700'
-                                    : 'border-emerald-300 text-emerald-800 hover:bg-emerald-50'
-                                }`}
-                              >
-                                WhatsApp · {rider.name}
-                              </button>
-                            ))}
+                          return (
+                            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
+                              {/* Lista desplegable con TODOS los repartidores para asignar o cambiar */}
+                              <div className="flex flex-wrap items-center gap-2 min-w-0">
+                                <select
+                                  aria-label={`Repartidor asignado para ${order.folio}`}
+                                  value={matchedCardRider?.id || ''}
+                                  disabled={isBusyAssigning || isOrderClosed}
+                                  onChange={(e) => void handleAssignRiderFromCard(order, e.target.value)}
+                                  className={`text-xs font-bold px-3 py-2 rounded-xl border outline-none transition cursor-pointer disabled:opacity-60 min-w-[200px] max-w-full ${
+                                    hasAssignedRider
+                                      ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 border-emerald-300 dark:border-emerald-700'
+                                      : 'bg-amber-50 dark:bg-amber-950/40 text-amber-950 dark:text-amber-200 border-amber-300 dark:border-amber-700'
+                                  }`}
+                                >
+                                  <option value="">
+                                    {isBusyAssigning ? 'Actualizando repartidor...' : 'Sin asignar (Elegir repartidor)'}
+                                  </option>
+                                  {allDirectoryRiders.map((rider) => {
+                                    const unavailable = !rider.available || rider.status !== 'activo';
+                                    const isCurrent = matchedCardRider?.id === rider.id;
+                                    return (
+                                      <option key={rider.id} value={rider.id} disabled={unavailable && !isCurrent}>
+                                        {rider.name}
+                                        {rider.phone ? ` · ${rider.phone}` : ''}
+                                        {unavailable ? ' (No disponible)' : ''}
+                                      </option>
+                                    );
+                                  })}
+                                </select>
 
-                            {!['entregado', 'cancelado', 'cancelado_con_deuda'].includes(order.status) && (
-                              <button
-                                type="button"
-                                onClick={() => handleNotifyArrivalOutside(order).catch(err => showFeedback(err.message, 'error'))}
-                                className={`text-xs py-2 px-3 rounded-xl font-bold flex items-center gap-1.5 transition cursor-pointer border ${
-                                  order.status === 'afuera_del_domicilio'
-                                    ? 'bg-red-600 text-white border-red-700'
-                                    : 'bg-red-50 dark:bg-red-950/50 hover:bg-red-600 text-red-700 dark:text-red-300 hover:text-white border-red-300 dark:border-red-800'
-                                }`}
-                                title="Avisar al cliente que el repartidor está afuera (10 min)"
-                              >
-                                <Bell className="w-3.5 h-3.5" />
-                                <span>{order.status === 'afuera_del_domicilio' ? 'Reenviar aviso' : 'Estoy afuera'}</span>
-                              </button>
-                            )}
+                                {matchedCardRider && (
+                                  <button
+                                    type="button"
+                                    disabled={isBusyAssigning}
+                                    onClick={() => void handleShareRiderFromCard(order, matchedCardRider)}
+                                    className="rounded-xl border border-emerald-700 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-60"
+                                    title={`Enviar ticket por WhatsApp a ${matchedCardRider.name}`}
+                                  >
+                                    <Send className="w-3.5 h-3.5" />
+                                    <span>WhatsApp · {matchedCardRider.name}</span>
+                                  </button>
+                                )}
+                              </div>
 
-                            {/* Acciones Operativas Principales */}
-                            <button
-                              type="button"
-                              onClick={() => setSelectedRouteOrder(order)}
-                              className="bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-600 text-blue-800 dark:text-blue-300 hover:text-white border border-blue-300 dark:border-blue-800 font-bold text-xs py-2 px-3 rounded-xl flex items-center gap-1.5 transition cursor-pointer"
-                              title="Ver ruta en mapa y compartir"
-                            >
-                              <MapPin className="w-3.5 h-3.5" />
-                              <span>Ruta</span>
-                            </button>
+                              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                                {!isOrderClosed && (
+                                  <button
+                                    type="button"
+                                    disabled={!hasAssignedRider || isBusyAssigning}
+                                    onClick={() =>
+                                      handleNotifyArrivalOutside(order).catch((err) =>
+                                        showFeedback(err.message, 'error')
+                                      )
+                                    }
+                                    className={`text-xs py-2 px-3 rounded-xl font-bold flex items-center gap-1.5 transition border ${
+                                      !hasAssignedRider
+                                        ? 'bg-gray-100 dark:bg-slate-800 text-gray-400 dark:text-slate-500 border-gray-200 dark:border-slate-700 cursor-not-allowed'
+                                        : order.status === 'afuera_del_domicilio'
+                                        ? 'bg-red-600 text-white border-red-700 cursor-pointer'
+                                        : 'bg-red-50 dark:bg-red-950/50 hover:bg-red-600 text-red-700 dark:text-red-300 hover:text-white border-red-300 dark:border-red-800 cursor-pointer'
+                                    }`}
+                                    title={
+                                      hasAssignedRider
+                                        ? 'Avisar al cliente que el repartidor está afuera (10 min)'
+                                        : 'Asigna un repartidor primero para poder avisar al cliente'
+                                    }
+                                  >
+                                    <Bell className="w-3.5 h-3.5" />
+                                    <span>
+                                      {order.status === 'afuera_del_domicilio' ? 'Reenviar aviso' : 'Estoy afuera'}
+                                    </span>
+                                  </button>
+                                )}
 
-                            <button
-                              type="button"
-                              onClick={() => onOpenTicket(order)}
-                              className="bg-[#0b1220] dark:bg-white hover:bg-black dark:hover:bg-slate-200 text-white dark:text-slate-900 font-black text-xs py-2 px-3.5 rounded-xl flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
-                            >
-                              <Receipt className="w-3.5 h-3.5 text-[#ed0718]" />
-                              <span>Ticket</span>
-                            </button>
+                                {/* Acciones Operativas Principales */}
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedRouteOrder(order)}
+                                  className="bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-600 text-blue-800 dark:text-blue-300 hover:text-white border border-blue-300 dark:border-blue-800 font-bold text-xs py-2 px-3 rounded-xl flex items-center gap-1.5 transition cursor-pointer"
+                                  title="Ver ruta en mapa y compartir"
+                                >
+                                  <MapPin className="w-3.5 h-3.5" />
+                                  <span>Ruta</span>
+                                </button>
 
-                            {order.status !== 'cancelado' && order.status !== 'cancelado_con_deuda' && (
-                              <button
-                                type="button"
-                                onClick={() => handleCancelWithOtp(order)}
-                                className="text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50 p-2 rounded-xl border border-transparent hover:border-red-200 transition cursor-pointer"
-                                title="Cancelar orden (Requiere OTP)"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            )}
-                          </div>
-                        </div>
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenTicket(order)}
+                                  className="bg-[#0b1220] dark:bg-white hover:bg-black dark:hover:bg-slate-200 text-white dark:text-slate-900 font-black text-xs py-2 px-3.5 rounded-xl flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+                                >
+                                  <Receipt className="w-3.5 h-3.5 text-[#ed0718]" />
+                                  <span>Ticket</span>
+                                </button>
+
+                                {order.status !== 'cancelado' && order.status !== 'cancelado_con_deuda' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCancelWithOtp(order)}
+                                    className="text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50 p-2 rounded-xl border border-transparent hover:border-red-200 transition cursor-pointer"
+                                    title="Cancelar orden (Requiere OTP)"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()}
 
                         {/* Aviso en curso si el repartidor ya notificó estar afuera */}
                         {order.status === 'afuera_del_domicilio' && (

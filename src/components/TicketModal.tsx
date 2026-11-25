@@ -464,8 +464,13 @@ _RODO Moto Mandados · Despacho San Miguel_`;
     window.open(link, '_blank', 'noopener,noreferrer');
   };
 
-  // Notificar al cliente en tiempo real que el repartidor está afuera (sonido + vibración + notificación + 10 min)
-  const canNotifyOutside = !['entregado', 'cancelado', 'cancelado_con_deuda'].includes(order.status);
+  // Notificar al cliente en tiempo real que el repartidor está afuera (requiere repartidor asignado)
+  const hasAssignedRider = Boolean(
+    order.assignedRiderId || order.assignedRiderUserId || order.assignedRiderName
+  );
+  const canNotifyOutside =
+    hasAssignedRider &&
+    !['entregado', 'cancelado', 'cancelado_con_deuda'].includes(order.status);
   const handleNotifyOutside = async () => {
     if (notifyingOutside || !canNotifyOutside) return;
     setNotifyingOutside(true);
@@ -811,11 +816,18 @@ _RODO Moto Mandados · Despacho San Miguel_`;
                 type="button"
                 disabled={!canNotifyOutside || notifyingOutside}
                 onClick={() => void handleNotifyOutside()}
-                className="flex-1 bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-extrabold text-xs py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 shadow-sm transition cursor-pointer"
+                title={
+                  hasAssignedRider
+                    ? 'Avisar al cliente que el repartidor está afuera (10 min)'
+                    : 'Asigna un repartidor primero para poder avisar al cliente'
+                }
+                className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-gray-300 disabled:text-gray-600 disabled:cursor-not-allowed text-white font-extrabold text-xs py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 shadow-sm transition cursor-pointer"
               >
                 <Bell className="w-4 h-4 shrink-0" />
                 <span>
-                  {notifyingOutside
+                  {!hasAssignedRider
+                    ? 'Asigna un repartidor para avisar que está afuera'
+                    : notifyingOutside
                     ? 'Enviando aviso...'
                     : order.status === 'afuera_del_domicilio'
                     ? 'Reenviar aviso: ¡Estoy afuera! (10 min)'
