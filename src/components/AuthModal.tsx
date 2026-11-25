@@ -91,7 +91,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const [blockedAccountInfo, setBlockedAccountInfo] = useState<CustomerAccount | null>(null);
+  const [blockedAccountInfo, setBlockedAccountInfo] = useState<{
+    pendingDebt: number;
+    debtOrderFolio?: string | null;
+    debtReason?: string | null;
+  } | null>(null);
 
   const resetAllFields = () => {
     setIsRegister(false);
@@ -285,9 +289,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       } catch (err: any) {
         if (err instanceof ApiHttpError) {
           setErrorMsg(err.message);
-          if (err.data?.blockedAccount) {
-            setBlockedAccountInfo(err.data.blockedAccount);
-          }
           setIsLoading(false);
           return;
         }
@@ -346,8 +347,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     } catch (err: any) {
       if (err instanceof ApiHttpError) {
         setErrorMsg(err.message);
-        if (err.data?.blockedAccount) {
-          setBlockedAccountInfo(err.data.blockedAccount);
+        if (err.data?.debtSummary) {
+          setBlockedAccountInfo(err.data.debtSummary);
         }
         setIsLoading(false);
         return;
@@ -557,9 +558,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
           {blockedAccountInfo && (
             <div className="bg-amber-50 border border-amber-300 p-3.5 rounded-2xl text-xs space-y-1 text-left text-amber-950">
-              <strong className="block font-black text-red-700">⚠️ Registro Bloqueado por Deuda Activa:</strong>
-              <p>Titular registrado: <b>{blockedAccountInfo.name}</b></p>
-              <p>Monto pendiente: <b>${blockedAccountInfo.pendingDebt.toFixed(2)} MXN</b></p>
+              <strong className="block font-black text-red-700">Restricción por Adeudo Pendiente:</strong>
+              <p>Monto pendiente: <b>${Number(blockedAccountInfo.pendingDebt || 0).toFixed(2)} MXN</b></p>
+              {blockedAccountInfo.debtOrderFolio && (
+                <p>Folio: <b>{blockedAccountInfo.debtOrderFolio}</b></p>
+              )}
               {blockedAccountInfo.debtReason && (
                 <p className="text-[11px] text-gray-700">Causa: {blockedAccountInfo.debtReason}</p>
               )}
