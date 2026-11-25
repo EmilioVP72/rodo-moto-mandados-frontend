@@ -206,6 +206,6 @@ export async function uploadOrderProofToStorage(
   return await uploadImageToBackend(
     dataUrl,
     kind === 'signature' ? 'signatures' : 'proofs',
-    `${orderId}_${kind}`
+    orderId
   );
 }
