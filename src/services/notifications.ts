@@ -310,8 +310,8 @@ export function buildOrderNotificationForViewer(params: {
 
   if (order.status === 'en_preparacion') {
     return {
-      title: 'Tu pedido está en preparación',
-      message: `${order.restaurantName || 'El establecimiento'} ya está preparando tu orden #${order.folio}.`,
+      title: 'Tu pedido está en cocina',
+      message: `${order.restaurantName || 'El restaurante'} ya está preparando tu orden #${order.folio}.`,
       type: 'info',
       audience: 'customer',
       orderId: order.id,
@@ -321,8 +321,8 @@ export function buildOrderNotificationForViewer(params: {
 
   if (order.status === 'recolectado' || order.status === 'asignado') {
     return {
-      title: 'Repartidor asignado a tu pedido',
-      message: `Tu pedido en ${order.restaurantName || 'el local'} ya tiene repartidor asignado. Folio #${order.folio}.`,
+      title: 'Pedido recibido por el repartidor',
+      message: `Tu pedido en ${order.restaurantName || 'el local'} ya fue recibido por el repartidor. Folio #${order.folio}.`,
       type: 'info',
       audience: 'customer',
       orderId: order.id,
@@ -332,7 +332,7 @@ export function buildOrderNotificationForViewer(params: {
 
   if (order.status === 'en_camino') {
     return {
-      title: 'Tu repartidor va en camino',
+      title: 'Tu pedido va en camino',
       message: `Tu pedido #${order.folio} va en ruta hacia tu domicilio en San Miguel de Allende.`,
       type: 'info',
       audience: 'customer',
@@ -355,8 +355,8 @@ export function buildOrderNotificationForViewer(params: {
 
   if (order.status === 'entregado') {
     return {
-      title: 'Pedido entregado',
-      message: `Tu pedido #${order.folio} fue entregado. ¡Buen provecho!`,
+      title: 'Pedido completado',
+      message: `Tu pedido #${order.folio} fue completado. ¡Buen provecho!`,
       type: 'success',
       audience: 'customer',
       orderId: order.id,

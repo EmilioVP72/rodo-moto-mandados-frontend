@@ -76,3 +76,31 @@ export async function notifyCustomerArrival(orderId: string): Promise<Order> {
   applyConfirmedOrderUpdate(updated);
   return updated;
 }
+
+export type RestaurantTrackingStatus = 'recibido' | 'en_cocina' | 'en_camino' | 'completado';
+
+export async function fetchRiderTicketByToken(
+  folio: string,
+  token: string
+): Promise<{ order: Order; canUpdateRestaurantStatus: boolean }> {
+  return apiFetch<{ order: Order; canUpdateRestaurantStatus: boolean }>(
+    `/api/orders/rider-ticket/${encodeURIComponent(folio)}?token=${encodeURIComponent(token)}`
+  );
+}
+
+export async function updateRestaurantStatusByRider(
+  orderId: string,
+  status: RestaurantTrackingStatus,
+  token?: string
+): Promise<{ order: Order; trackingStatus: RestaurantTrackingStatus; statusLabel: string }> {
+  const res = await apiFetch<{
+    order: Order;
+    trackingStatus: RestaurantTrackingStatus;
+    statusLabel: string;
+  }>(`/api/orders/rider-ticket/${encodeURIComponent(orderId)}/status`, {
+    method: 'POST',
+    body: { status, ...(token ? { token } : {}) },
+  });
+  applyConfirmedOrderUpdate(res.order);
+  return res;
+}

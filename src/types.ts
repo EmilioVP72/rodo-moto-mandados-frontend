@@ -231,6 +231,13 @@ export interface Order {
   
   // Estados con llegada afuera del domicilio y cotización
   status: 'nuevo' | 'en_preparacion' | 'asignado' | 'recolectado' | 'en_camino' | 'afuera_del_domicilio' | 'entregado' | 'cancelado' | 'cancelado_con_deuda' | 'pendiente_cotizacion';
+
+  // Seguimiento exclusivo del repartidor para tickets de restaurantes
+  restaurantTrackingStatus?: 'recibido' | 'en_cocina' | 'en_camino' | 'completado';
+  restaurantStatusUpdatedAt?: string;
+  restaurantStatusUpdatedBy?: string;
+  /** Token firmado (solo expuesto a Admin) para generar el enlace exclusivo del repartidor */
+  riderDispatchToken?: string;
   
   // Notificación de repartidor afuera y cuenta regresiva de 10 minutos:
   arrivalNotifiedAt?: string;

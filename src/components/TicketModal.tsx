@@ -42,26 +42,75 @@ import { vibrateSuccess } from '../utils/haptics';
 import { useLanguage } from '../utils/i18n';
 import { availableDispatchRiders } from '../utils/riderDirectory';
 import { useRiderDirectory } from '../hooks/useRiderDirectory';
-import { assignRiderToOrder, notifyCustomerArrival } from '../services/riders';
+import {
+  assignRiderToOrder,
+  notifyCustomerArrival,
+  RestaurantTrackingStatus,
+  updateRestaurantStatusByRider,
+} from '../services/riders';
 import { useBackdropClose } from '../utils/modalBackdrop';
 import { showSystemToast } from './SystemDialogHost';
+
+const RESTAURANT_STATUS_STEPS: Array<{ key: RestaurantTrackingStatus; label: string }> = [
+  { key: 'recibido', label: 'Recibido' },
+  { key: 'en_cocina', label: 'En cocina' },
+  { key: 'en_camino', label: 'En camino' },
+  { key: 'completado', label: 'Completado' },
+];
+
+function isRestaurantTicketOrder(order: Pick<Order, 'orderType'>): boolean {
+  return !order.orderType || order.orderType === 'comida' || order.orderType === 'pedido_personalizado';
+}
+
+function resolveRestaurantTrackingStep(order: Order): RestaurantTrackingStatus | null {
+  if (order.restaurantTrackingStatus) return order.restaurantTrackingStatus;
+  if (order.status === 'entregado') return 'completado';
+  if (order.status === 'en_camino' || order.status === 'afuera_del_domicilio') return 'en_camino';
+  if (order.status === 'en_preparacion') return 'en_cocina';
+  if (order.status === 'asignado' || order.status === 'recolectado') return 'recibido';
+  return null;
+}
 
 interface TicketModalProps {
   order: Order | null;
   settings: DispatchSettings;
   onClose: () => void;
   isAdmin?: boolean;
+  riderToken?: string | null;
+  isRiderMode?: boolean;
+  onOrderUpdated?: (updated: Order) => void;
   onShowToast?: (msg: string) => void;
 }
 
 export const TicketModal: React.FC<TicketModalProps> = ({
-  order,
+  order: initialOrder,
   settings,
   onClose,
   isAdmin = false,
+  riderToken = null,
+  isRiderMode = false,
+  onOrderUpdated,
   onShowToast,
 }) => {
   const { t } = useLanguage();
+  const [order, setLocalOrder] = useState<Order | null>(initialOrder);
+  useEffect(() => {
+    setLocalOrder((prev) => {
+      if (!initialOrder) return null;
+      if (
+        prev &&
+        prev.id === initialOrder.id &&
+        !initialOrder.riderDispatchToken &&
+        prev.riderDispatchToken &&
+        prev.assignedRiderId === initialOrder.assignedRiderId &&
+        prev.assignedRiderName === initialOrder.assignedRiderName
+      ) {
+        return { ...initialOrder, riderDispatchToken: prev.riderDispatchToken };
+      }
+      return initialOrder;
+    });
+  }, [initialOrder]);
+
   const directory = useRiderDirectory(isAdmin && !!order);
   const backdropHandlers = useBackdropClose(!!order, onClose);
   const [copied, setCopied] = useState(false);
@@ -70,6 +119,7 @@ export const TicketModal: React.FC<TicketModalProps> = ({
   );
   const [assigningRider, setAssigningRider] = useState(false);
   const [notifyingOutside, setNotifyingOutside] = useState(false);
+  const [updatingRiderStatus, setUpdatingRiderStatus] = useState<RestaurantTrackingStatus | null>(null);
 
   useEffect(() => {
     const matched = directory.riders.find(
@@ -105,7 +155,6 @@ export const TicketModal: React.FC<TicketModalProps> = ({
   const [isSubmittingRating, setIsSubmittingRating] = useState(false);
   const [ratingSaved, setRatingSaved] = useState(!!(order?.rating || order?.riderRating));
   const [receptionConfirmed, setReceptionConfirmed] = useState(!!order?.receptionConfirmed);
-  const [isConfirmingReceived, setIsConfirmingReceived] = useState(false);
 
   // Firma digital simple o foto de evidencia de entrega
   const [showSignaturePanel, setShowSignaturePanel] = useState(false);
@@ -140,26 +189,23 @@ export const TicketModal: React.FC<TicketModalProps> = ({
 
 
 
-  const handleConfirmReceivedByCustomer = async () => {
-    if (!order) return;
-    setIsConfirmingReceived(true);
+  const handleRiderRestaurantStatusUpdate = async (nextStatus: RestaurantTrackingStatus) => {
+    if (!order || updatingRiderStatus) return;
+    setUpdatingRiderStatus(nextStatus);
     try {
-      const now = new Date().toISOString();
-      await updateOrderInDb(order.id, {
-        status: 'entregado',
-        receptionConfirmed: true,
-        receptionConfirmedAt: now,
-      });
-      setReceptionConfirmed(true);
+      const res = await updateRestaurantStatusByRider(order.id, nextStatus, riderToken || undefined);
+      setLocalOrder(res.order);
+      onOrderUpdated?.(res.order);
       vibrateSuccess();
-      onShowToast?.('¡Recepción confirmada con éxito! Gracias por usar RODO.');
-      dispatchIntegrationEvent('order.status_changed', {
-        order: { ...order, status: 'entregado', receptionConfirmed: true },
-      });
-    } catch (err) {
-      console.error('Error confirmando recepción del pedido:', err);
+      const msg = `Estatus actualizado a "${res.statusLabel}". Cliente notificado.`;
+      onShowToast?.(msg);
+      showSystemToast({ message: msg, tone: 'success' });
+    } catch (error: any) {
+      const msg = error?.message || 'No se pudo actualizar el estatus del pedido.';
+      onShowToast?.(msg);
+      showSystemToast({ message: msg, tone: 'error' });
     } finally {
-      setIsConfirmingReceived(false);
+      setUpdatingRiderStatus(null);
     }
   };
 
@@ -257,12 +303,8 @@ export const TicketModal: React.FC<TicketModalProps> = ({
         deliveryProofPhotoUrl: photoUrl || undefined,
         deliveryConfirmedBySignature: true,
         deliverySignatureAt: now,
-        status: 'entregado',
-        receptionConfirmed: true,
-        receptionConfirmedAt: order.receptionConfirmedAt || now,
       });
       setProofSavedBanner(true);
-      setReceptionConfirmed(true);
       setShowSignaturePanel(false);
       vibrateSuccess();
       onShowToast?.('¡Comprobante de entrega guardado exitosamente!');
@@ -325,9 +367,30 @@ export const TicketModal: React.FC<TicketModalProps> = ({
   const isTransfer = order.paymentMethod === 'transferencia';
   const isVerified = order.paymentStatus === 'verificado';
 
+  const allDirectoryRiders = [...directory.riders].sort((a, b) => {
+    const aAvail = a.available && a.status === 'activo' ? 0 : 1;
+    const bAvail = b.available && b.status === 'activo' ? 0 : 1;
+    if (aAvail !== bAvail) return aAvail - bAvail;
+    return a.name.localeCompare(b.name, 'es');
+  });
   const dispatchRiders = availableDispatchRiders(directory.riders);
-  const primaryRider = dispatchRiders[0] || { name: settings.defaultRider1Name, phone: settings.defaultRider1Phone };
+  const selectedDirectoryRider =
+    allDirectoryRiders.find(
+      (r) =>
+        (selectedRiderKey && (r.id === selectedRiderKey || r.userId === selectedRiderKey)) ||
+        (order.assignedRiderId && r.id === order.assignedRiderId) ||
+        (order.assignedRiderUserId && r.userId === order.assignedRiderUserId) ||
+        (order.assignedRiderName && r.name === order.assignedRiderName)
+    ) || null;
+  const primaryRider = selectedDirectoryRider ||
+    dispatchRiders[0] || { name: settings.defaultRider1Name, phone: settings.defaultRider1Phone };
   const messageRider1 = buildWhatsAppDispatchMessage(order, primaryRider.name);
+  const isRestaurantTicket = isRestaurantTicketOrder(order);
+  const currentTrackingStep = resolveRestaurantTrackingStep(order);
+  const currentTrackingIdx = currentTrackingStep
+    ? RESTAURANT_STATUS_STEPS.findIndex((s) => s.key === currentTrackingStep)
+    : -1;
+  const canRiderUpdateRestaurantStatus = Boolean(isRiderMode && !isAdmin && isRestaurantTicket);
 
   // Mensaje directo al cliente avisando que el repartidor está afuera
   const customerArrivalMsg = `🚨 *RODO MOTO MANDADOS · ¡TU REPARTIDOR ESTÁ AFUERA!* 🏍️💨
@@ -352,29 +415,53 @@ _RODO Moto Mandados · Despacho San Miguel_`;
     window.print();
   };
 
-  const handleRiderAssignment = async (riderId: string) => {
-    const rider = dispatchRiders.find((candidate) => candidate.id === riderId || candidate.userId === riderId);
+  const handleRiderAssignment = async (riderId: string): Promise<Order | null> => {
+    const rider = allDirectoryRiders.find(
+      (candidate) => candidate.id === riderId || candidate.userId === riderId
+    );
     setAssigningRider(true);
     try {
-      await assignRiderToOrder(order.id, { riderId: rider ? rider.id : null });
+      const updated = await assignRiderToOrder(order.id, { riderId: rider ? rider.id : null });
+      setLocalOrder(updated);
+      onOrderUpdated?.(updated);
       setSelectedRiderKey(rider ? rider.id : '');
       const msg = rider ? `Pedido asignado a ${rider.name}.` : 'Se retiró la asignación del pedido.';
       onShowToast?.(msg);
       showSystemToast({ message: msg, tone: 'success' });
+      return updated;
     } catch (error: any) {
       const msg = error?.message || 'No se pudo asignar el repartidor.';
       onShowToast?.(msg);
       showSystemToast({ message: msg, tone: 'error' });
+      return null;
     } finally {
       setAssigningRider(false);
     }
   };
 
-  const handleShareToRiderWhatsApp = (rider: { id: string; userId?: string | null; name: string; phone: string }) => {
-    const msg = buildWhatsAppDispatchMessage(order, rider.name);
-    const link = generateWhatsAppLink(rider.phone, msg);
+  const handleShareToSelectedRiderWhatsApp = async () => {
+    if (!selectedDirectoryRider) {
+      showSystemToast({ message: 'Primero selecciona un repartidor de la lista.', tone: 'warning' });
+      return;
+    }
+    let activeOrder = order;
+    const alreadyAssigned =
+      (order.assignedRiderId && order.assignedRiderId === selectedDirectoryRider.id) ||
+      (order.assignedRiderUserId && order.assignedRiderUserId === selectedDirectoryRider.userId) ||
+      (order.assignedRiderName && order.assignedRiderName === selectedDirectoryRider.name);
+
+    if (!alreadyAssigned || !order.riderDispatchToken) {
+      const updated = await handleRiderAssignment(selectedDirectoryRider.id);
+      if (updated) activeOrder = updated;
+    }
+    const msg = buildWhatsAppDispatchMessage(
+      activeOrder,
+      selectedDirectoryRider.name,
+      window.location.origin,
+      activeOrder.riderDispatchToken
+    );
+    const link = generateWhatsAppLink(selectedDirectoryRider.phone, msg);
     window.open(link, '_blank', 'noopener,noreferrer');
-    void handleRiderAssignment(rider.id);
   };
 
   // Notificar al cliente en tiempo real que el repartidor está afuera (sonido + vibración + notificación + 10 min)
@@ -513,22 +600,135 @@ _RODO Moto Mandados · Despacho San Miguel_`;
           </div>
         )}
 
-        {/* CANAL OFICIAL DE ATENCIÓN CON EL PEDIDO */}
-        <div className="bg-emerald-50 border-b border-emerald-200 p-3 px-4 flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            <span className="text-xs font-black text-emerald-950 block">¿Dudas con tu pedido?</span>
-            <span className="text-[11px] text-emerald-800 font-medium">Soporte por WhatsApp</span>
+        {/* CANAL OFICIAL DE ATENCIÓN CON EL PEDIDO (solo cliente/admin) */}
+        {!isRiderMode && (
+          <div className="bg-emerald-50 border-b border-emerald-200 p-3 px-4 flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <span className="text-xs font-black text-emerald-950 block">¿Dudas con tu pedido?</span>
+              <span className="text-[11px] text-emerald-800 font-medium">Soporte por WhatsApp</span>
+            </div>
+            <a
+              href={`https://api.whatsapp.com/send/?phone=524151019920&text=${encodeURIComponent(`Hola RODO Moto Mandados, necesito ayuda con mi pedido Folio: ${order.folio}`)}`}
+              target="_blank"
+              rel="noreferrer"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2 px-3.5 rounded-xl shadow-xs transition flex items-center gap-1.5 shrink-0"
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span>WhatsApp</span>
+            </a>
           </div>
-          <a
-            href={`https://api.whatsapp.com/send/?phone=524151019920&text=${encodeURIComponent(`Hola RODO Moto Mandados, necesito ayuda con mi pedido Folio: ${order.folio}`)}`}
-            target="_blank"
-            rel="noreferrer"
-            className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2 px-3.5 rounded-xl shadow-xs transition flex items-center gap-1.5 shrink-0"
+        )}
+
+        {/* ESTATUS DEL PEDIDO DE RESTAURANTE (Actualización exclusiva del repartidor; solo lectura para cliente y admin) */}
+        {isRestaurantTicket && !['cancelado', 'cancelado_con_deuda'].includes(order.status) && (
+          <div
+            className={`border-b p-3.5 sm:p-4 space-y-2.5 ${
+              canRiderUpdateRestaurantStatus
+                ? 'bg-[#101b29] text-white border-slate-800'
+                : 'bg-slate-50 text-gray-900 border-slate-200'
+            }`}
           >
-            <Send className="w-3.5 h-3.5" />
-            <span>WhatsApp</span>
-          </a>
-        </div>
+            <div className="flex items-center justify-between gap-2">
+              <span
+                className={`text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5 ${
+                  canRiderUpdateRestaurantStatus ? 'text-amber-300' : 'text-gray-700'
+                }`}
+              >
+                <Bike className="w-3.5 h-3.5 text-[#ed0718]" />
+                {canRiderUpdateRestaurantStatus
+                  ? 'Panel del Repartidor · Actualizar Estatus'
+                  : 'Seguimiento del Pedido'}
+              </span>
+              {currentTrackingStep && (
+                <span
+                  className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
+                    currentTrackingStep === 'completado'
+                      ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-500/40'
+                      : canRiderUpdateRestaurantStatus
+                      ? 'bg-white/10 text-white border border-white/20'
+                      : 'bg-red-50 text-[#ed0718] border border-red-200'
+                  }`}
+                >
+                  {RESTAURANT_STATUS_STEPS.find((s) => s.key === currentTrackingStep)?.label}
+                </span>
+              )}
+            </div>
+
+            {canRiderUpdateRestaurantStatus ? (
+              <div className="space-y-2">
+                <p className="text-[11px] text-gray-300">
+                  Cada cambio envía notificación automática al cliente.
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {RESTAURANT_STATUS_STEPS.map((step, idx) => {
+                    const isCompleted = currentTrackingIdx >= idx;
+                    const isCurrent = currentTrackingIdx === idx;
+                    const isDisabled =
+                      updatingRiderStatus !== null ||
+                      isCompleted ||
+                      order.status === 'entregado';
+                    const isLoadingThis = updatingRiderStatus === step.key;
+
+                    return (
+                      <button
+                        key={step.key}
+                        type="button"
+                        disabled={isDisabled}
+                        onClick={() => void handleRiderRestaurantStatusUpdate(step.key)}
+                        className={`py-2.5 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                          isCompleted
+                            ? isCurrent
+                              ? 'bg-emerald-600 text-white ring-2 ring-emerald-300'
+                              : 'bg-emerald-900/60 text-emerald-200 border border-emerald-700/60'
+                            : 'bg-white text-[#101b29] hover:bg-amber-300 active:scale-98 shadow-sm disabled:opacity-50'
+                        }`}
+                      >
+                        {isCompleted ? (
+                          <CheckCircle2 className="w-4 h-4 shrink-0" />
+                        ) : (
+                          <span className="w-4 h-4 rounded-full bg-[#ed0718] text-white text-[10px] flex items-center justify-center shrink-0">
+                            {idx + 1}
+                          </span>
+                        )}
+                        <span>{isLoadingThis ? 'Enviando...' : step.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-4 gap-1.5">
+                {RESTAURANT_STATUS_STEPS.map((step, idx) => {
+                  const isDone = currentTrackingIdx >= idx;
+                  const isActive = currentTrackingIdx === idx;
+                  return (
+                    <div
+                      key={step.key}
+                      className={`rounded-xl px-1.5 py-2 text-center border transition ${
+                        isActive
+                          ? 'bg-[#ed0718] text-white border-[#ed0718] shadow-xs'
+                          : isDone
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                          : 'bg-white text-gray-400 border-gray-200'
+                      }`}
+                    >
+                      <div className="flex items-center justify-center mb-0.5">
+                        {isDone ? (
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                        ) : (
+                          <span className="text-[10px] font-black">{idx + 1}</span>
+                        )}
+                      </div>
+                      <span className="block text-[10px] font-extrabold leading-tight">
+                        {step.label}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Acciones de WhatsApp directas para Administrador */}
         {isAdmin && (
@@ -567,52 +767,43 @@ _RODO Moto Mandados · Despacho San Miguel_`;
               </p>
             )}
             <label className="block text-[11px] font-bold text-amber-950">
-              Repartidor asignado
+              Seleccionar / cambiar repartidor ({allDirectoryRiders.length} registrados)
               <select
                 value={selectedRiderKey}
                 disabled={assigningRider}
                 onChange={(event) => void handleRiderAssignment(event.target.value)}
-                className="mt-1 w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm text-gray-900"
+                className="mt-1 w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
               >
                 <option value="">Sin asignar</option>
-                {dispatchRiders.map((rider) => (
-                  <option key={rider.id} value={rider.id}>
-                    {rider.name} · {rider.phone}
-                  </option>
-                ))}
+                {allDirectoryRiders.map((rider) => {
+                  const unavailable = !rider.available || rider.status !== 'activo';
+                  const isCurrent = selectedRiderKey === rider.id;
+                  return (
+                    <option key={rider.id} value={rider.id} disabled={unavailable && !isCurrent}>
+                      {rider.name}
+                      {rider.phone ? ` · ${rider.phone}` : ''}
+                      {unavailable ? ' (No disponible)' : ''}
+                    </option>
+                  );
+                })}
               </select>
             </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
-              {dispatchRiders.map((rider, idx) => {
-                const isAssignedToThis =
-                  (selectedRiderKey && selectedRiderKey === rider.id) ||
-                  (order.assignedRiderName && order.assignedRiderName === rider.name);
-                return (
-                  <button
-                    key={rider.id || idx}
-                    type="button"
-                    disabled={assigningRider}
-                    onClick={() => handleShareToRiderWhatsApp(rider)}
-                    className={`font-bold text-xs py-2 px-3 rounded-xl flex items-center justify-between gap-2 shadow-xs transition cursor-pointer ${
-                      isAssignedToThis
-                        ? 'bg-emerald-800 hover:bg-emerald-900 text-white ring-2 ring-emerald-400'
-                        : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                    }`}
-                    title={`Enviar ticket y asignar a ${rider.name} (${rider.phone})`}
-                  >
-                    <span className="flex items-center gap-1.5 min-w-0">
-                      <Send className="w-3.5 h-3.5 shrink-0" />
-                      <span className="truncate">{rider.name}</span>
-                    </span>
-                    {isAssignedToThis && (
-                      <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded-full shrink-0">
-                        Asignado
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+
+            <button
+              type="button"
+              disabled={!selectedDirectoryRider || assigningRider}
+              onClick={() => void handleShareToSelectedRiderWhatsApp()}
+              className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 disabled:text-gray-600 text-white font-black text-xs py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 shadow-xs transition cursor-pointer"
+            >
+              <Send className="w-4 h-4 shrink-0" />
+              <span>
+                {assigningRider
+                  ? 'Actualizando repartidor...'
+                  : selectedDirectoryRider
+                  ? `Enviar ticket por WhatsApp a ${selectedDirectoryRider.name}`
+                  : 'Selecciona un repartidor para enviar por WhatsApp'}
+              </span>
+            </button>
 
             {/* Botón para notificar al cliente que el repartidor está afuera */}
             <div className="flex flex-col sm:flex-row gap-2 pt-0.5">
@@ -973,22 +1164,10 @@ _RODO Moto Mandados · Despacho San Miguel_`;
               </div>
             )}
 
-            {/* Botones de Confirmación de Recepción (Cliente) y Confirmar Firma / Foto de Entrega (Repartidor) */}
-            {(['asignado', 'recolectado', 'en_camino', 'afuera_del_domicilio', 'entregado'] as string[]).includes(order.status) && (
+            {/* Evidencia de Firma / Foto de Entrega */}
+            {!isRiderMode && (['asignado', 'recolectado', 'en_camino', 'afuera_del_domicilio', 'entregado'] as string[]).includes(order.status) && (
               <div className="my-3 bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-2.5 text-left">
                 <div className="flex flex-wrap gap-2">
-                  {order.status === 'afuera_del_domicilio' && (
-                    <button
-                      type="button"
-                      onClick={handleConfirmReceivedByCustomer}
-                      disabled={isConfirmingReceived}
-                      className="flex-1 min-w-[160px] bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white font-black text-xs py-2.5 px-3 rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60"
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>{isConfirmingReceived ? 'Confirmando...' : t('confirmReceived')}</span>
-                    </button>
-                  )}
-
                   <button
                     type="button"
                     onClick={() => setShowSignaturePanel((prev) => !prev)}
@@ -1122,31 +1301,16 @@ _RODO Moto Mandados · Despacho San Miguel_`;
               </div>
             )}
 
-            {/* Confirmar Recepción y Calificación del Cliente (Repartidor y Calidad de Comida) */}
-            {order.status === 'entregado' && (
+            {/* Calificación del Cliente tras entrega completada por el repartidor */}
+            {order.status === 'entregado' && !isRiderMode && !isAdmin && (
               <div className="my-3 bg-gradient-to-b from-amber-50/90 to-amber-100/50 border-2 border-amber-300 rounded-2xl p-4 space-y-3 text-center shadow-xs">
-                {/* Botón de Confirmar Recepción */}
-                <div className="flex flex-col items-center justify-center gap-1.5 pb-2 border-b border-amber-200">
-                  {receptionConfirmed ? (
-                    <div className="inline-flex items-center gap-2 bg-emerald-600 text-white text-xs font-black px-3.5 py-1.5 rounded-full shadow-xs">
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>¡Recepción del Pedido Confirmada por el Cliente!</span>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => handleConfirmReceptionAndRate(riderRating || 5, foodRating || 5)}
-                      disabled={isSubmittingRating}
-                      className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white text-xs font-black px-5 py-2.5 rounded-xl shadow-md transition cursor-pointer"
-                    >
-                      <ThumbsUp className="w-4 h-4" />
-                      <span>✓ Confirmar Recepción de mi Pedido</span>
-                    </button>
-                  )}
+                <div className="flex flex-col items-center justify-center gap-1 pb-2 border-b border-amber-200">
+                  <div className="inline-flex items-center gap-2 bg-emerald-600 text-white text-xs font-black px-3.5 py-1.5 rounded-full shadow-xs">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Pedido Completado</span>
+                  </div>
                   <p className="text-[11px] text-amber-900 font-medium">
-                    {receptionConfirmed
-                      ? 'Tu confirmación ayuda a auditar los tiempos del repartidor y el cierre de entrega.'
-                      : 'Pulsa para confirmar que recibiste tus alimentos o artículos completos.'}
+                    Cuéntanos qué tal estuvo tu entrega.
                   </p>
                 </div>
 
@@ -1330,10 +1494,10 @@ _RODO Moto Mandados · Despacho San Miguel_`;
                 <span>Subtotal:</span>
                 <span className="font-mono font-bold">${order.subtotal.toFixed(2)} MXN</span>
               </div>
-              {order.promoDiscountApplied && order.promoDiscountApplied > 0 && (
+              {(order.promoDiscountApplied ?? 0) > 0 && (
                 <div className="flex justify-between text-amber-800 text-xs">
                   <span>{order.promoLabel || `Cupón ${order.promoCode || 'RODO'}`}:</span>
-                  <span className="font-mono font-black">-${order.promoDiscountApplied.toFixed(2)} MXN</span>
+                  <span className="font-mono font-black">-${(order.promoDiscountApplied ?? 0).toFixed(2)} MXN</span>
                 </div>
               )}
               <div className="flex justify-between text-gray-700">

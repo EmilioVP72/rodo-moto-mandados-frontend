@@ -25,9 +25,13 @@ export function paymentInstructionForRider(order: Pick<Order, 'paymentMethod' | 
 export function buildWhatsAppDispatchMessage(
   order: Order,
   riderName: string,
-  appUrl: string = window.location.origin
+  appUrl: string = window.location.origin,
+  riderToken?: string
 ): string {
-  const ticketUrl = `${appUrl}?ticket=${encodeURIComponent(order.folio)}`;
+  const effectiveToken = riderToken ?? order.riderDispatchToken;
+  const ticketUrl = effectiveToken
+    ? `${appUrl}?ticket=${encodeURIComponent(order.folio)}&riderToken=${encodeURIComponent(effectiveToken)}`
+    : `${appUrl}?ticket=${encodeURIComponent(order.folio)}`;
 
   if (order.orderType === 'solicitud_local') {
     const riderCount = order.ridersRequestedCount || 1;

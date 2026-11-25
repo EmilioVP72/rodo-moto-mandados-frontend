@@ -56,6 +56,7 @@ import {
 } from './services/notifications';
 import { apiFetch, getAuthToken, logoutSession } from './api/httpClient';
 import { identifySocketSession, onSocketEvent } from './api/socketClient';
+import { fetchRiderTicketByToken } from './services/riders';
 import { showSystemToast } from './components/SystemDialogHost';
 import { useCart } from './hooks/useCart';
 import { resolveCartOwnerKey, resolveCartRestaurant } from './utils/cartStorage';
@@ -331,6 +332,37 @@ export default function App() {
 
   const previousOrderStatusesRef = useRef<Record<string, string>>({});
   const knownOrderIdsRef = useRef<Set<string>>(new Set());
+  const [riderTicketToken, setRiderTicketToken] = useState<string | null>(null);
+  const [isRiderTicketView, setIsRiderTicketView] = useState<boolean>(false);
+
+  // Apertura directa del ticket exclusivo para repartidores mediante ?ticket=FOLIO&riderToken=TOKEN
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const ticketParam = urlParams.get('ticket');
+    const riderTokenParam = urlParams.get('riderToken');
+    if (!ticketParam || !riderTokenParam) return;
+
+    let cancelled = false;
+    fetchRiderTicketByToken(ticketParam, riderTokenParam)
+      .then((res) => {
+        if (cancelled) return;
+        setRiderTicketToken(riderTokenParam);
+        setIsRiderTicketView(true);
+        setViewingTicketOrder(res.order);
+      })
+      .catch((err: any) => {
+        if (cancelled) return;
+        showSystemToast({
+          message: err?.message || 'Este enlace de repartidor no es válido o fue reasignado.',
+          tone: 'error',
+          durationMs: 6000,
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     clearLegacySharedNotificationHistory();
@@ -755,6 +787,75 @@ export default function App() {
       assignedRiderName?: string;
     }>('admin:order-delivered', triggerAdminDeliveredAlert);
 
+    const notifiedRestaurantStatuses = new Set<string>();
+    const triggerCustomerRestaurantStatusAlert = (payload: {
+      id: string;
+      folio: string;
+      customerId: string;
+      restaurantName?: string;
+      assignedRiderName?: string;
+      trackingStatus: 'recibido' | 'en_cocina' | 'en_camino' | 'completado';
+      statusLabel: string;
+      updatedAt?: string;
+    }) => {
+      if (viewerRole !== 'customer' || !currentUser || payload.customerId !== currentUser.id) {
+        return;
+      }
+      const dedupeKey = `${payload.id}:${payload.trackingStatus}:${payload.updatedAt || ''}`;
+      if (notifiedRestaurantStatuses.has(dedupeKey)) return;
+      notifiedRestaurantStatuses.add(dedupeKey);
+
+      const riderLabel = payload.assignedRiderName || 'Tu repartidor';
+      const restLabel = payload.restaurantName || 'el restaurante';
+      const copyByStatus: Record<
+        'recibido' | 'en_cocina' | 'en_camino' | 'completado',
+        { title: string; message: string; type: 'info' | 'success' }
+      > = {
+        recibido: {
+          title: `Pedido recibido · #${payload.folio}`,
+          message: `${riderLabel} recibió tu pedido de ${restLabel}.`,
+          type: 'info',
+        },
+        en_cocina: {
+          title: `Tu pedido está en cocina · #${payload.folio}`,
+          message: `${restLabel} está preparando tu pedido.`,
+          type: 'info',
+        },
+        en_camino: {
+          title: `Tu pedido va en camino · #${payload.folio}`,
+          message: `${riderLabel} ya va en camino hacia tu domicilio.`,
+          type: 'info',
+        },
+        completado: {
+          title: `Pedido completado · #${payload.folio}`,
+          message: `Tu pedido de ${restLabel} fue completado. ¡Buen provecho!`,
+          type: 'success',
+        },
+      };
+
+      const copy = copyByStatus[payload.trackingStatus] || {
+        title: `Actualización de pedido #${payload.folio}`,
+        message: `Nuevo estatus: ${payload.statusLabel}.`,
+        type: 'info' as const,
+      };
+
+      dispatchRodoNotification(copy.title, copy.message, {
+        scopeKey: notificationScopeKey,
+        audience: 'customer',
+        orderId: payload.id,
+        folio: payload.folio,
+        tag: `rodo-rest-status-${payload.id}-${payload.trackingStatus}`,
+        type: copy.type,
+        playSound: true,
+      });
+      setUnreadNotifsCount((prev) => prev + 1);
+      showSystemToast({
+        message: `${copy.title} — ${copy.message}`,
+        tone: copy.type === 'success' ? 'success' : 'info',
+        durationMs: 6000,
+      });
+    };
+
     const unsubArrivalAlert = onSocketEvent<{
       id: string;
       folio: string;
@@ -762,6 +863,17 @@ export default function App() {
       assignedRiderName?: string;
       arrivalNotifiedAt?: string;
     }>('order:arrival-alert', triggerCustomerArrivalAlert);
+
+    const unsubRestaurantStatus = onSocketEvent<{
+      id: string;
+      folio: string;
+      customerId: string;
+      restaurantName?: string;
+      assignedRiderName?: string;
+      trackingStatus: 'recibido' | 'en_cocina' | 'en_camino' | 'completado';
+      statusLabel: string;
+      updatedAt?: string;
+    }>('order:restaurant-status', triggerCustomerRestaurantStatusAlert);
 
     const unsubscribe = subscribeToOrders((liveOrders) => {
       setOrders(liveOrders);
@@ -812,6 +924,17 @@ export default function App() {
             }
             notifiedArrivals.set(order.id, notifPayload.arrivalNotifiedAt);
           }
+          if (
+            viewerRole === 'customer' &&
+            order.restaurantTrackingStatus &&
+            notifiedRestaurantStatuses.has(
+              `${order.id}:${order.restaurantTrackingStatus}:${order.restaurantStatusUpdatedAt || ''}`
+            )
+          ) {
+            knownOrderIdsRef.current.add(order.id);
+            previousOrderStatusesRef.current[order.id] = order.status;
+            return;
+          }
           dispatchRodoNotification(notifPayload.title, notifPayload.message, {
             scopeKey: notificationScopeKey,
             audience: notifPayload.audience,
@@ -852,7 +975,8 @@ export default function App() {
 
       const urlParams = new URLSearchParams(window.location.search);
       const ticketParam = urlParams.get('ticket');
-      if (ticketParam) {
+      const riderTokenParam = urlParams.get('riderToken');
+      if (ticketParam && !riderTokenParam) {
         const matchingOrder = liveOrders.find((o) => o.folio.toUpperCase() === ticketParam.toUpperCase());
         if (matchingOrder) {
           setViewingTicketOrder(matchingOrder);
@@ -864,6 +988,7 @@ export default function App() {
       unsubAdminNewOrder();
       unsubAdminDelivered();
       unsubArrivalAlert();
+      unsubRestaurantStatus();
       unsubscribe();
     };
   }, [currentUser, isAdminLoggedIn, notificationScopeKey]);
@@ -1958,12 +2083,32 @@ export default function App() {
         settings={settings}
         onClose={() => {
           setViewingTicketOrder(null);
+          setRiderTicketToken(null);
+          setIsRiderTicketView(false);
+          if (window.location.search.includes('ticket=')) {
+            const cleanUrl = new URL(window.location.href);
+            cleanUrl.searchParams.delete('ticket');
+            cleanUrl.searchParams.delete('riderToken');
+            window.history.replaceState({}, '', cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
+          }
           if (returnToAdminAfterTicket || isAdminLoggedIn) {
             setShowAdminPanel(true);
             setReturnToAdminAfterTicket(false);
           }
         }}
-        isAdmin={isAdminLoggedIn}
+        isAdmin={isAdminLoggedIn && !isRiderTicketView}
+        riderToken={riderTicketToken}
+        isRiderMode={
+          isRiderTicketView ||
+          Boolean(
+            String(currentUser?.role || '') === 'RIDER' &&
+              viewingTicketOrder?.assignedRiderUserId === currentUser?.id
+          )
+        }
+        onOrderUpdated={(updated) => {
+          setViewingTicketOrder(updated);
+          setOrders((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+        }}
         onShowToast={showSuccessToast}
       />
 
