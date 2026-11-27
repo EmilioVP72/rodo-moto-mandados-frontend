@@ -55,7 +55,7 @@ export const AdminDishSpecsEditor: React.FC<AdminDishSpecsEditorProps> = ({
 
     if (!cleanName || mergedOptions.length === 0) return;
 
-    const safeMax = hasLimit ? Math.max(1, Math.floor(limitCount || 1)) : 0;
+    const safeMax = hasLimit ? Math.max(1, Math.floor(limitCount || 1)) : 50;
     const safeMin = !isRequired
       ? 0
       : hasLimit && limitMode === 'exact'
@@ -151,7 +151,7 @@ export const AdminDishSpecsEditor: React.FC<AdminDishSpecsEditorProps> = ({
         required: true,
         hasLimit: false,
         minSelect: 1,
-        maxSelect: 0,
+        maxSelect: 50,
         allowRepeat: false,
         options: ['BBQ', 'Buffalo', 'Mango Habanero', 'Lemon Pepper', 'Parmesano Ajo'],
       },
@@ -260,7 +260,7 @@ export const AdminDishSpecsEditor: React.FC<AdminDishSpecsEditorProps> = ({
                             handleUpdateExistingGroup(grp.id, (g) => ({
                               ...g,
                               hasLimit: false,
-                              maxSelect: 0,
+                              maxSelect: 50,
                               minSelect: g.required === false ? 0 : 1,
                               allowRepeat: false,
                             }));

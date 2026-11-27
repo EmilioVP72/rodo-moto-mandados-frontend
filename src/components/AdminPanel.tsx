@@ -1,4 +1,4 @@
-import { apiFetch } from '../api/httpClient';
+import { apiFetch, uploadImageToBackend } from '../api/httpClient';
 import { ProtectedImage } from './ProtectedImage';
 import React, { useState, useEffect } from 'react';
 import {
@@ -440,7 +440,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     if (!editingRestaurant) return;
     try {
       const base64 = await compressImageFile(file, 900, 0.75);
-      setEditingRestaurant({ ...editingRestaurant, image: base64 });
+      const uploadedUrl = await uploadImageToBackend(
+        base64,
+        'restaurants',
+        editingRestaurant.id || 'rest-cover'
+      ).catch(() => base64);
+      setEditingRestaurant((prev) => (prev ? { ...prev, image: uploadedUrl } : prev));
       showFeedback('Foto del restaurante actualizada.');
     } catch (err) {
       console.error(err);
@@ -451,7 +456,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleUploadNewDishPhoto = async (file: File) => {
     try {
       const base64 = await compressImageFile(file, 600, 0.7);
-      setNewMenuItem((prev) => ({ ...prev, image: base64 }));
+      const uploadedUrl = await uploadImageToBackend(
+        base64,
+        'restaurants',
+        editingRestaurant?.id || 'new-dish'
+      ).catch(() => base64);
+      setNewMenuItem((prev) => ({ ...prev, image: uploadedUrl }));
       showFeedback('Foto del platillo cargada.');
     } catch (err) {
       console.error(err);
@@ -463,12 +473,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     if (!editingRestaurant) return;
     try {
       const base64 = await compressImageFile(file, 600, 0.7);
-      setEditingRestaurant({
-        ...editingRestaurant,
-        menu: editingRestaurant.menu.map((m) =>
-          m.id === itemId ? { ...m, image: base64 } : m
-        ),
-      });
+      const uploadedUrl = await uploadImageToBackend(base64, 'restaurants', itemId).catch(
+        () => base64
+      );
+      setEditingRestaurant((prev) =>
+        prev
+          ? {
+              ...prev,
+              menu: prev.menu.map((m) => (m.id === itemId ? { ...m, image: uploadedUrl } : m)),
+            }
+          : prev
+      );
       showFeedback('Foto del platillo actualizada.');
     } catch (err) {
       console.error(err);
@@ -749,18 +764,100 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       finalLocalCode = generateUniqueRandomLocalCode(usedCodes);
     }
 
+    const sanitizeSafeUrlField = (raw?: string | null): string | undefined => {
+      if (!raw || typeof raw !== 'string') return undefined;
+      const trimmed = raw.trim();
+      if (!trimmed) return undefined;
+      const coordMatch = /^(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)$/.exec(trimmed);
+      if (coordMatch) {
+        return `https://www.google.com/maps/search/?api=1&query=${coordMatch[1]},${coordMatch[2]}`;
+      }
+      if (/^(www\.|maps\.google\.|maps\.app\.goo\.gl\/|goo\.gl\/maps\/)/i.test(trimmed)) {
+        return `https://${trimmed}`;
+      }
+      if (
+        trimmed.startsWith('https://') ||
+        trimmed.startsWith('http://') ||
+        trimmed.startsWith('/uploads/') ||
+        trimmed.startsWith('/assets/') ||
+        trimmed.startsWith('data:image/')
+      ) {
+        return trimmed;
+      }
+      return undefined;
+    };
+
+    const normalizedMapsUrl = sanitizeSafeUrlField(editingRestaurant.mapsUrl);
+    const normalizedMenu: MenuItem[] = (Array.isArray(editingRestaurant.menu) ? editingRestaurant.menu : []).map(
+      (dish) => {
+        const cleanGroups = Array.isArray(dish.optionGroups)
+          ? dish.optionGroups
+              .map((g) => ({
+                ...g,
+                name: (g.name || '').trim(),
+                maxSelect:
+                  g.hasLimit === false
+                    ? Math.max(1, g.options?.length || 50)
+                    : Math.max(1, Math.floor(Number(g.maxSelect) || 1)),
+                options: Array.isArray(g.options)
+                  ? g.options.map((o) => String(o).trim()).filter(Boolean)
+                  : [],
+              }))
+              .filter((g) => g.name.length > 0 && g.options.length > 0)
+          : [];
+
+        return {
+          ...dish,
+          name: (dish.name || '').trim() || 'Platillo',
+          description: dish.description || '',
+          image: sanitizeSafeUrlField(dish.image) || '',
+          optionGroups: cleanGroups.length > 0 ? cleanGroups : undefined,
+        };
+      }
+    );
+
     const cleanRestaurant: Restaurant = {
       ...editingRestaurant,
       name: editingRestaurant.name.trim(),
+      image: sanitizeSafeUrlField(editingRestaurant.image) || '',
+      mapsUrl: normalizedMapsUrl,
+      address: editingRestaurant.address
+        ? {
+            ...editingRestaurant.address,
+            mapsUrl: sanitizeSafeUrlField(editingRestaurant.address.mapsUrl) || normalizedMapsUrl,
+          }
+        : undefined,
       badge: cleanBadge,
       localCode: finalLocalCode,
       phone: (editingRestaurant.phone || '').trim(),
       contactPerson: (editingRestaurant.contactPerson || '').trim(),
-      menu: Array.isArray(editingRestaurant.menu) ? editingRestaurant.menu : [],
+      menu: normalizedMenu,
       tags: Array.isArray(editingRestaurant.tags) ? editingRestaurant.tags : [],
     };
 
     try {
+      // Si el restaurante o algún platillo aún conserva una foto en Base64 previa, convertirla a /uploads/restaurants/ antes del PUT
+      if (cleanRestaurant.image && cleanRestaurant.image.startsWith('data:image/')) {
+        cleanRestaurant.image = await uploadImageToBackend(
+          cleanRestaurant.image,
+          'restaurants',
+          cleanRestaurant.id
+        ).catch(() => cleanRestaurant.image);
+      }
+      if (Array.isArray(cleanRestaurant.menu)) {
+        cleanRestaurant.menu = await Promise.all(
+          cleanRestaurant.menu.map(async (dish) => {
+            if (dish.image && dish.image.startsWith('data:image/')) {
+              const url = await uploadImageToBackend(dish.image, 'restaurants', dish.id).catch(
+                () => dish.image
+              );
+              return { ...dish, image: url };
+            }
+            return dish;
+          })
+        );
+      }
+
       await saveRestaurant(cleanRestaurant);
       await Promise.all([onRefreshData(), loadLocals()]);
       logAdminAction(
