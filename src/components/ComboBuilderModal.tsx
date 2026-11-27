@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { MenuItem, Restaurant, OrderItem, ComboBuilderConfig, ComboSideOption, ComboMainDishOption } from '../types';
 import { useBackdropClose } from '../utils/modalBackdrop';
-import { X, Check, Plus, Minus, UtensilsCrossed, Sparkles, AlertCircle, ShoppingBag, Flame } from 'lucide-react';
+import { X, Check, Plus, Minus, UtensilsCrossed, Sparkles, AlertCircle, ShoppingBag, Flame, ZoomIn } from 'lucide-react';
+import { FoodImagePreviewModal, FoodImagePreviewData } from './FoodImagePreviewModal';
 
 interface ComboBuilderModalProps {
   dish: MenuItem;
@@ -133,7 +134,8 @@ export const ComboBuilderModal: React.FC<ComboBuilderModalProps> = ({
   const [selectedSideId, setSelectedSideId] = useState<string>(sideOptions[0]?.id || '');
   const [selectedGuisadosMap, setSelectedGuisadosMap] = useState<Record<string, number>>({});
   const [specialInstructions, setSpecialInstructions] = useState('');
-  const backdropHandlers = useBackdropClose(isOpen, onClose);
+  const [previewImage, setPreviewImage] = useState<FoodImagePreviewData | null>(null);
+  const backdropHandlers = useBackdropClose(isOpen && !previewImage, onClose);
 
   if (!isOpen) return null;
 
@@ -303,12 +305,31 @@ export const ComboBuilderModal: React.FC<ComboBuilderModalProps> = ({
                         : 'border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700 bg-white dark:bg-gray-900'
                     }`}
                   >
-                    <img
-                      src={side.image}
-                      alt={side.name}
-                      className="w-18 h-18 rounded-xl object-cover shrink-0 shadow-xs"
-                      loading="lazy"
-                    />
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPreviewImage({
+                          src: side.image,
+                          title: side.name,
+                          subtitle: `${restaurant.name} · Guarnición`,
+                          description: side.description,
+                          price: side.priceExtra || undefined,
+                        });
+                      }}
+                      title="Clic para ver imagen en grande"
+                      className="group relative w-18 h-18 rounded-xl overflow-hidden shrink-0 shadow-xs cursor-zoom-in"
+                    >
+                      <img
+                        src={side.image}
+                        alt={side.name}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                        loading="lazy"
+                      />
+                      <span className="absolute bottom-1 right-1 bg-black/65 text-white p-0.5 rounded">
+                        <ZoomIn className="w-3 h-3" />
+                      </span>
+                    </button>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-1">
                         <strong className="text-xs font-black text-gray-900 dark:text-white truncate">
@@ -375,14 +396,32 @@ export const ComboBuilderModal: React.FC<ComboBuilderModalProps> = ({
                     }`}
                   >
                     <div className="relative shrink-0">
-                      <img
-                        src={main.image}
-                        alt={main.name}
-                        className="w-18 h-18 rounded-xl object-cover shadow-xs"
-                        loading="lazy"
-                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPreviewImage({
+                            src: main.image,
+                            title: main.name,
+                            subtitle: `${restaurant.name} · Guisado`,
+                            description: main.description,
+                            price: main.priceExtra || undefined,
+                          })
+                        }
+                        title="Clic para ver imagen en grande"
+                        className="group relative w-18 h-18 rounded-xl overflow-hidden shadow-xs block cursor-zoom-in"
+                      >
+                        <img
+                          src={main.image}
+                          alt={main.name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                          loading="lazy"
+                        />
+                        <span className="absolute bottom-1 right-1 bg-black/65 text-white p-0.5 rounded">
+                          <ZoomIn className="w-3 h-3" />
+                        </span>
+                      </button>
                       {count > 0 && (
-                        <span className="absolute -top-1.5 -left-1.5 w-6 h-6 rounded-full bg-[#ed0718] text-white font-black text-xs flex items-center justify-center shadow-md">
+                        <span className="absolute -top-1.5 -left-1.5 w-6 h-6 rounded-full bg-[#ed0718] text-white font-black text-xs flex items-center justify-center shadow-md pointer-events-none">
                           {count}
                         </span>
                       )}
@@ -505,6 +544,10 @@ export const ComboBuilderModal: React.FC<ComboBuilderModalProps> = ({
         </div>
 
       </div>
+      <FoodImagePreviewModal
+        preview={previewImage}
+        onClose={() => setPreviewImage(null)}
+      />
     </div>
   );
 };
