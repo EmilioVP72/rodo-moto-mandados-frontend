@@ -1,6 +1,7 @@
 import React from 'react';
 import { Restaurant, OrderItem, MenuItem } from '../types';
 import { useBackdropClose } from '../utils/modalBackdrop';
+import { getRestaurantAvailability } from '../utils/restaurantAvailability';
 import {
   X,
   ShoppingBag,
@@ -24,6 +25,8 @@ interface CartDrawerModalProps {
   onRemoveFromCart: (itemId: string) => void;
   onClearCart: () => void;
   onProceedToCheckout: () => void;
+  onRequestAvailabilityAlert: () => void;
+  availabilityAlertRequested: boolean;
 }
 
 export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
@@ -35,6 +38,8 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
   onRemoveFromCart,
   onClearCart,
   onProceedToCheckout,
+  onRequestAvailabilityAlert,
+  availabilityAlertRequested,
 }) => {
   const backdropHandlers = useBackdropClose(isOpen, onClose);
 
@@ -44,6 +49,7 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
   const subtotal = cart.reduce((sum, it) => sum + it.price * it.quantity, 0);
   const deliveryFee = restaurant?.deliveryFee || 35;
   const total = subtotal + deliveryFee;
+  const availability = restaurant ? getRestaurantAvailability(restaurant) : { available: false, message: 'Establecimiento no disponible.' };
 
   // Extras sugeridos del restaurante o genéricos
   const extrasList: MenuItem[] = restaurant?.suggestedExtras || [
@@ -294,10 +300,20 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                 El establecimiento de esta canasta no está disponible en el catálogo. Puedes volver a elegir dónde pedir.
               </p>
             )}
+            {restaurant && !availability.available && (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950 space-y-2">
+                <p className="font-bold">Restaurante no disponible para pedidos ahora</p>
+                <p>{availability.message}</p>
+                <button type="button" onClick={onRequestAvailabilityAlert} className="font-bold underline underline-offset-2">
+                  {availabilityAlertRequested ? 'Aviso activado en este dispositivo' : 'Avísame cuando esté disponible'}
+                </button>
+              </div>
+            )}
             <button
               type="button"
-              onClick={restaurant ? onProceedToCheckout : onClose}
-              className="w-full bg-[#ed0718] hover:bg-[#d60615] active:scale-[0.99] text-white font-extrabold text-sm py-3.5 px-4 rounded-2xl shadow-md hover:shadow-lg transition flex items-center justify-center gap-2"
+              disabled={Boolean(restaurant && !availability.available)}
+              onClick={restaurant && availability.available ? onProceedToCheckout : onClose}
+              className={`w-full active:scale-[0.99] text-white font-extrabold text-sm py-3.5 px-4 rounded-2xl shadow-md transition flex items-center justify-center gap-2 ${restaurant && !availability.available ? 'bg-gray-400 cursor-not-allowed' : 'bg-[#ed0718] hover:bg-[#d60615] hover:shadow-lg'}`}
             >
               <span>{restaurant ? 'Continuar al Pago y Datos' : 'Volver al catálogo'}</span>
               <ArrowRight className="w-4 h-4" />

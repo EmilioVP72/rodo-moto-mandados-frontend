@@ -107,6 +107,7 @@ export interface Restaurant {
     close: string; // ej: "23:00"
     enabled: boolean;
   };
+  workingDays?: number[]; // 0 = domingo, 1 = lunes ... 6 = sábado
 
   // Código PIN único aleatorio de 3 dígitos (ej: "482") y contacto del local para despacho interno
   localCode?: string;

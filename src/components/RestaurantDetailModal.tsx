@@ -3,6 +3,7 @@ import { Restaurant, OrderItem, MenuItem } from '../types';
 import { X, Star, Clock, Bike, Plus, Minus, ShoppingBag, AlertTriangle, Ban, ShieldCheck, Check, SlidersHorizontal, Utensils } from 'lucide-react';
 import { ComboBuilderModal } from './ComboBuilderModal';
 import { useBackdropClose } from '../utils/modalBackdrop';
+import { getRestaurantAvailability, getRestaurantWorkingDaysLabel } from '../utils/restaurantAvailability';
 
 interface RestaurantDetailModalProps {
   restaurant: Restaurant | null;
@@ -10,6 +11,8 @@ interface RestaurantDetailModalProps {
   onAddToCart: (item: OrderItem) => void;
   onRemoveFromCart: (itemId: string) => void;
   onProceedToCheckout: () => void;
+  onRequestAvailabilityAlert: (restaurantId: string) => void;
+  availabilityAlertRequested: boolean;
   onClose: () => void;
 }
 
@@ -19,6 +22,8 @@ export const RestaurantDetailModal: React.FC<RestaurantDetailModalProps> = ({
   onAddToCart,
   onRemoveFromCart,
   onProceedToCheckout,
+  onRequestAvailabilityAlert,
+  availabilityAlertRequested,
   onClose,
 }) => {
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
@@ -32,7 +37,8 @@ export const RestaurantDetailModal: React.FC<RestaurantDetailModalProps> = ({
 
   if (!restaurant) return null;
 
-  const isClosed = restaurant.isOpen === false;
+  const availability = getRestaurantAvailability(restaurant);
+  const isClosed = !availability.available;
   const cartSubtotal = cart.reduce((sum, it) => sum + it.price * it.quantity, 0);
   const cartTotalItems = cart.reduce((sum, it) => sum + it.quantity, 0);
 
@@ -148,11 +154,14 @@ export const RestaurantDetailModal: React.FC<RestaurantDetailModalProps> = ({
             <AlertTriangle className="w-5 h-5 shrink-0 text-amber-200" />
             <div className="flex-1">
               <span className="font-black uppercase tracking-wider block text-[11px] text-amber-200">
-                Aviso de Disponibilidad: Cerrado Temporalmente
+                Aviso de Disponibilidad: No disponible ahora
               </span>
               <span>
-                {restaurant.closureReason || 'Cerrado temporalmente por desfile o evento vial en San Miguel. Pedidos pausados.'}
+                {availability.message}
               </span>
+              <button type="button" onClick={() => onRequestAvailabilityAlert(restaurant.id)} className="shrink-0 underline underline-offset-2 font-black">
+                {availabilityAlertRequested ? 'Aviso activado' : 'Avísame'}
+              </button>
             </div>
           </div>
         )}
@@ -178,7 +187,7 @@ export const RestaurantDetailModal: React.FC<RestaurantDetailModalProps> = ({
             <div className="flex flex-wrap items-center gap-2 mb-1">
               {isClosed ? (
                 <span className="bg-amber-500 text-black text-[11px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1">
-                  <Ban className="w-3 h-3" /> Cerrado por Desfile / Evento
+                  <Ban className="w-3 h-3" /> No disponible ahora
                 </span>
               ) : (
                 <span className="bg-emerald-500 text-white text-[11px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider">
@@ -203,11 +212,16 @@ export const RestaurantDetailModal: React.FC<RestaurantDetailModalProps> = ({
               <span className="flex items-center gap-1">
                 <Clock className="w-3.5 h-3.5" /> {restaurant.time}
               </span>
-              {restaurant.schedule && (
+              {restaurant.workingDays && (
+                <span className="text-amber-100">Labora: {getRestaurantWorkingDaysLabel(restaurant.workingDays)}</span>
+              )}
+              {(restaurant.customServiceHours?.enabled || restaurant.schedule) && (
                 <>
                   <span>·</span>
                   <span className="text-amber-200">
-                    🕒 Horario: {restaurant.schedule}
+                    🕒 Horario: {restaurant.customServiceHours?.enabled
+                      ? `${restaurant.customServiceHours.open}–${restaurant.customServiceHours.close}`
+                      : restaurant.schedule}
                   </span>
                 </>
               )}
@@ -297,10 +311,6 @@ export const RestaurantDetailModal: React.FC<RestaurantDetailModalProps> = ({
                         {isSoldOut ? (
                           <span className="text-xs font-bold text-gray-400 bg-gray-200 px-3 py-1.5 rounded-xl cursor-not-allowed select-none">
                             Agotado
-                          </span>
-                        ) : isClosed ? (
-                          <span className="text-xs font-bold text-amber-700 bg-amber-100 px-2.5 py-1.5 rounded-xl cursor-not-allowed">
-                            Pausado
                           </span>
                         ) : item.isComboBuilder || item.name.toLowerCase().includes('guisado') ? (
                           <button
@@ -403,7 +413,7 @@ export const RestaurantDetailModal: React.FC<RestaurantDetailModalProps> = ({
         </div>
 
         {/* Footer del Carrito */}
-        {cartTotalItems > 0 && !isClosed && (
+        {cartTotalItems > 0 && (
           <div className="p-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between gap-3 shrink-0">
             <div>
               <div className="text-xs text-gray-500 font-medium">

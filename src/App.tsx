@@ -60,6 +60,7 @@ import { fetchRiderTicketByToken } from './services/riders';
 import { showSystemToast } from './components/SystemDialogHost';
 import { useCart } from './hooks/useCart';
 import { resolveCartOwnerKey, resolveCartRestaurant } from './utils/cartStorage';
+import { getRestaurantAvailability, getRestaurantWorkingDaysLabel } from './utils/restaurantAvailability';
 import {
   CustomerSavedAddress,
   formatSavedAddressHeaderLabel,
@@ -245,6 +246,10 @@ export default function App() {
     handleAddToCart,
     handleRemoveFromCart,
   } = useCart(cartOwnerKey);
+  const [availabilityAlertRestaurantId, setAvailabilityAlertRestaurantId] = useState<string | null>(() => {
+    try { return localStorage.getItem('rodo_availability_alert_restaurant'); } catch { return null; }
+  });
+  const [availabilityClock, setAvailabilityClock] = useState(0);
   useRealtimeSync({ setRestaurants, setSettings });
   const dismissedRatingIdsRef = useRef<Set<string>>(new Set());
   const seenBroadcastIdsRef = useRef<Set<string>>(new Set());
@@ -998,17 +1003,60 @@ export default function App() {
     setCatalogOverlay('cart');
   };
 
+  useEffect(() => {
+    const timer = window.setInterval(() => setAvailabilityClock((value) => value + 1), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!availabilityAlertRestaurantId) return;
+    const target = restaurants.find((restaurant) => restaurant.id === availabilityAlertRestaurantId);
+    if (!target || !getRestaurantAvailability(target).available) return;
+    try {
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification(`${target.name} ya está disponible`, {
+          body: 'Puedes volver a tu carrito y confirmar el pedido.',
+        });
+      } else {
+        showSuccessToast(`${target.name} ya está disponible. Puedes volver a tu carrito y confirmar el pedido.`);
+      }
+      localStorage.removeItem('rodo_availability_alert_restaurant');
+    } catch {
+      showSuccessToast(`${target.name} ya está disponible para recibir pedidos.`);
+    }
+    setAvailabilityAlertRestaurantId(null);
+  }, [availabilityAlertRestaurantId, availabilityClock, restaurants]);
+
+  const requestAvailabilityAlert = async (restaurantId?: string) => {
+    const target = restaurants.find((restaurant) => restaurant.id === (restaurantId || cartRestaurant?.id));
+    if (!target) return;
+    const permitted = await requestBrowserNotificationPermission();
+    if (!permitted) {
+      showSuccessToast('Activa las notificaciones del navegador para recibir este aviso. Mantén RODO abierto en este dispositivo.');
+      return;
+    }
+    try { localStorage.setItem('rodo_availability_alert_restaurant', target.id); } catch {}
+    setAvailabilityAlertRestaurantId(target.id);
+    showSuccessToast(`Te avisaremos cuando ${target.name} esté disponible, mientras RODO siga abierto.`);
+  };
+
   // Abrir checkout: El cliente puede llenar el carrito libremente como visitante,
   // y antes de pagar se le solicita iniciar sesión con su INE.
   const handleProceedToCheckout = () => {
     if (cart.length === 0) return;
+    if (!cartRestaurant) {
+      showSuccessToast('Selecciona un establecimiento para continuar con tu pedido.');
+      return;
+    }
+    const availability = getRestaurantAvailability(cartRestaurant);
+    if (!availability.available) {
+      setCatalogOverlay('cart');
+      showSuccessToast(availability.message);
+      return;
+    }
     if (!currentUser || !currentUser.id || currentUser.id.startsWith('guest')) {
       setCatalogOverlay(null);
       setShowAuthModal(true);
-      return;
-    }
-    if (!cartRestaurant) {
-      showSuccessToast('Selecciona un establecimiento para continuar con tu pedido.');
       return;
     }
     setCatalogOverlay(null);
@@ -1133,7 +1181,7 @@ export default function App() {
       }
 
       // Filtro de Solo Abiertos Ahora
-      if (onlyOpenNow && r.isOpen === false) return false;
+      if (onlyOpenNow && !getRestaurantAvailability(r).available) return false;
 
       // Filtro de Solo Favoritos
       if (showFavoritesOnly && !favorites[r.id]) return false;
@@ -1736,6 +1784,7 @@ export default function App() {
                   }`}
                 >
                   {filteredRestaurants.map((restaurant) => {
+                    const availability = getRestaurantAvailability(restaurant);
                     const isFav = favorites[restaurant.id];
                     const isRestaurante = restaurant.establishmentType === 'restaurante';
                     const restCoords = restaurant.coordinates || SMA_CENTER_COORDS;
@@ -1751,7 +1800,9 @@ export default function App() {
                       <article
                         key={restaurant.id}
                         onClick={() => {
-                          if (restaurant.hasFixedMenu === false) {
+                          if (!availability.available) {
+                            setCatalogOverlay(restaurant);
+                          } else if (restaurant.hasFixedMenu === false) {
                             setCustomOrderInitialLocal(restaurant.name);
                             setShowCustomOrderModal(true);
                           } else {
@@ -1759,7 +1810,7 @@ export default function App() {
                           }
                         }}
                         className={`bg-white text-[#101b29] rounded-2xl overflow-hidden shadow-md flex flex-col justify-between transition-all duration-200 hover:scale-[1.02] hover:-translate-y-1 border cursor-pointer select-none ${
-                          restaurant.isOpen === false ? 'border-amber-300 opacity-95' : 'border-gray-200'
+                          !availability.available ? 'border-amber-300 opacity-95' : 'border-gray-200'
                         }`}
                       >
                         <div>
@@ -1774,10 +1825,10 @@ export default function App() {
                                 e.currentTarget.src = FALLBACK_FOOD_IMG;
                               }}
                               className={`w-full h-full object-cover transition duration-300 hover:scale-105 ${
-                                restaurant.isOpen === false ? 'grayscale-30 brightness-90' : ''
+                                !availability.available ? 'grayscale-30 brightness-90' : ''
                               }`}
                             />
-                            {restaurant.isOpen === false ? (
+                            {!availability.available ? (
                               <span className="absolute top-3 left-3 bg-amber-600 text-white text-[11px] font-black px-2.5 py-1 rounded-full shadow-md uppercase tracking-wider">
                                 Cerrado
                               </span>
@@ -1811,9 +1862,9 @@ export default function App() {
                             </div>
 
                             {/* Aviso de cierre temporal */}
-                            {restaurant.isOpen === false && (
+                            {!availability.available && (
                               <div className="bg-amber-50 border border-amber-200 text-amber-900 px-2.5 py-1.5 rounded-lg text-[11px] font-bold">
-                                {restaurant.closureReason || 'Cerrado temporalmente'}
+                                {availability.message}
                               </div>
                             )}
 
@@ -1825,9 +1876,14 @@ export default function App() {
                               <span>({restaurant.reviews})</span>
                               <span>·</span>
                               <span className="text-gray-500 font-medium truncate">
-                                {restaurant.schedule || '12:00 PM – 10:00 PM'}
+                                {restaurant.customServiceHours?.enabled
+                                  ? `${restaurant.customServiceHours.open}–${restaurant.customServiceHours.close}`
+                                  : restaurant.schedule || 'Horario no especificado'}
                               </span>
                             </div>
+                            {restaurant.workingDays && (
+                              <p className="text-[10px] text-gray-500">Labora: {getRestaurantWorkingDaysLabel(restaurant.workingDays)}</p>
+                            )}
 
                             <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600 pt-0.5">
                               <span className="flex items-center gap-1">
@@ -1887,8 +1943,11 @@ export default function App() {
                           {restaurant.hasFixedMenu === false ? (
                             <button
                               onClick={() => {
-                                setCustomOrderInitialLocal(restaurant.name);
-                                setShowCustomOrderModal(true);
+                                if (!availability.available) setCatalogOverlay(restaurant);
+                                else {
+                                  setCustomOrderInitialLocal(restaurant.name);
+                                  setShowCustomOrderModal(true);
+                                }
                               }}
                               className="w-full font-black text-xs py-2.5 px-4 rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 bg-[#101b29] hover:bg-black text-white cursor-pointer"
                             >
@@ -1900,12 +1959,12 @@ export default function App() {
                                 setCatalogOverlay(restaurant);
                               }}
                               className={`w-full font-extrabold text-xs py-2.5 px-4 rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 ${
-                                restaurant.isOpen === false
+                                !availability.available
                                   ? 'bg-amber-600 hover:bg-amber-700 text-white'
                                   : 'bg-[#ed0718] hover:bg-[#c90012] text-white'
                               }`}
                             >
-                              <span>{restaurant.isOpen === false ? t('viewMenuPaused') : t('viewMenuOrder')}</span>
+                              <span>{!availability.available ? t('viewMenuPaused') : t('viewMenuOrder')}</span>
                             </button>
                           )}
                         </div>
@@ -2026,6 +2085,8 @@ export default function App() {
           clearCart();
         }}
         onProceedToCheckout={handleProceedToCheckout}
+        onRequestAvailabilityAlert={() => requestAvailabilityAlert(cartRestaurant?.id)}
+        availabilityAlertRequested={availabilityAlertRestaurantId === cartRestaurant?.id}
       />
 
       {/* 3. Modal de Menú y Detalle del Restaurante */}
@@ -2039,6 +2100,8 @@ export default function App() {
         onAddToCart={(item) => handleAddToCart(item, selectedRestaurant?.id || null)}
         onRemoveFromCart={handleRemoveFromCart}
         onProceedToCheckout={handleProceedToCheckout}
+        onRequestAvailabilityAlert={(restaurantId) => requestAvailabilityAlert(restaurantId)}
+        availabilityAlertRequested={availabilityAlertRestaurantId === selectedRestaurant?.id}
         onClose={() => {
           setCatalogOverlay(null);
         }}
@@ -2185,7 +2248,7 @@ export default function App() {
                   }
                 : undefined,
               primaryActionLabel: hasPendingCart ? 'Continuar con mi Pedido' : '¡Empezar a Explorar!',
-              onPrimaryAction: hasPendingCart ? () => setShowCheckout(true) : undefined,
+              onPrimaryAction: hasPendingCart ? handleProceedToCheckout : undefined,
             });
           } else if (mode === 'password_reset') {
             setTransactionFeedback({
@@ -2197,7 +2260,7 @@ export default function App() {
                 { label: 'Seguridad', value: 'Sesiones anteriores cerradas', highlight: true },
               ],
               primaryActionLabel: hasPendingCart ? 'Continuar con mi Pedido' : 'Ir a Explorar RODO',
-              onPrimaryAction: hasPendingCart ? () => setShowCheckout(true) : undefined,
+              onPrimaryAction: hasPendingCart ? handleProceedToCheckout : undefined,
             });
           } else {
             setTransactionFeedback({
@@ -2210,7 +2273,7 @@ export default function App() {
                 { label: 'Sesión', value: 'Activa', highlight: true },
               ],
               primaryActionLabel: hasPendingCart ? 'Continuar con mi Pedido' : 'Continuar en RODO',
-              onPrimaryAction: hasPendingCart ? () => setShowCheckout(true) : undefined,
+              onPrimaryAction: hasPendingCart ? handleProceedToCheckout : undefined,
             });
           }
         }}
@@ -2311,8 +2374,9 @@ export default function App() {
                             setReorderError(`"${o.restaurantName}" no está disponible en este momento.`);
                             return;
                           }
-                          if (rest.isOpen === false) {
-                            setReorderError(`"${rest.name}" está cerrado temporalmente.`);
+                          const availability = getRestaurantAvailability(rest);
+                          if (!availability.available) {
+                            setReorderError(`"${rest.name}": ${availability.message}`);
                             return;
                           }
                           setCart(o.items, rest.id);

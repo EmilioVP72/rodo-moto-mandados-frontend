@@ -695,6 +695,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       description: '',
       isActive: true,
       isOpen: true,
+      workingDays: [1, 2, 3, 4, 5, 6, 0],
+      customServiceHours: { open: '09:00', close: '21:00', enabled: true },
       schedule: '12:00 PM – 10:00 PM',
       closureReason: '',
       localCode: randomUniqueCode,
@@ -722,6 +724,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     e.preventDefault();
     if (!editingRestaurant || !editingRestaurant.name.trim()) {
       showFeedback('Ingresa el nombre del establecimiento antes de guardar.', 'error');
+      return;
+    }
+    if (Array.isArray(editingRestaurant.workingDays) && editingRestaurant.workingDays.length === 0) {
+      showFeedback('Selecciona al menos un día de trabajo.', 'error');
+      return;
+    }
+    if (editingRestaurant.customServiceHours?.enabled
+      && editingRestaurant.customServiceHours.open === editingRestaurant.customServiceHours.close) {
+      showFeedback('La hora de apertura y cierre no pueden ser iguales.', 'error');
       return;
     }
     const cleanBadge = (editingRestaurant.badge || '')
@@ -2049,7 +2060,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <label className="text-xs font-black text-amber-950 uppercase tracking-wider flex items-center gap-1.5">
                         <Clock className="w-4 h-4 text-amber-700" />
-                        Horario y Disponibilidad (Desfiles / Eventos)
+                        Días y horario de atención
                       </label>
 
                       <label className="flex items-center gap-2 cursor-pointer text-xs font-black text-gray-900 bg-white px-3 py-1.5 rounded-lg border border-amber-300">
@@ -2069,20 +2080,51 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       </label>
                     </div>
 
+                    <div>
+                      <label className="block text-[11px] font-bold text-gray-700 mb-2">Días que labora:</label>
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          { day: 1, label: 'Lun' }, { day: 2, label: 'Mar' }, { day: 3, label: 'Mié' },
+                          { day: 4, label: 'Jue' }, { day: 5, label: 'Vie' }, { day: 6, label: 'Sáb' }, { day: 0, label: 'Dom' },
+                        ].map(({ day, label }) => {
+                          const days = editingRestaurant.workingDays ?? [0, 1, 2, 3, 4, 5, 6];
+                          const selected = days.includes(day);
+                          return (
+                            <label key={day} className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold cursor-pointer ${selected ? 'bg-white border-amber-400 text-amber-950' : 'bg-gray-100 border-gray-200 text-gray-500'}`}>
+                              <input type="checkbox" checked={selected} onChange={() => setEditingRestaurant({
+                                ...editingRestaurant,
+                                workingDays: selected ? days.filter((value) => value !== day) : [...days, day],
+                              })} className="accent-amber-600" />
+                              {label}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                       <div>
-                        <label className="block text-[11px] font-bold text-gray-700 mb-1">
-                          Horario de Atención:
+                        <label className="flex items-center gap-2 text-[11px] font-bold text-gray-700 mb-2">
+                          <input type="checkbox" checked={editingRestaurant.customServiceHours?.enabled ?? false} onChange={(e) => setEditingRestaurant({
+                            ...editingRestaurant,
+                            customServiceHours: { open: editingRestaurant.customServiceHours?.open || '09:00', close: editingRestaurant.customServiceHours?.close || '21:00', enabled: e.target.checked },
+                          })} />
+                          Limitar pedidos al horario
                         </label>
-                        <input
-                          type="text"
-                          value={editingRestaurant.schedule || ''}
-                          onChange={(e) =>
-                            setEditingRestaurant({ ...editingRestaurant, schedule: e.target.value })
-                          }
-                          placeholder="Ej. 12:00 PM – 10:30 PM (Lunes a Domingo)"
-                          className="w-full border border-gray-300 rounded-lg p-2 text-xs bg-white font-medium"
-                        />
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="text-[10px] font-semibold text-gray-600">Abre
+                            <input type="time" disabled={!editingRestaurant.customServiceHours?.enabled} value={editingRestaurant.customServiceHours?.open || '09:00'} onChange={(e) => setEditingRestaurant({
+                              ...editingRestaurant,
+                              customServiceHours: { open: e.target.value, close: editingRestaurant.customServiceHours?.close || '21:00', enabled: true },
+                            })} className="mt-1 w-full border border-gray-300 rounded-lg p-2 text-xs bg-white" />
+                          </label>
+                          <label className="text-[10px] font-semibold text-gray-600">Cierra
+                            <input type="time" disabled={!editingRestaurant.customServiceHours?.enabled} value={editingRestaurant.customServiceHours?.close || '21:00'} onChange={(e) => setEditingRestaurant({
+                              ...editingRestaurant,
+                              customServiceHours: { open: editingRestaurant.customServiceHours?.open || '09:00', close: e.target.value, enabled: true },
+                            })} className="mt-1 w-full border border-gray-300 rounded-lg p-2 text-xs bg-white" />
+                          </label>
+                        </div>
+                        <p className="text-[10px] text-gray-500 mt-1">Hora local de San Miguel de Allende.</p>
                       </div>
 
                       <div>
@@ -3436,6 +3478,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             );
                             setEditingRestaurant({
                               ...rest,
+                              workingDays: rest.workingDays || [0, 1, 2, 3, 4, 5, 6],
                               localCode: ensuredPin,
                               phone: rest.phone || linkedPartner?.phone || '',
                               contactPerson: rest.contactPerson || linkedPartner?.contactPerson || '',
