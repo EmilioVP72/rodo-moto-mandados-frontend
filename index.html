@@ -19,18 +19,7 @@
     <meta property="og:image" content="/assets/aistudio/IMG-20260902-WA0090_1__d4eb6002.jpg" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
-    <script>
-      (function() {
-        try {
-          var w = window.innerWidth || document.documentElement.clientWidth || 360;
-          var ua = navigator.userAgent || '';
-          var isMobile = /Android|iPhone|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua) || w < 768;
-          var isTablet = (/iPad|Tablet/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) || (w >= 768 && w < 1024));
-          var cls = isMobile ? 'device-mobile' : (isTablet ? 'device-tablet' : 'device-desktop');
-          document.documentElement.classList.add(cls);
-        } catch (e) {}
-      })();
-    </script>
+    <script src="/device-detect.js"></script>
     <style>
       /* Fallback ultra-rápido para evitar pantalla en blanco durante el arranque inicial */
       #rodo-initial-splash {

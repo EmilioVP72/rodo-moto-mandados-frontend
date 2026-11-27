@@ -1,5 +1,5 @@
 const CACHE_NAME = 'rodo-pwa-cache-dev';
-const APP_SHELL_URLS = ['/', '/index.html', '/manifest.json', /* build-assets */];
+const APP_SHELL_URLS = ['/', '/index.html', '/manifest.json', '/device-detect.js', /* build-assets */];
 
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
