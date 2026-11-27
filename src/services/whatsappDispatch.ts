@@ -93,10 +93,20 @@ _RODO Moto Mandados · Auxilio Vial Rápido_`;
   }
 
   const itemsList = order.items
-    .map(
-      (it) =>
-        `• ${it.quantity}x ${it.name} ($${(it.price * it.quantity).toFixed(2)})${it.isExtra ? ' *(Extra)*' : ''}`
-    )
+    .map((it) => {
+      const baseLine = `• ${it.quantity}x ${it.name} ($${(it.price * it.quantity).toFixed(2)})${it.isExtra ? ' *(Extra)*' : ''}`;
+      const specParts = [
+        ...(it.selectedOptions || []),
+        ...(it.customizations || []).filter((c) => !(it.selectedOptions || []).includes(c)),
+      ];
+      if (specParts.length > 0) {
+        return `${baseLine}\n  ↳ _${specParts.join(' | ')}_`;
+      }
+      if (it.notes) {
+        return `${baseLine}\n  ↳ _${it.notes}_`;
+      }
+      return baseLine;
+    })
     .join('\n');
 
   const deliveryTypeLabel =

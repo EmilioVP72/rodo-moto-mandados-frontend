@@ -1,9 +1,21 @@
 import React, { useState } from 'react';
-import { Restaurant, OrderItem, MenuItem } from '../types';
-import { X, Star, Clock, Bike, Plus, Minus, ShoppingBag, AlertTriangle, Ban, ShieldCheck, Check, SlidersHorizontal, Utensils } from 'lucide-react';
+import { Restaurant, OrderItem, MenuItem, MenuItemOptionGroup } from '../types';
+import { X, Star, Clock, Bike, Plus, Minus, ShoppingBag, AlertTriangle, Ban, ShieldCheck, Check, SlidersHorizontal, Utensils, ZoomIn } from 'lucide-react';
 import { ComboBuilderModal } from './ComboBuilderModal';
+import { FoodImagePreviewModal, FoodImagePreviewData } from './FoodImagePreviewModal';
 import { useBackdropClose } from '../utils/modalBackdrop';
 import { getRestaurantAvailability, getRestaurantWorkingDaysLabel } from '../utils/restaurantAvailability';
+import {
+  GroupSelectionCounts,
+  normalizeOptionGroupBounds,
+  getTotalGroupSelections,
+  isOptionGroupSatisfied,
+  getOptionGroupRuleSubtitle,
+  getOptionGroupBadgeText,
+  toggleSingleOrMultiOption,
+  adjustRepeatableOptionCount,
+  formatOptionGroupSummary,
+} from '../utils/dishOptions';
 
 interface RestaurantDetailModalProps {
   restaurant: Restaurant | null;
@@ -28,14 +40,29 @@ export const RestaurantDetailModal: React.FC<RestaurantDetailModalProps> = ({
 }) => {
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
   const [comboDish, setComboDish] = useState<MenuItem | null>(null);
-  const [selectedOptions, setSelectedOptions] = useState<Record<string, string[]>>({});
+  const [previewImage, setPreviewImage] = useState<FoodImagePreviewData | null>(null);
+  const [selectedOptions, setSelectedOptions] = useState<Record<string, GroupSelectionCounts>>({});
   const [selectedCustomizations, setSelectedCustomizations] = useState<string[]>([]);
   const [itemNote, setItemNote] = useState('');
 
-  const mainBackdropHandlers = useBackdropClose(Boolean(restaurant) && !customizingItem && !comboDish, onClose);
-  const customBackdropHandlers = useBackdropClose(Boolean(customizingItem), () => setCustomizingItem(null));
+  const mainBackdropHandlers = useBackdropClose(
+    Boolean(restaurant) && !customizingItem && !comboDish && !previewImage,
+    onClose
+  );
+  const customBackdropHandlers = useBackdropClose(
+    Boolean(customizingItem) && !previewImage,
+    () => setCustomizingItem(null)
+  );
 
   if (!restaurant) return null;
+
+  const usesLegacyComboBuilder = (item: MenuItem) =>
+    Boolean(
+      item.isComboBuilder ||
+        item.comboConfig ||
+        (!(item.optionGroups && item.optionGroups.length > 0) &&
+          item.name.toLowerCase().includes('guisado'))
+    );
 
   const availability = getRestaurantAvailability(restaurant);
   const isClosed = !availability.available;
@@ -48,19 +75,20 @@ export const RestaurantDetailModal: React.FC<RestaurantDetailModalProps> = ({
   };
 
   const startCustomizing = (item: MenuItem) => {
-    if (item.isComboBuilder || item.name.toLowerCase().includes('guisado')) {
+    if (usesLegacyComboBuilder(item)) {
       setComboDish(item);
       return;
     }
     setCustomizingItem(item);
-    const initialSelections: Record<string, string[]> = {};
+    const initialSelections: Record<string, GroupSelectionCounts> = {};
     if (item.optionGroups) {
       item.optionGroups.forEach((grp) => {
-        // Pre-select first choice for 1-select options like guarnición
-        if (grp.maxSelect === 1 && grp.options.length > 0) {
-          initialSelections[grp.id] = [grp.options[0]];
+        const bounds = normalizeOptionGroupBounds(grp);
+        // Pre-seleccionar primera opción cuando es elección única obligatoria (ej. Arroz o Pasta)
+        if (bounds.hasLimit && bounds.maxSelect === 1 && bounds.minSelect === 1 && grp.options.length > 0) {
+          initialSelections[grp.id] = { [grp.options[0]]: 1 };
         } else {
-          initialSelections[grp.id] = [];
+          initialSelections[grp.id] = {};
         }
       });
     }
@@ -69,20 +97,18 @@ export const RestaurantDetailModal: React.FC<RestaurantDetailModalProps> = ({
     setItemNote('');
   };
 
-  const toggleOption = (groupId: string, option: string, maxSelect: number) => {
-    setSelectedOptions((prev) => {
-      const current = prev[groupId] || [];
-      if (maxSelect === 1) {
-        return { ...prev, [groupId]: [option] };
-      }
-      if (current.includes(option)) {
-        return { ...prev, [groupId]: current.filter((o) => o !== option) };
-      }
-      if (current.length < maxSelect) {
-        return { ...prev, [groupId]: [...current, option] };
-      }
-      return prev;
-    });
+  const handleToggleOption = (group: MenuItemOptionGroup, option: string) => {
+    setSelectedOptions((prev) => ({
+      ...prev,
+      [group.id]: toggleSingleOrMultiOption(group, prev[group.id], option),
+    }));
+  };
+
+  const handleAdjustOptionQty = (group: MenuItemOptionGroup, option: string, delta: 1 | -1) => {
+    setSelectedOptions((prev) => ({
+      ...prev,
+      [group.id]: adjustRepeatableOptionCount(group, prev[group.id], option, delta),
+    }));
   };
 
   const toggleCustomization = (id: string) => {
@@ -103,14 +129,23 @@ export const RestaurantDetailModal: React.FC<RestaurantDetailModalProps> = ({
   const handleConfirmCustomization = () => {
     if (!customizingItem) return;
 
-    // Build description from options
     const optionsList: string[] = [];
+    const structuredGroups: NonNullable<OrderItem['selectedOptionGroups']> = [];
+
     if (customizingItem.optionGroups) {
       customizingItem.optionGroups.forEach((grp) => {
-        const selected = selectedOptions[grp.id] || [];
-        if (selected.length > 0) {
-          optionsList.push(`${grp.name}: ${selected.join(', ')}`);
-        }
+        const counts = selectedOptions[grp.id] || {};
+        const summary = formatOptionGroupSummary(grp, counts);
+        if (summary) optionsList.push(summary);
+
+        const selections = grp.options
+          .filter((opt) => (counts[opt] || 0) > 0)
+          .map((opt) => ({ option: opt, quantity: counts[opt] }));
+        structuredGroups.push({
+          groupId: grp.id,
+          groupName: grp.name,
+          selections,
+        });
       });
     }
 
@@ -134,6 +169,7 @@ export const RestaurantDetailModal: React.FC<RestaurantDetailModalProps> = ({
       stockLevel: customizingItem.stockLevel,
       notes: fullNotes,
       selectedOptions: optionsList,
+      selectedOptionGroups: structuredGroups.length > 0 ? structuredGroups : undefined,
       customizations: customLabels,
       selectedModifiers: selectedCustomizationObjs,
       unitExtraPrice: extraCost,
@@ -271,14 +307,31 @@ export const RestaurantDetailModal: React.FC<RestaurantDetailModalProps> = ({
                     >
                       <div className="flex items-start gap-3 flex-1 min-w-0">
                         {item.image && (
-                          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden bg-gray-100 shrink-0 border border-gray-200">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPreviewImage({
+                                src: item.image!,
+                                title: item.name,
+                                subtitle: restaurant.name,
+                                description: item.description,
+                                price: item.price,
+                              })
+                            }
+                            title="Clic para ver la foto del platillo en grande"
+                            aria-label={`Ver foto ampliada de ${item.name}`}
+                            className="group relative w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden bg-gray-100 shrink-0 border border-gray-200 cursor-zoom-in focus:outline-hidden focus:ring-2 focus:ring-[#ed0718]"
+                          >
                             <img
                               src={item.image}
                               alt={item.name}
-                              className={`w-full h-full object-cover ${isSoldOut ? 'grayscale-60' : ''}`}
+                              className={`w-full h-full object-cover transition-transform duration-200 group-hover:scale-105 ${isSoldOut ? 'grayscale-60' : ''}`}
                               loading="lazy"
                             />
-                          </div>
+                            <span className="absolute bottom-1 right-1 bg-black/65 group-hover:bg-[#ed0718] text-white p-1 rounded-md shadow-xs transition">
+                              <ZoomIn className="w-3 h-3" />
+                            </span>
+                          </button>
                         )}
                         <div className="flex-1 min-w-0">
                           <div className="flex flex-wrap items-center gap-1.5">
@@ -312,7 +365,7 @@ export const RestaurantDetailModal: React.FC<RestaurantDetailModalProps> = ({
                           <span className="text-xs font-bold text-gray-400 bg-gray-200 px-3 py-1.5 rounded-xl cursor-not-allowed select-none">
                             Agotado
                           </span>
-                        ) : item.isComboBuilder || item.name.toLowerCase().includes('guisado') ? (
+                        ) : usesLegacyComboBuilder(item) ? (
                           <button
                             type="button"
                             onClick={() => setComboDish(item)}
@@ -447,73 +500,158 @@ export const RestaurantDetailModal: React.FC<RestaurantDetailModalProps> = ({
           <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-2xl overflow-hidden border border-gray-100">
             {/* Header del Platillo */}
             <div className="p-4 bg-gray-900 text-white flex items-start justify-between gap-3">
-              <div>
-                <span className="text-[10px] uppercase font-black tracking-widest text-[#ed0718] bg-white/10 px-2 py-0.5 rounded-full inline-block mb-1">
-                  Arma tu Platillo
-                </span>
-                <h3 className="text-base sm:text-lg font-black leading-tight">
-                  {customizingItem.name}
-                </h3>
-                <p className="text-xs text-gray-300 mt-1">
-                  {customizingItem.description}
-                </p>
-                <div className="font-mono font-black text-sm text-[#ed0718] mt-1.5">
-                  ${customizingItem.price.toFixed(2)} MXN
+              <div className="flex items-start gap-3 min-w-0">
+                {customizingItem.image && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPreviewImage({
+                        src: customizingItem.image!,
+                        title: customizingItem.name,
+                        subtitle: restaurant.name,
+                        description: customizingItem.description,
+                        price: customizingItem.price,
+                      })
+                    }
+                    title="Ver imagen en grande"
+                    className="group relative w-16 h-16 rounded-xl overflow-hidden border border-white/20 shrink-0 cursor-zoom-in"
+                  >
+                    <img
+                      src={customizingItem.image}
+                      alt={customizingItem.name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                    />
+                    <span className="absolute bottom-1 right-1 bg-black/70 text-white p-0.5 rounded">
+                      <ZoomIn className="w-3 h-3" />
+                    </span>
+                  </button>
+                )}
+                <div className="min-w-0">
+                  <span className="text-[10px] uppercase font-black tracking-widest text-[#ed0718] bg-white/10 px-2 py-0.5 rounded-full inline-block mb-1">
+                    Elige tus Especificaciones
+                  </span>
+                  <h3 className="text-base sm:text-lg font-black leading-tight">
+                    {customizingItem.name}
+                  </h3>
+                  <p className="text-xs text-gray-300 mt-1">
+                    {customizingItem.description}
+                  </p>
+                  <div className="font-mono font-black text-sm text-[#ed0718] mt-1.5">
+                    ${customizingItem.price.toFixed(2)} MXN
+                  </div>
                 </div>
               </div>
 
               <button
                 onClick={() => setCustomizingItem(null)}
-                className="text-gray-400 hover:text-white p-1 rounded-full bg-white/10 hover:bg-white/20 transition"
+                className="text-gray-400 hover:text-white p-1 rounded-full bg-white/10 hover:bg-white/20 transition shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Opciones y Guisados */}
+            {/* Opciones, Especificaciones y Límites */}
             <div className="p-4 sm:p-5 overflow-y-auto space-y-5 flex-1 divide-y divide-gray-100">
               {customizingItem.optionGroups?.map((group) => {
-                const currentSelections = selectedOptions[group.id] || [];
-                const isComplete = currentSelections.length >= group.maxSelect;
+                const counts = selectedOptions[group.id] || {};
+                const bounds = normalizeOptionGroupBounds(group);
+                const totalSelected = getTotalGroupSelections(counts);
+                const satisfied = isOptionGroupSatisfied(group, counts);
+                const reachedMax =
+                  bounds.hasLimit && bounds.maxSelect !== null && totalSelected >= bounds.maxSelect;
 
                 return (
                   <div key={group.id} className="pt-4 first:pt-0 space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-xs sm:text-sm font-black text-gray-900 uppercase tracking-wide">
-                        {group.name}
-                      </h4>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <h4 className="text-xs sm:text-sm font-black text-gray-900 uppercase tracking-wide">
+                          {group.name}
+                        </h4>
+                        <p className="text-[11px] text-gray-500 font-semibold mt-0.5">
+                          {getOptionGroupRuleSubtitle(group)}
+                        </p>
+                      </div>
                       <span
-                        className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
-                          currentSelections.length === group.maxSelect
+                        className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full shrink-0 ${
+                          satisfied
                             ? 'bg-emerald-100 text-emerald-800'
                             : 'bg-amber-100 text-amber-800'
                         }`}
                       >
-                        {currentSelections.length} de {group.maxSelect} {group.maxSelect === 1 ? 'elegido' : 'elegidos'}
+                        {getOptionGroupBadgeText(group, counts)}
                       </span>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {group.options.map((opt) => {
-                        const isSelected = currentSelections.includes(opt);
-                        const canSelectMore = currentSelections.length < group.maxSelect;
+                        const optQty = counts[opt] || 0;
+                        const isSelected = optQty > 0;
+                        const canAddMore = !reachedMax;
+
+                        if (bounds.allowRepeat) {
+                          return (
+                            <div
+                              key={opt}
+                              className={`p-2.5 rounded-xl border text-xs font-semibold flex items-center justify-between gap-2 transition ${
+                                isSelected
+                                  ? 'bg-red-50 border-[#ed0718] text-[#ed0718] shadow-xs ring-1 ring-[#ed0718]/30 font-bold'
+                                  : 'bg-white border-gray-200 text-gray-700'
+                              }`}
+                            >
+                              <span className="leading-snug flex-1">{opt}</span>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {optQty > 0 && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAdjustOptionQty(group, opt, -1)}
+                                      className="w-6 h-6 rounded-lg bg-white border border-gray-300 text-gray-800 flex items-center justify-center hover:bg-gray-100 cursor-pointer"
+                                    >
+                                      <Minus className="w-3 h-3" />
+                                    </button>
+                                    <span className="min-w-4 text-center font-mono font-black text-xs text-gray-900">
+                                      {optQty}
+                                    </span>
+                                  </>
+                                )}
+                                <button
+                                  type="button"
+                                  disabled={!canAddMore}
+                                  onClick={() => handleAdjustOptionQty(group, opt, 1)}
+                                  className={`w-6 h-6 rounded-lg flex items-center justify-center transition ${
+                                    canAddMore
+                                      ? 'bg-[#ed0718] hover:bg-[#c90012] text-white cursor-pointer'
+                                      : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                  }`}
+                                >
+                                  <Plus className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        const isSingleRadio = bounds.hasLimit && bounds.maxSelect === 1;
 
                         return (
                           <button
                             key={opt}
                             type="button"
-                            onClick={() => toggleOption(group.id, opt, group.maxSelect)}
+                            disabled={!isSelected && !isSingleRadio && reachedMax}
+                            onClick={() => handleToggleOption(group, opt)}
                             className={`p-2.5 text-left rounded-xl border text-xs font-semibold flex items-center justify-between gap-2 transition ${
                               isSelected
                                 ? 'bg-red-50 border-[#ed0718] text-[#ed0718] shadow-xs ring-1 ring-[#ed0718]/30 font-bold'
-                                : canSelectMore
-                                ? 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                                : isSingleRadio || canAddMore
+                                ? 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 cursor-pointer'
                                 : 'bg-gray-50 border-gray-200 text-gray-400 opacity-60 cursor-not-allowed'
                             }`}
                           >
                             <span className="leading-snug">{opt}</span>
                             <div
-                              className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 ${
+                              className={`w-4 h-4 ${
+                                isSingleRadio ? 'rounded-full' : 'rounded-md'
+                              } border flex items-center justify-center shrink-0 ${
                                 isSelected
                                   ? 'bg-[#ed0718] border-[#ed0718] text-white'
                                   : 'border-gray-300 bg-white'
@@ -651,12 +789,12 @@ export const RestaurantDetailModal: React.FC<RestaurantDetailModalProps> = ({
               <button
                 type="button"
                 onClick={handleConfirmCustomization}
-                disabled={
+                disabled={Boolean(
                   customizingItem.optionGroups?.some(
-                    (grp) => (selectedOptions[grp.id] || []).length < grp.maxSelect
+                    (grp) => !isOptionGroupSatisfied(grp, selectedOptions[grp.id])
                   )
-                }
-                className="bg-[#ed0718] hover:bg-[#c90012] disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-extrabold text-xs sm:text-sm py-2.5 px-5 rounded-xl flex items-center gap-2 shadow-md transition"
+                )}
+                className="bg-[#ed0718] hover:bg-[#c90012] disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-extrabold text-xs sm:text-sm py-2.5 px-5 rounded-xl flex items-center gap-2 shadow-md transition cursor-pointer"
               >
                 <ShoppingBag className="w-4 h-4" />
                 <span>Agregar al Pedido (${customizedTotalPrice.toFixed(2)})</span>
@@ -676,6 +814,12 @@ export const RestaurantDetailModal: React.FC<RestaurantDetailModalProps> = ({
           onAddToCart={onAddToCart}
         />
       )}
+
+      {/* Visor de Fotografía del Platillo en Pantalla Grande */}
+      <FoodImagePreviewModal
+        preview={previewImage}
+        onClose={() => setPreviewImage(null)}
+      />
     </div>
   );
 };

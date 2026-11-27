@@ -46,6 +46,7 @@ import {
 } from '../services/notifications';
 import { useBackdropClose } from '../utils/modalBackdrop';
 import { InteractiveMapPicker } from './InteractiveMapPicker';
+import { AdminDishSpecsEditor } from './AdminDishSpecsEditor';
 import { isGoogleMapsLink, resolveGoogleMapsUrl } from '../services/routing';
 import {
   X,
@@ -393,7 +394,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     image: '',
     category: 'General',
     isAvailable: true,
+    optionGroups: [],
   });
+  const [showNewItemSpecs, setShowNewItemSpecs] = useState(false);
 
   // Estado para configurar personalizaciones/extras de platillos (Admin)
   const [editingCustomizationsDish, setEditingCustomizationsDish] = useState<MenuItem | null>(null);
@@ -888,9 +891,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       price: 0,
       originalPrice: 0,
       surcharge: 0,
+      image: '',
       category: 'General',
       isAvailable: true,
+      optionGroups: [],
     });
+    setShowNewItemSpecs(false);
   };
 
   // Eliminar platillo del menú
@@ -902,7 +908,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     });
   };
 
-  // Métodos para gestionar personalizaciones / extras de platillos (Admin)
+  // Métodos para gestionar especificaciones (optionGroups) y extras de platillos (Admin)
+  const handleUpdateDishOptionGroups = (nextGroups: MenuItem['optionGroups']) => {
+    if (!editingRestaurant || !editingCustomizationsDish) return;
+    const updatedDish: MenuItem = {
+      ...editingCustomizationsDish,
+      optionGroups: nextGroups && nextGroups.length > 0 ? nextGroups : undefined,
+    };
+    setEditingCustomizationsDish(updatedDish);
+    setEditingRestaurant({
+      ...editingRestaurant,
+      menu: editingRestaurant.menu.map((m) => (m.id === updatedDish.id ? updatedDish : m)),
+    });
+  };
+
   const handleAddCustomizationToDish = (name: string, price: number, type: 'removal' | 'extra') => {
     if (!editingRestaurant || !editingCustomizationsDish || !name.trim()) return;
     const newCust = {
@@ -1678,6 +1697,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                     className="inline-block bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 px-2 py-0.5 rounded-lg text-[11px] font-semibold"
                                   >
                                     <b>{it.quantity}x</b> {it.name}
+                                    {it.selectedOptions && it.selectedOptions.length > 0 && (
+                                      <span className="text-[#ed0718] font-bold ml-1">
+                                        ({it.selectedOptions.join(' · ')})
+                                      </span>
+                                    )}
                                   </span>
                                 ))}
                               </div>
@@ -2869,6 +2893,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                       Base: ${(item.originalPrice || (item.price - item.surcharge)).toFixed(2)} + Sobreprecio: +${item.surcharge.toFixed(2)}
                                     </span>
                                   )}
+                                  {(item.optionGroups && item.optionGroups.length > 0) && (
+                                    <span className="text-[10px] text-[#ed0718] bg-red-50 px-1.5 py-0.5 rounded border border-red-200 font-bold">
+                                      📋 {item.optionGroups.length} {item.optionGroups.length === 1 ? 'especificación' : 'especificaciones'}
+                                    </span>
+                                  )}
                                 </div>
                                 {item.description && (
                                   <p className="text-[11px] text-gray-500 mt-0.5 line-clamp-1">{item.description}</p>
@@ -2921,11 +2950,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                   setNewCustomPrice(0);
                                   setNewCustomType('removal');
                                 }}
-                                className="bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-900 px-2 py-1 rounded-lg text-[11px] font-black flex items-center gap-1 transition"
-                                title="Configurar ingredientes a quitar o extras con costo"
+                                className="bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-900 px-2 py-1 rounded-lg text-[11px] font-black flex items-center gap-1 transition cursor-pointer"
+                                title="Configurar especificaciones (Arroz/Pasta, Guisados, Salsas, Límites) o extras con costo"
                               >
                                 <Sliders className="w-3 h-3 text-amber-700" />
-                                <span>Extras ({item.customizations?.length || 0})</span>
+                                <span>
+                                  Especificaciones / Extras ({(item.optionGroups?.length || 0) + (item.customizations?.length || 0)})
+                                </span>
                               </button>
 
                               <button
@@ -3105,6 +3136,46 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         </div>
                       </div>
 
+                      {/* Sección de Especificaciones a Elegir al Crear el Platillo */}
+                      <div className="bg-white p-2.5 rounded-lg border border-gray-200 space-y-2.5">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <span className="text-[11px] font-black text-gray-800 flex items-center gap-1.5">
+                              <Sliders className="w-3.5 h-3.5 text-[#ed0718]" />
+                              <span>
+                                Especificaciones del Platillo ({newMenuItem.optionGroups?.length || 0})
+                              </span>
+                            </span>
+                            <p className="text-[10px] text-gray-500">
+                              Ej. elegir Arroz o Pasta, qué guisados incluir, salsas para alitas y si tiene límite o no.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setShowNewItemSpecs((v) => !v)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer ${
+                              showNewItemSpecs || (newMenuItem.optionGroups?.length || 0) > 0
+                                ? 'bg-red-50 text-[#ed0718] border-red-200'
+                                : 'bg-gray-100 hover:bg-gray-200 text-gray-800 border-gray-300'
+                            }`}
+                          >
+                            {showNewItemSpecs ? 'Ocultar configurador' : '＋ Configurar especificaciones'}
+                          </button>
+                        </div>
+
+                        {(showNewItemSpecs || (newMenuItem.optionGroups?.length || 0) > 0) && (
+                          <div className="pt-2 border-t border-gray-100">
+                            <AdminDishSpecsEditor
+                              optionGroups={newMenuItem.optionGroups || []}
+                              onChange={(groups) =>
+                                setNewMenuItem((prev) => ({ ...prev, optionGroups: groups }))
+                              }
+                              compact
+                            />
+                          </div>
+                        )}
+                      </div>
+
                       <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                         <div className="text-xs text-gray-600">
                           Precio al público final:{' '}
@@ -3147,167 +3218,187 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
               )}
 
-              {/* Modal de Personalizaciones / Extras del Platillo (Admin) */}
+              {/* Modal de Especificaciones, Límites y Extras del Platillo (Admin) */}
               {editingCustomizationsDish && (
                 <div
                   {...customDishBackdropHandlers}
                   className="fixed inset-0 z-70 flex items-center justify-center p-3 bg-black/75 backdrop-blur-xs"
                 >
-                  <div className="bg-white rounded-2xl w-full max-w-lg p-5 sm:p-6 space-y-4 shadow-2xl border border-gray-200 animate-in fade-in zoom-in-95">
-                    <div className="flex items-start justify-between border-b pb-3">
+                  <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[92vh] flex flex-col shadow-2xl border border-gray-200 overflow-hidden animate-in fade-in zoom-in-95">
+                    <div className="flex items-start justify-between border-b p-4 sm:p-5 shrink-0">
                       <div>
                         <span className="text-[10px] font-black uppercase text-[#ed0718] bg-red-50 px-2 py-0.5 rounded-full">
-                          Personalizaciones de Platillo
+                          Especificaciones, Límites y Extras
                         </span>
                         <h4 className="text-base font-extrabold text-gray-900 mt-1">
                           {editingCustomizationsDish.name}
                         </h4>
                         <p className="text-xs text-gray-500">
-                          Agrega opciones para quitar ingredientes ($0) o extras con costo adicional (ej. hamburguesa sin queso, extra queso, sin chile).
+                          Configura elecciones del cliente (ej. Arroz o Pasta, guisados, salsas con o sin límite) y extras opcionales.
                         </p>
                       </div>
                       <button
                         type="button"
                         onClick={() => setEditingCustomizationsDish(null)}
-                        className="text-gray-400 hover:text-black p-1 rounded-lg"
+                        className="text-gray-400 hover:text-black p-1 rounded-lg cursor-pointer"
                       >
                         <X className="w-5 h-5" />
                       </button>
                     </div>
 
-                    {/* Presets rápidos */}
-                    <div className="bg-amber-50/70 p-3 rounded-xl border border-amber-200 space-y-2">
-                      <span className="text-xs font-black text-amber-950 uppercase tracking-wide block">
-                        ⚡ Plantillas Rápidas (1 Clic):
-                      </span>
-                      <div className="flex flex-wrap gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => handleApplyDishPresets('burger')}
-                          className="px-2.5 py-1 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-xs font-bold transition shadow-2xs"
-                        >
-                          🍔 Hamburguesa (Sin queso, Sin chile, Extra queso $15, etc.)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleApplyDishPresets('tacos')}
-                          className="px-2.5 py-1 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-xs font-bold transition shadow-2xs"
-                        >
-                          🌮 Tacos (Sin cebolla, Sin salsa, Extra queso $15)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleApplyDishPresets('pizzas')}
-                          className="px-2.5 py-1 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-xs font-bold transition shadow-2xs"
-                        >
-                          🍕 Pizza (Extra queso $20, Extra pepperoni $20)
-                        </button>
+                    <div className="p-4 sm:p-5 space-y-5 overflow-y-auto flex-1">
+                      {/* SECCIÓN 1: Especificaciones de elección y límites */}
+                      <div className="space-y-2 pb-4 border-b border-gray-200">
+                        <h5 className="text-xs font-black uppercase tracking-wider text-gray-900">
+                          1. Especificaciones a Elegir y Límites (Base, Guisados, Salsas)
+                        </h5>
+                        <AdminDishSpecsEditor
+                          optionGroups={editingCustomizationsDish.optionGroups || []}
+                          onChange={handleUpdateDishOptionGroups}
+                        />
                       </div>
-                    </div>
 
-                    {/* Lista actual de opciones configuradas */}
-                    <div className="space-y-2 max-h-48 overflow-y-auto">
-                      <span className="text-xs font-bold text-gray-700 block">
-                        Opciones configuradas ({(editingCustomizationsDish.customizations || []).length}):
-                      </span>
-                      {(editingCustomizationsDish.customizations || []).length === 0 ? (
-                        <div className="p-3 bg-gray-50 border border-dashed rounded-xl text-xs text-gray-400 text-center">
-                          Aún no hay extras ni opciones configuradas para este platillo.
+                      {/* SECCIÓN 2: Quitar ingredientes / Extras con costo */}
+                      <div className="space-y-3">
+                        <h5 className="text-xs font-black uppercase tracking-wider text-gray-900">
+                          2. Quitar Ingredientes ($0) o Extras con Costo Adicional
+                        </h5>
+
+                        {/* Presets rápidos */}
+                        <div className="bg-amber-50/70 p-3 rounded-xl border border-amber-200 space-y-2">
+                          <span className="text-xs font-black text-amber-950 uppercase tracking-wide block">
+                            ⚡ Plantillas Rápidas de Ingredientes / Extras (1 Clic):
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleApplyDishPresets('burger')}
+                              className="px-2.5 py-1 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-xs font-bold transition shadow-2xs cursor-pointer"
+                            >
+                              🍔 Hamburguesa (Sin queso, Sin chile, Extra queso $15, etc.)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleApplyDishPresets('tacos')}
+                              className="px-2.5 py-1 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-xs font-bold transition shadow-2xs cursor-pointer"
+                            >
+                              🌮 Tacos (Sin cebolla, Sin salsa, Extra queso $15)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleApplyDishPresets('pizzas')}
+                              className="px-2.5 py-1 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-xs font-bold transition shadow-2xs cursor-pointer"
+                            >
+                              🍕 Pizza (Extra queso $20, Extra pepperoni $20)
+                            </button>
+                          </div>
                         </div>
-                      ) : (
-                        (editingCustomizationsDish.customizations || []).map((c) => (
-                          <div
-                            key={c.id}
-                            className="flex items-center justify-between p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span
-                                className={`text-[10px] font-black px-2 py-0.5 rounded-md ${
-                                  c.type === 'removal'
-                                    ? 'bg-blue-100 text-blue-800'
-                                    : 'bg-emerald-100 text-emerald-800'
-                                }`}
-                              >
-                                {c.type === 'removal' ? 'Quitar ($0)' : 'Extra (+)'}
-                              </span>
-                              <span className="font-bold text-gray-900">{c.name}</span>
+
+                        {/* Lista actual de opciones configuradas */}
+                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                          <span className="text-xs font-bold text-gray-700 block">
+                            Extras / Ingredientes configurados ({(editingCustomizationsDish.customizations || []).length}):
+                          </span>
+                          {(editingCustomizationsDish.customizations || []).length === 0 ? (
+                            <div className="p-3 bg-gray-50 border border-dashed rounded-xl text-xs text-gray-400 text-center">
+                              Aún no hay extras ni ingredientes a quitar configurados.
                             </div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono font-bold text-gray-700">
-                                {c.price > 0 ? `+$${c.price.toFixed(2)}` : 'Sin costo'}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveCustomizationFromDish(c.id)}
-                                className="text-red-500 hover:text-red-700 p-1"
+                          ) : (
+                            (editingCustomizationsDish.customizations || []).map((c) => (
+                              <div
+                                key={c.id}
+                                className="flex items-center justify-between p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className={`text-[10px] font-black px-2 py-0.5 rounded-md ${
+                                      c.type === 'removal'
+                                        ? 'bg-blue-100 text-blue-800'
+                                        : 'bg-emerald-100 text-emerald-800'
+                                    }`}
+                                  >
+                                    {c.type === 'removal' ? 'Quitar ($0)' : 'Extra (+)'}
+                                  </span>
+                                  <span className="font-bold text-gray-900">{c.name}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono font-bold text-gray-700">
+                                    {c.price > 0 ? `+$${c.price.toFixed(2)}` : 'Sin costo'}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveCustomizationFromDish(c.id)}
+                                    className="text-red-500 hover:text-red-700 p-1 cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+
+                        {/* Agregar una nueva opción manual */}
+                        <div className="bg-gray-50 p-3 rounded-xl border border-gray-200 space-y-2">
+                          <span className="text-xs font-black text-gray-800 uppercase tracking-wide block">
+                            ＋ Agregar Ingrediente a Quitar o Extra con Costo
+                          </span>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <div className="sm:col-span-2">
+                              <label className="block text-[10px] font-bold text-gray-600 mb-0.5">Nombre</label>
+                              <input
+                                type="text"
+                                value={newCustomName}
+                                onChange={(e) => setNewCustomName(e.target.value)}
+                                placeholder="Ej. Sin cebolla / Extra queso"
+                                className="w-full border rounded-lg p-2 text-xs bg-white font-semibold"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-gray-600 mb-0.5">Tipo</label>
+                              <select
+                                value={newCustomType}
+                                onChange={(e) => setNewCustomType(e.target.value as 'removal' | 'extra')}
+                                className="w-full border rounded-lg p-2 text-xs bg-white font-semibold"
+                              >
+                                <option value="removal">Quitar ($0)</option>
+                                <option value="extra">Extra con Costo</option>
+                              </select>
                             </div>
                           </div>
-                        ))
-                      )}
-                    </div>
 
-                    {/* Agregar una nueva opción manual */}
-                    <div className="bg-gray-50 p-3 rounded-xl border border-gray-200 space-y-2">
-                      <span className="text-xs font-black text-gray-800 uppercase tracking-wide block">
-                        ＋ Agregar Opción Manual
-                      </span>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                        <div className="sm:col-span-2">
-                          <label className="block text-[10px] font-bold text-gray-600 mb-0.5">Nombre</label>
-                          <input
-                            type="text"
-                            value={newCustomName}
-                            onChange={(e) => setNewCustomName(e.target.value)}
-                            placeholder="Ej. Sin cebolla / Extra queso"
-                            className="w-full border rounded-lg p-2 text-xs bg-white font-semibold"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-bold text-gray-600 mb-0.5">Tipo</label>
-                          <select
-                            value={newCustomType}
-                            onChange={(e) => setNewCustomType(e.target.value as 'removal' | 'extra')}
-                            className="w-full border rounded-lg p-2 text-xs bg-white font-semibold"
+                          {newCustomType === 'extra' && (
+                            <div>
+                              <label className="block text-[10px] font-bold text-gray-600 mb-0.5">Precio del Extra ($ MXN)</label>
+                              <input
+                                type="number"
+                                min="1"
+                                value={newCustomPrice || ''}
+                                onChange={(e) => setNewCustomPrice(Number(e.target.value))}
+                                placeholder="Ej. 15"
+                                className="w-full border rounded-lg p-2 text-xs font-mono font-bold bg-white"
+                              />
+                            </div>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => handleAddCustomizationToDish(newCustomName, newCustomPrice, newCustomType)}
+                            className="w-full bg-[#101b29] hover:bg-black text-white text-xs font-bold py-2 rounded-lg transition cursor-pointer"
                           >
-                            <option value="removal">Quitar ($0)</option>
-                            <option value="extra">Extra con Costo</option>
-                          </select>
+                            ＋ Agregar Extra a {editingCustomizationsDish.name}
+                          </button>
                         </div>
                       </div>
-
-                      {newCustomType === 'extra' && (
-                        <div>
-                          <label className="block text-[10px] font-bold text-gray-600 mb-0.5">Precio del Extra ($ MXN)</label>
-                          <input
-                            type="number"
-                            min="1"
-                            value={newCustomPrice || ''}
-                            onChange={(e) => setNewCustomPrice(Number(e.target.value))}
-                            placeholder="Ej. 15"
-                            className="w-full border rounded-lg p-2 text-xs font-mono font-bold bg-white"
-                          />
-                        </div>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() => handleAddCustomizationToDish(newCustomName, newCustomPrice, newCustomType)}
-                        className="w-full bg-[#101b29] hover:bg-black text-white text-xs font-bold py-2 rounded-lg transition"
-                      >
-                        ＋ Agregar a {editingCustomizationsDish.name}
-                      </button>
                     </div>
 
-                    <div className="flex justify-end pt-2">
+                    <div className="flex justify-end p-4 border-t border-gray-200 bg-gray-50 shrink-0">
                       <button
                         type="button"
                         onClick={() => setEditingCustomizationsDish(null)}
-                        className="px-5 py-2 bg-[#ed0718] hover:bg-[#c90012] text-white text-xs font-black rounded-xl shadow-xs"
+                        className="px-5 py-2 bg-[#ed0718] hover:bg-[#c90012] text-white text-xs font-black rounded-xl shadow-xs cursor-pointer"
                       >
-                        Listo / Guardar Opciones
+                        Listo / Guardar Especificaciones
                       </button>
                     </div>
                   </div>

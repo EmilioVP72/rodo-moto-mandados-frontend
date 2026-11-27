@@ -1481,13 +1481,27 @@ _RODO Moto Mandados · Despacho San Miguel_`;
                         ${(it.price * it.quantity).toFixed(2)}
                       </span>
                     </div>
-                    {it.customizations && it.customizations.length > 0 && (
+                    {((it.selectedOptions && it.selectedOptions.length > 0) ||
+                      (it.customizations && it.customizations.length > 0)) && (
                       <div className="flex flex-wrap gap-1 mt-0.5">
-                        {it.customizations.map((c, cIdx) => (
-                          <span key={cIdx} className="bg-red-50 text-[#ed0718] text-[10px] font-bold px-1.5 py-0.2 rounded">
-                            {c}
+                        {(it.selectedOptions || []).map((opt, oIdx) => (
+                          <span
+                            key={`opt-${oIdx}`}
+                            className="bg-slate-900 text-white text-[10px] font-bold px-1.5 py-0.2 rounded"
+                          >
+                            {opt}
                           </span>
                         ))}
+                        {(it.customizations || [])
+                          .filter((c) => !(it.selectedOptions || []).includes(c))
+                          .map((c, cIdx) => (
+                            <span
+                              key={`cust-${cIdx}`}
+                              className="bg-red-50 text-[#ed0718] text-[10px] font-bold px-1.5 py-0.2 rounded"
+                            >
+                              {c}
+                            </span>
+                          ))}
                       </div>
                     )}
                     {it.notes && (

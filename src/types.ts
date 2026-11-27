@@ -8,7 +8,11 @@ export interface ProductCustomization {
 export interface MenuItemOptionGroup {
   id: string;
   name: string;
-  maxSelect: number;
+  required?: boolean; // true (por defecto) = obligatorio elegir al menos minSelect; false = opcional
+  minSelect?: number; // mínimo requerido (ej. 1 para "hasta 2 salsas", o 2 para "exactamente 2 guisados")
+  maxSelect: number; // límite máximo de selecciones (0 si hasLimit === false)
+  hasLimit?: boolean; // true (por defecto) = aplica tope maxSelect; false = sin límite de elecciones
+  allowRepeat?: boolean; // true = permite repetir la misma opción varias veces (ej. 2x Pollo a la naranja)
   options: string[];
 }
 
@@ -124,6 +128,11 @@ export interface OrderItem {
   quantity: number;
   notes?: string;
   selectedOptions?: string[];
+  selectedOptionGroups?: Array<{
+    groupId: string;
+    groupName: string;
+    selections: Array<{ option: string; quantity: number }>;
+  }>;
   isExtra?: boolean;
   surcharge?: number;
   stockLevel?: number; // Nivel de inventario sincronizado

@@ -184,13 +184,27 @@ export const CartDrawerModal: React.FC<CartDrawerModalProps> = ({
                           Extra agregado
                         </span>
                       )}
-                      {item.customizations && item.customizations.length > 0 && (
+                      {((item.selectedOptions && item.selectedOptions.length > 0) ||
+                        (item.customizations && item.customizations.length > 0)) && (
                         <div className="flex flex-wrap gap-1 mt-1">
-                          {item.customizations.map((c, idx) => (
-                            <span key={idx} className="bg-red-50 text-[#ed0718] border border-red-200 text-[10px] font-bold px-1.5 py-0.5 rounded">
-                              {c}
+                          {(item.selectedOptions || []).map((opt, idx) => (
+                            <span
+                              key={`opt-${idx}`}
+                              className="bg-slate-900 text-white text-[10px] font-bold px-1.5 py-0.5 rounded"
+                            >
+                              {opt}
                             </span>
                           ))}
+                          {(item.customizations || [])
+                            .filter((c) => !(item.selectedOptions || []).includes(c))
+                            .map((c, idx) => (
+                              <span
+                                key={`cust-${idx}`}
+                                className="bg-red-50 text-[#ed0718] border border-red-200 text-[10px] font-bold px-1.5 py-0.5 rounded"
+                              >
+                                {c}
+                              </span>
+                            ))}
                         </div>
                       )}
                     </div>

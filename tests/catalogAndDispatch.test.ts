@@ -16,6 +16,12 @@ import {
   filterSmaColonias,
   isValidSmaColoniaLabel,
 } from '../src/data/smaColonias.ts';
+import {
+  isOptionGroupSatisfied,
+  toggleSingleOrMultiOption,
+  adjustRepeatableOptionCount,
+  formatOptionGroupSummary,
+} from '../src/utils/dishOptions.ts';
 
 describe('Frontend Catalog Seeds & WhatsApp Dispatch Formatter Unit Tests', () => {
   describe('1. Integridad del Catálogo Semilla de San Miguel de Allende (seeds.ts)', () => {
@@ -205,4 +211,72 @@ describe('Frontend Catalog Seeds & WhatsApp Dispatch Formatter Unit Tests', () =
 
 it('una transferencia pendiente exige confirmación del despacho', () => {
   assert.match(paymentInstructionForRider({ paymentMethod: 'transferencia', paymentStatus: 'pendiente', total: 20 }), /PENDIENTE/);
+});
+
+describe('Especificaciones configurables de platillos (Comida China y Alitas con/sin límite)', () => {
+  it('permite elegir base única y repetir guisados hasta el límite exacto configurado', () => {
+    const baseGroup = {
+      id: 'g-base',
+      name: 'Base',
+      required: true,
+      hasLimit: true,
+      minSelect: 1,
+      maxSelect: 1,
+      options: ['Arroz frito', 'Pasta'],
+    };
+    const guisadosGroup = {
+      id: 'g-guisados',
+      name: 'Guisados',
+      required: true,
+      hasLimit: true,
+      minSelect: 2,
+      maxSelect: 2,
+      allowRepeat: true,
+      options: ['Pollo naranja', 'Res con brócoli'],
+    };
+
+    let basePick = toggleSingleOrMultiOption(baseGroup, {}, 'Pasta');
+    assert.equal(isOptionGroupSatisfied(baseGroup, basePick), true);
+    assert.equal(formatOptionGroupSummary(baseGroup, basePick), 'Base: Pasta');
+
+    let guisadoPicks = adjustRepeatableOptionCount(guisadosGroup, {}, 'Pollo naranja', 1);
+    assert.equal(isOptionGroupSatisfied(guisadosGroup, guisadoPicks), false);
+    guisadoPicks = adjustRepeatableOptionCount(guisadosGroup, guisadoPicks, 'Pollo naranja', 1);
+    assert.equal(isOptionGroupSatisfied(guisadosGroup, guisadoPicks), true);
+    // Un tercer incremento no supera el tope de 2
+    guisadoPicks = adjustRepeatableOptionCount(guisadosGroup, guisadoPicks, 'Res con brócoli', 1);
+    assert.equal(formatOptionGroupSummary(guisadosGroup, guisadoPicks), 'Guisados: 2x Pollo naranja');
+  });
+
+  it('respeta límite máximo en salsas de alitas y modo sin límite cuando hasLimit es false', () => {
+    const limitedSauces = {
+      id: 'g-salsas-lim',
+      name: 'Salsas',
+      required: true,
+      hasLimit: true,
+      minSelect: 1,
+      maxSelect: 2,
+      options: ['BBQ', 'Buffalo', 'Mango Habanero'],
+    };
+    let picks = toggleSingleOrMultiOption(limitedSauces, {}, 'BBQ');
+    assert.equal(isOptionGroupSatisfied(limitedSauces, picks), true); // Con 1 de máx 2 ya es válido
+    picks = toggleSingleOrMultiOption(limitedSauces, picks, 'Mango Habanero');
+    picks = toggleSingleOrMultiOption(limitedSauces, picks, 'Buffalo'); // Ignorado por límite 2
+    assert.equal(formatOptionGroupSummary(limitedSauces, picks), 'Salsas: BBQ, Mango Habanero');
+
+    const unlimitedSauces = {
+      id: 'g-salsas-free',
+      name: 'Salsas',
+      required: true,
+      hasLimit: false,
+      minSelect: 1,
+      maxSelect: 0,
+      options: ['BBQ', 'Buffalo', 'Mango Habanero'],
+    };
+    let freePicks = toggleSingleOrMultiOption(unlimitedSauces, {}, 'BBQ');
+    freePicks = toggleSingleOrMultiOption(unlimitedSauces, freePicks, 'Buffalo');
+    freePicks = toggleSingleOrMultiOption(unlimitedSauces, freePicks, 'Mango Habanero');
+    assert.equal(isOptionGroupSatisfied(unlimitedSauces, freePicks), true);
+    assert.equal(formatOptionGroupSummary(unlimitedSauces, freePicks), 'Salsas: BBQ, Buffalo, Mango Habanero');
+  });
 });
