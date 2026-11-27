@@ -1,12 +1,16 @@
 /**
  * Capa de Transporte HTTP Centralizada (Clean Architecture)
  * Conecta el Frontend React 19 con el Backend Fastify + PostgreSQL + Redis
- * Incluye manejo de Access Token JWT, Refresh Token rotativo y limpieza de sesión por privacidad.
+ * - Access Token JWT de vida corta (30m)
+ * - Refresh Token protegido en cookie HttpOnly (SameSite=Strict) sin persistir en localStorage
+ * - Deduplicación concurrente en rotación silenciosa ante respuestas 401
  */
 
 const TOKEN_STORAGE_KEY = 'rodo_auth_jwt';
-const REFRESH_TOKEN_STORAGE_KEY = 'rodo_refresh_token';
+const LEGACY_REFRESH_TOKEN_STORAGE_KEY = 'rodo_refresh_token';
 const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || '';
+
+let refreshInFlight: Promise<boolean> | null = null;
 
 export function getAuthToken(): string | null {
   try {
@@ -17,11 +21,11 @@ export function getAuthToken(): string | null {
 }
 
 export function getRefreshToken(): string | null {
+  // Por seguridad anti-XSS, el Refresh Token vive únicamente en cookie HttpOnly del navegador
   try {
-    return localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY);
-  } catch {
-    return null;
-  }
+    localStorage.removeItem(LEGACY_REFRESH_TOKEN_STORAGE_KEY);
+  } catch {}
+  return null;
 }
 
 export function setAuthToken(token: string | null): void {
@@ -34,30 +38,39 @@ export function setAuthToken(token: string | null): void {
   } catch {}
 }
 
-export function setAuthSessionTokens(accessToken: string | null, refreshToken?: string | null): void {
+export function setAuthSessionTokens(accessToken: string | null, _refreshToken?: string | null): void {
   setAuthToken(accessToken);
   try {
-    if (refreshToken) {
-      localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, refreshToken);
-    } else if (refreshToken === null) {
-      localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
-    }
+    // Purgar cualquier refresh token heredado de localStorage (ahora se gestiona vía cookie HttpOnly)
+    localStorage.removeItem(LEGACY_REFRESH_TOKEN_STORAGE_KEY);
   } catch {}
+}
+
+function hasActiveClientSessionHint(): boolean {
+  try {
+    return Boolean(
+      localStorage.getItem(TOKEN_STORAGE_KEY) ||
+        localStorage.getItem('rodo_user_session') ||
+        localStorage.getItem('rodo_admin_session')
+    );
+  } catch {
+    return false;
+  }
 }
 
 export async function logoutSession(allDevices = false): Promise<void> {
   const token = getAuthToken();
-  const refreshToken = getRefreshToken();
 
-  if (token || refreshToken) {
+  if (token || hasActiveClientSessionHint()) {
     try {
       await fetch(`${API_BASE_URL}/api/auth/logout`, {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ refreshToken, allDevices }),
+        body: JSON.stringify({ allDevices }),
       });
     } catch {}
   }
@@ -92,28 +105,37 @@ export class ApiHttpError extends Error {
   }
 }
 
-async function tryRotateRefreshToken(): Promise<boolean> {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) return false;
+async function performSingleRefreshRotation(): Promise<boolean> {
+  if (!hasActiveClientSessionHint()) return false;
   try {
     const res = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ refreshToken }),
+      body: JSON.stringify({}),
     });
     if (!res.ok) {
       setAuthSessionTokens(null, null);
       return false;
     }
     const data = await res.json();
-    if (data?.token && data?.refreshToken) {
-      setAuthSessionTokens(data.token, data.refreshToken);
+    if (data?.token) {
+      setAuthSessionTokens(data.token, null);
       return true;
     }
     return false;
   } catch {
     return false;
   }
+}
+
+async function tryRotateRefreshToken(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = performSingleRefreshRotation().finally(() => {
+      refreshInFlight = null;
+    });
+  }
+  return refreshInFlight;
 }
 
 export async function apiFetch<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
@@ -132,17 +154,19 @@ export async function apiFetch<T>(path: string, options: ApiRequestOptions = {})
 
   try {
     const response = await fetch(`${API_BASE_URL}${path}`, {
+      credentials: 'include',
       ...rest,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
       signal: controller.signal,
     });
 
-    // Rotación silenciosa de Refresh Token si el Access Token expiró
+    // Rotación silenciosa de Refresh Token (vía cookie HttpOnly) si el Access Token de 30m expiró
     if (
       response.status === 401 &&
       !_retriedRefresh &&
       !path.startsWith('/api/auth/login') &&
+      !path.startsWith('/api/auth/register') &&
       !path.startsWith('/api/auth/refresh')
     ) {
       const refreshed = await tryRotateRefreshToken();
@@ -151,7 +175,7 @@ export async function apiFetch<T>(path: string, options: ApiRequestOptions = {})
       }
     }
 
-    if (response.ok && blob) return await response.blob() as T;
+    if (response.ok && blob) return (await response.blob()) as T;
     const contentType = response.headers.get('content-type') || '';
     const payload = contentType.includes('application/json')
       ? await response.json().catch(() => null)
@@ -179,7 +203,10 @@ export async function uploadImageToBackend(
     return dataUrl;
   }
 
-  const res = await apiFetch<{ url: string }>('/api/uploads', { method: 'POST', body: { dataUrl, folder, referenceId } });
+  const res = await apiFetch<{ url: string }>('/api/uploads', {
+    method: 'POST',
+    body: { dataUrl, folder, referenceId },
+  });
   if (!res?.url) throw new Error('El servidor no confirmó la carga.');
   return res.url;
 }
