@@ -36,7 +36,23 @@ export function saveRegisteredWebhook(webhook: WebhookConfig): void {
   localStorage.setItem(LOCAL_STORAGE_WEBHOOKS, JSON.stringify(updated));
 }
 
-// Despachar evento a webhooks y ventanas conectadas
+function isAllowedWebhookUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol === 'https:') return true;
+    if (
+      parsed.protocol === 'http:' &&
+      (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1')
+    ) {
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+// Despachar evento a webhooks y ventanas conectadas del mismo origen
 export async function dispatchIntegrationEvent(
   event: 'order.created' | 'order.status_changed' | 'order.arrived_outside' | 'local.rider_requested',
   payload: { order: Order; extra?: any }
@@ -48,17 +64,14 @@ export async function dispatchIntegrationEvent(
     data: payload,
   };
 
-  // 1. Notificación vía postMessage para iframes o ventanas hijas (Portal Repartidor / Portal Local)
-  if (typeof window !== 'undefined') {
-    window.postMessage(messageData, '*');
+  // 1. Notificación vía postMessage restringida estrictamente al mismo origen (sin fuga a window.opener ni '*')
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    const sameOrigin = window.location.origin;
+    window.postMessage(messageData, sameOrigin);
 
-    // Despacho a window.opener o parent si está embebido
     try {
-      if (window.opener) {
-        window.opener.postMessage(messageData, '*');
-      }
       if (window.parent && window.parent !== window) {
-        window.parent.postMessage(messageData, '*');
+        window.parent.postMessage(messageData, sameOrigin);
       }
     } catch {}
 
@@ -68,8 +81,10 @@ export async function dispatchIntegrationEvent(
     } catch {}
   }
 
-  // 2. Notificación HTTP a Webhooks registrados
-  const webhooks = getRegisteredWebhooks().filter((w) => w.isActive && w.events.includes(event));
+  // 2. Notificación HTTP únicamente a Webhooks HTTPS verificados
+  const webhooks = getRegisteredWebhooks().filter(
+    (w) => w.isActive && w.events.includes(event) && isAllowedWebhookUrl(w.targetUrl)
+  );
   for (const hook of webhooks) {
     try {
       fetch(hook.targetUrl, {
